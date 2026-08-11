@@ -1,14 +1,16 @@
 [Unit]
 Description=RPi HMI Display (Pygame DRM/KMS)
 Documentation=https://github.com/user/rpi_hmi
-After=network.target rpi-hmi-backend.service
-Wants=network.target rpi-hmi-backend.service
+After=network-online.target rpi-hmi-backend.service
+Wants=network-online.target rpi-hmi-backend.service
 Requires=rpi-hmi-backend.service
 Conflicts=lightdm.service
 
 [Service]
 Type=simple
-User=root
+User=pi
+Group=pi
+SupplementaryGroups=video,input,render
 WorkingDirectory=/home/pi/rpi_hmi
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_KMSDRM_DEVICE_INDEX=0
@@ -16,8 +18,8 @@ Environment=SDL_RENDER_DRIVER=software
 Environment=PYTHONPATH=/home/pi/rpi_hmi
 Environment=PYTHONUNBUFFERED=1
 
-# Dar tiempo al backend para estar listo
-ExecStartPre=/bin/sleep 3
+# Esperar a que el backend responda (max 30s)
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do curl -s http://localhost:8000/health | grep -q ok && exit 0; sleep 1; done; exit 1'
 
 # Desvincular consola virtual de fb1 (ili9486) para que no escriba en la TFT
 ExecStartPre=/bin/sh -c 'test -w /sys/class/vtconsole/vtcon1/bind && echo 0 > /sys/class/vtconsole/vtcon1/bind || true'
@@ -29,6 +31,15 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+
+# ── Hardening (permisivo por DRM/input) ──────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# No usamos ProtectSystem=strict porque necesita acceso a /dev/dri y /dev/input
+ReadWritePaths=/home/pi/rpi_hmi /dev/dri /dev/input /sys/class/vtconsole
 
 [Install]
 WantedBy=multi-user.target

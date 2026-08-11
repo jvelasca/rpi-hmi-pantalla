@@ -1,9 +1,5 @@
 ﻿"""Capa de abstraccion de hardware (HAL).
 
-Proporciona interfaces para dispositivos fisicos:
-GPIO, I2C, SPI, PWM.
+La implementacion de GPIO ha sido unificada en backend.app.services.gpio_service.
+Este paquete se mantiene como placeholder para futuras interfaces I2C, SPI, PWM.
 """
-
-from backend.app.hardware.hal import GPIODriver
-
-__all__ = ["GPIODriver"]

@@ -39,16 +39,16 @@ export interface SystemStatus {
 export type WsTopic = "led" | "button" | "display" | "system";
 
 export type ClientMessage =
-  | { type: "toggle_led" }
-  | { type: "press_button" }
-  | { type: "release_button" }
-  | { type: "get_status" }
-  | { type: "subscribe"; topics: WsTopic[] };
+  | { type: "toggle_led"; version: string }
+  | { type: "press_button"; version: string }
+  | { type: "release_button"; version: string }
+  | { type: "get_status"; version: string }
+  | { type: "subscribe"; topics: WsTopic[]; version: string };
 
 export type ServerMessage =
-  | { type: "status_update"; data: SystemStatus; timestamp: string }
-  | { type: "led_changed"; data: LedState; timestamp: string }
-  | { type: "button_pressed"; data: ButtonState; timestamp: string }
-  | { type: "button_released"; data: ButtonState; timestamp: string }
-  | { type: "display_changed"; data: DisplayInfo; timestamp: string }
-  | { type: "error"; data: { code: string; message: string }; timestamp: string };
+  | { type: "status_update"; data: SystemStatus; timestamp: string; version: string }
+  | { type: "led_changed"; data: LedState; timestamp: string; version: string }
+  | { type: "button_pressed"; data: ButtonState; timestamp: string; version: string }
+  | { type: "button_released"; data: ButtonState; timestamp: string; version: string }
+  | { type: "display_changed"; data: DisplayInfo; timestamp: string; version: string }
+  | { type: "error"; data: { code: string; message: string }; timestamp: string; version: string };

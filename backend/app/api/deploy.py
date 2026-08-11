@@ -2,54 +2,74 @@
 backend.app.api.deploy
 ======================
 
-Endpoints REST para el despliegue remoto de la aplicación en la Pi.
+Endpoints REST para el despliegue remoto de la aplicacion en la Pi.
 
 Proporciona operaciones para escanear la red, configurar el entorno,
-desplegar archivos, ejecutar diagnósticos y verificar salud del backend.
+desplegar archivos, ejecutar diagnosticos y verificar salud del backend.
 
     Rutas:
-        POST /api/deploy/setup       — Configurar entorno Python en la Pi.
-        POST /api/deploy/app         — Desplegar archivos de la aplicación.
-        GET  /api/deploy/diagnostics — Ejecutar diagnóstico remoto.
-        GET  /api/deploy/health      — Verificar salud del backend remoto.
-        POST /api/deploy/start       — Iniciar backend remoto.
-        POST /api/deploy/stop        — Detener backend remoto.
-        GET  /api/deploy/scan        — Escanear red local en busca de Pi.
+        POST /admin/deploy/setup       — Configurar entorno Python en la Pi.
+        POST /admin/deploy/app         — Desplegar archivos de la aplicacion.
+        GET  /admin/deploy/diagnostics — Ejecutar diagnostico remoto.
+        GET  /admin/deploy/health      — Verificar salud del backend remoto.
+        POST /admin/deploy/start       — Iniciar backend remoto.
+        POST /admin/deploy/stop        — Detener backend remoto.
+        GET  /admin/deploy/scan        — Escanear red local en busca de Pi.
+
+TODOS los endpoints requieren autenticacion via header X-API-Key.
 """
 from __future__ import annotations
 
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
+from backend.app.config import settings
 from backend.app.services.ssh_manager import SSHDriver
 from backend.app.services.deploy_service import DeployService, DeployStatus, ScanResult
 
 logger = logging.getLogger("backend.api.deploy")
 
-router = APIRouter(prefix="/api/deploy", tags=["Deploy"])
+router = APIRouter(prefix="/admin/deploy", tags=["Admin/Deploy"])
 
 
-# ── Dependencia: obtener driver SSH del módulo ssh ────────────────────────
+# ── Autenticacion por API Key ─────────────────────────────────────────────
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _verify_api_key(api_key: Optional[str] = Security(_api_key_header)) -> None:
+    """Verifica que la API key proporcionada coincide con la configurada."""
+    if not settings.admin_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
+        )
+    if api_key != settings.admin_api_key:
+        raise HTTPException(status_code=401, detail="API key invalida")
+
+
+# ── Dependencia: obtener driver SSH del modulo ssh ────────────────────────
 
 
 def get_ssh_driver() -> SSHDriver:
-    """Obtiene el driver SSH global desde el módulo ssh.
+    """Obtiene el driver SSH global desde el modulo ssh.
 
     Returns:
         El driver SSH activo.
 
     Raises:
-        HTTPException 503: Si no hay conexión SSH establecida.
+        HTTPException 503: Si no hay conexion SSH establecida.
     """
-    from backend.app.api.ssh import _ssh_driver  # Acceso al singleton del módulo ssh
+    from backend.app.api.ssh import _ssh_driver
 
     if _ssh_driver is None:
         raise HTTPException(
             status_code=503,
-            detail="No hay conexión SSH. Usa POST /api/ssh/connect primero.",
+            detail="No hay conexion SSH. Usa POST /admin/ssh/connect primero.",
         )
     return _ssh_driver
 
@@ -62,10 +82,10 @@ class DeployStatusResponse(BaseModel):
 
     Atributos:
         step: Nombre del paso ejecutado.
-        success: True si se completó correctamente.
-        message: Descripción del resultado.
+        success: True si se completo correctamente.
+        message: Descripcion del resultado.
         output: Salida de consola relevante.
-        duration_ms: Duración en milisegundos.
+        duration_ms: Duracion en milisegundos.
     """
 
     step: str
@@ -76,7 +96,7 @@ class DeployStatusResponse(BaseModel):
 
 
 class DeployResultResponse(BaseModel):
-    """Resultado de una operación de despliegue.
+    """Resultado de una operacion de despliegue.
 
     Atributos:
         success: True si todos los pasos se completaron correctamente.
@@ -92,7 +112,7 @@ class ScanResultResponse(BaseModel):
 
     Atributos:
         results: Lista de dispositivos detectados.
-        count: Número total de dispositivos encontrados.
+        count: Numero total de dispositivos encontrados.
     """
 
     results: List[dict]
@@ -100,12 +120,12 @@ class ScanResultResponse(BaseModel):
 
 
 class HealthCheckResponse(BaseModel):
-    """Resultado de la verificación de salud.
+    """Resultado de la verificacion de salud.
 
     Atributos:
         healthy: True si el backend remoto responde.
-        message: Descripción del estado.
-        status_code: Código HTTP devuelto por el backend remoto.
+        message: Descripcion del estado.
+        status_code: Codigo HTTP devuelto por el backend remoto.
     """
 
     healthy: bool
@@ -116,14 +136,15 @@ class HealthCheckResponse(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
 
-@router.get("/scan", response_model=ScanResultResponse)
+@router.get("/scan", response_model=ScanResultResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_scan() -> ScanResultResponse:
     """Escanea la red local en busca de dispositivos Raspberry Pi.
 
     Busca hosts con puerto SSH (22) abierto en las subredes locales
     y los reporta como posibles Raspberry Pi.
 
-    No requiere conexión SSH previa (usa sondeo TCP directo).
+    No requiere conexion SSH previa (usa sondeo TCP directo).
+    Requiere autenticacion: header X-API-Key.
     """
     from backend.app.services.deploy_service import NetworkScanner
 
@@ -140,14 +161,14 @@ def deploy_scan() -> ScanResultResponse:
     return ScanResultResponse(results=results, count=len(results))
 
 
-@router.post("/setup", response_model=DeployResultResponse)
+@router.post("/setup", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:
-    """Configura el entorno Python en la Raspberry Pi.
+    """Configura el entorno Python en la Raspberry Pi. Requiere autenticacion.
 
     Crea la estructura de directorios, instala paquetes del sistema,
     crea el entorno virtual (.venv) e instala las dependencias pip.
     """
-    logger.info("Iniciando configuración del entorno...")
+    logger.info("Iniciando configuracion del entorno...")
     deploy = DeployService(driver)
     steps = deploy.setup_environment()
 
@@ -166,9 +187,9 @@ def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRes
     )
 
 
-@router.post("/app", response_model=DeployResultResponse)
+@router.post("/app", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:
-    """Despliega los archivos de la aplicación en la Raspberry Pi.
+    """Despliega los archivos de la aplicacion en la Raspberry Pi. Requiere autenticacion.
 
     Copia todos los archivos .py, .yaml y .txt del proyecto local
     al directorio remoto usando SFTP.
@@ -192,14 +213,14 @@ def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRespo
     )
 
 
-@router.get("/diagnostics", response_model=DeployStatusResponse)
+@router.get("/diagnostics", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
-    """Ejecuta el script de diagnóstico en la Raspberry Pi.
+    """Ejecuta el script de diagnostico en la Raspberry Pi. Requiere autenticacion.
 
-    Recopila información del sistema (SO, GPIO, pantalla, red, etc.)
+    Recopila informacion del sistema (SO, GPIO, pantalla, red, etc.)
     y la devuelve en la respuesta.
     """
-    logger.info("Ejecutando diagnóstico remoto...")
+    logger.info("Ejecutando diagnostico remoto...")
     deploy = DeployService(driver)
     result = deploy.run_diagnostics()
 
@@ -212,12 +233,12 @@ def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeploySta
     )
 
 
-@router.get("/health", response_model=HealthCheckResponse)
+@router.get("/health", response_model=HealthCheckResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckResponse:
-    """Verifica que el backend FastAPI responde en la Raspberry Pi.
+    """Verifica que el backend FastAPI responde en la Raspberry Pi. Requiere autenticacion.
 
-    Realiza una petición HTTP desde la propia Pi a localhost:8000/health
-    para confirmar que el servidor está operativo.
+    Realiza una peticion HTTP desde la propia Pi a localhost:8000/health
+    para confirmar que el servidor esta operativo.
     """
     logger.info("Verificando salud del backend remoto...")
     deploy = DeployService(driver)
@@ -230,9 +251,9 @@ def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckRes
     )
 
 
-@router.post("/start", response_model=DeployStatusResponse)
+@router.post("/start", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
-    """Inicia el backend FastAPI en la Raspberry Pi.
+    """Inicia el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 
     Lanza uvicorn en segundo plano en el puerto 8000.
     Si ya hay una instancia corriendo, la detiene primero.
@@ -250,11 +271,11 @@ def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusRes
     )
 
 
-@router.post("/stop", response_model=DeployStatusResponse)
+@router.post("/stop", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
 def deploy_stop(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
-    """Detiene el backend FastAPI en la Raspberry Pi.
+    """Detiene el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 
-    Envía SIGTERM al proceso uvicorn remoto.
+    Envia SIGTERM al proceso uvicorn remoto.
     """
     logger.info("Deteniendo backend remoto...")
     deploy = DeployService(driver)

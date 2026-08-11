@@ -6,12 +6,18 @@ con deteccion automatica del entorno:
 - En Raspberry Pi: usa gpiozero (LED, Button, etc.)
 - En PC/desarrollo: usa MockGPIODriver (simulacion)
 
+Tambien incluye carga declarativa de dispositivos desde YAML
+(devices.yaml), fuente unica de verdad para pines y configuracion.
+
 Uso:
-    from backend.app.services.gpio_service import gpio_service
+    from backend.app.services.gpio_service import gpio_service, load_devices
 
     gpio_service.setup_output(17)         # Configurar GPIO17 como salida
     gpio_service.set_high(17)             # Encender LED en GPIO17
     gpio_service.set_low(17)              # Apagar LED en GPIO17
+
+    devices = load_devices("backend/config/devices.yaml")
+    pin = devices["led1"].config["pin"]   # Leer pin desde YAML
 """
 
 from __future__ import annotations
@@ -19,11 +25,67 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["GPIOService", "gpio_service"]
+__all__ = ["GPIOService", "gpio_service", "load_devices", "Device", "MockGPIODriver", "RealGPIODriver"]
+
+# ── Device Registry ───────────────────────────────────────────
+
+
+@dataclass
+class Device:
+    """Representacion generica de un dispositivo.
+
+    Campos:
+    - id: identificador unico (string)
+    - name: nombre legible
+    - type: tipo logico (led, relay, sensor...)
+    - config: configuracion arbitraria cargada desde YAML
+    """
+
+    id: str
+    name: str
+    type: str
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+def load_devices(path: str) -> Dict[str, Device]:
+    """Carga el registro de dispositivos desde un fichero YAML.
+
+    El formato esperado es:
+
+    devices:
+      led1:
+        name: "LED 1"
+        driver: gpio
+        pin: 17
+
+    Args:
+        path: Ruta al archivo devices.yaml.
+
+    Returns:
+        Diccionario id -> Device.
+    """
+    logger.info("Cargando devices desde %s", path)
+    with open(path, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+
+    devices: Dict[str, Device] = {}
+    for dev_id, cfg in (data.get("devices") or {}).items():
+        devices[dev_id] = Device(
+            id=dev_id,
+            name=cfg.get("name", dev_id),
+            type=cfg.get("driver", "unknown"),
+            config=cfg,
+        )
+
+    logger.info("Dispositivos cargados: %s", list(devices.keys()))
+    return devices
 
 
 # ── Driver Interface ──────────────────────────────────────────

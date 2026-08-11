@@ -1,11 +1,13 @@
 [Unit]
 Description=RPi HMI Backend (FastAPI)
-After=network.target
-Wants=network.target
+Documentation=https://github.com/user/rpi_hmi
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=pi
+Group=pi
 WorkingDirectory=/home/pi/rpi_hmi
 Environment=PATH=/usr/bin:/usr/local/bin
 Environment=PYTHONUNBUFFERED=1
@@ -14,6 +16,19 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+
+# ── Hardening ──────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/home/pi/rpi_hmi /dev/gpiomem /dev/mem /sys/class/gpio
+ReadOnlyPaths=/sys/class/thermal
 
 [Install]
 WantedBy=multi-user.target

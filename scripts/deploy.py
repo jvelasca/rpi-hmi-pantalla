@@ -1,5 +1,11 @@
 """Deploy + verify display app to Raspberry Pi in one shot.
 
+Credentials are loaded from environment variables (.env file)
+or from RPI_HOST, RPI_USER, RPI_PASSWORD, RPI_PORT env vars.
+
+Uses the project's own SSHDriver and DeployService instead of
+raw paramiko, eliminating SSH/SFTP logic duplication.
+
 Usage:
     python scripts/deploy.py                     # deploy + verify
     python scripts/deploy.py --run               # deploy + run display app (solo Pi!)
@@ -9,16 +15,24 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
-import paramiko
+from dotenv import load_dotenv
 
-HOST = "192.168.88.211"
-USER = "pi"
-PASSWORD = "RaspberryB+2026!"
-PORT = 22
+# Cargar .env desde raiz del proyecto
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+from backend.app.services.ssh_manager import ParamikoSSHDriver, SSHResult
+from backend.app.services.deploy_service import DeployService
+
+HOST = os.getenv("RPI_HOST", "192.168.88.211")
+USER = os.getenv("RPI_USER", "pi")
+PASSWORD = os.getenv("RPI_PASSWORD", "")
+KEY_PATH = os.getenv("RPI_KEY_PATH", "")
+PORT = int(os.getenv("RPI_PORT", "22"))
 PI_BASE = "/home/pi/rpi_hmi"
 VENV_PY = f"{PI_BASE}/venv/bin/python3"
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,35 +41,40 @@ SCRIPTS_DIR = ROOT / "scripts"
 CONFIG_DIR = ROOT / "config"
 
 
-def ssh():
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=15)
-    return c
+def connect_ssh() -> ParamikoSSHDriver:
+    """Crea y conecta un SSHDriver usando credenciales del entorno.
+
+    Returns:
+        SSHDriver conectado a la Raspberry Pi.
+
+    Raises:
+        SystemExit: Si faltan credenciales.
+    """
+    ssh = ParamikoSSHDriver()
+    if not KEY_PATH and not PASSWORD:
+        sys.exit("ERROR: Define RPI_PASSWORD o RPI_KEY_PATH en .env")
+
+    ssh.connect(
+        host=HOST,
+        user=USER,
+        password=PASSWORD,
+        port=PORT,
+        key_path=KEY_PATH,
+        timeout=15,
+    )
+    print(f"[OK] Connected to {HOST}")
+    return ssh
 
 
-def sh(client, cmd, timeout=30):
-    stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout)
-    out = stdout.read().decode("ascii", "replace").strip()
-    err = stderr.read().decode("ascii", "replace").strip()
-    code = stdout.channel.recv_exit_status()
-    return code, out, err
-
-
-def step(msg):
+def step(msg: str) -> None:
     print(f"\n{'='*55}\n  {msg}\n{'='*55}")
 
 
-def deploy(client):
-    """Sync display/ files to Pi via SFTP."""
-    sftp = client.open_sftp()
-    # Ensure dirs
-    for d in ["display", "display/ui", "display/tests"]:
-        try:
-            sftp.mkdir(f"{PI_BASE}/{d}")
-        except IOError:
-            pass
+# ── Display-specific operations (not in DeployService) ──────────
 
+
+def deploy_display_files(ssh: ParamikoSSHDriver) -> int:
+    """Sync display/ files to Pi via SFTP using SSHDriver."""
     count = 0
     for py_file in sorted(DISPLAY_DIR.rglob("*")):
         if "__pycache__" in py_file.parts:
@@ -67,67 +86,61 @@ def deploy(client):
         rel = str(py_file.relative_to(ROOT)).replace("\\", "/")
         remote = f"{PI_BASE}/{rel}"
         try:
+            # Ensure remote directory exists
             parent = str(Path(remote).parent)
-            try:
-                sftp.stat(parent)
-            except FileNotFoundError:
-                sftp.mkdir(parent)
+            ssh.execute(f"mkdir -p {parent}", timeout=10)
+
             local_time = py_file.stat().st_mtime
-            try:
-                remote_time = sftp.stat(remote).st_mtime
-                if local_time <= remote_time:
-                    continue  # Skip unchanged
-            except FileNotFoundError:
-                pass
-            sftp.put(str(py_file), remote)
+            # Check remote timestamp to skip unchanged files
+            result = ssh.execute(
+                f"stat -c %Y {remote} 2>/dev/null || echo '0'",
+                timeout=10,
+            )
+            remote_time = float(result.stdout.strip() or "0")
+            if local_time <= remote_time:
+                continue
+
+            ssh.transfer_file(str(py_file), remote)
             size = py_file.stat().st_size
             print(f"  OK  {rel} ({size}B)")
             count += 1
         except Exception as exc:
             print(f"  ERR {rel}: {exc}")
-    sftp.close()
     print(f"  Total: {count} files synced")
     return count
 
 
-def deploy_scripts(client):
+def deploy_scripts(ssh: ParamikoSSHDriver) -> None:
     """Sync scripts/ to Pi (start_hmi.sh, etc.)."""
-    sftp = client.open_sftp()
-    try:
-        sftp.mkdir(f"{PI_BASE}/scripts")
-    except IOError:
-        pass
-
+    ssh.execute(f"mkdir -p {PI_BASE}/scripts", timeout=10)
     for script_file in SCRIPTS_DIR.glob("*"):
         if script_file.name.endswith(".pyc") or script_file.name == "__pycache__":
             continue
         rel = str(script_file.relative_to(ROOT)).replace("\\", "/")
         remote = f"{PI_BASE}/{rel}"
-        sftp.put(str(script_file), remote)
-        # Make .sh files executable
+        ssh.transfer_file(str(script_file), remote)
         if script_file.suffix == ".sh":
-            sh(client, f"chmod +x {remote}")
+            ssh.execute(f"chmod +x {remote}", timeout=10)
             print(f"  OK  {rel} (chmod +x)")
         else:
             print(f"  OK  {rel} ({script_file.stat().st_size}B)")
-    sftp.close()
 
 
-def install_deps(client):
-    """Install missing Python packages in venv."""
+def install_display_deps(ssh: ParamikoSSHDriver) -> None:
+    """Install missing Python packages for display in venv."""
     needed = []
     for mod in ["pygame", "evdev", "requests", "websocket"]:
-        code, out, err = sh(client, f"{VENV_PY} -c 'import {mod}' 2>&1")
-        if code != 0:
+        result = ssh.execute(f"{VENV_PY} -c 'import {mod}' 2>&1", timeout=10)
+        if not result.ok:
             needed.append(mod)
 
     if needed:
         print(f"  Installing: {', '.join(needed)}")
-        code, out, err = sh(client,
+        result = ssh.execute(
             f"source {PI_BASE}/venv/bin/activate && pip install {' '.join(needed)} 2>&1 | tail -3",
-            timeout=300
+            timeout=300,
         )
-        print(f"  pip exit={code}")
+        print(f"  pip exit={result.exit_code}")
     else:
         print("  All deps already installed")
 
@@ -137,29 +150,38 @@ def install_deps(client):
         "print(f\"pygame={pygame.version.ver}, evdev OK, "
         "req={requests.__version__}, ws={websocket.__version__}\")' 2>&1"
     )
-    code, out, err = sh(client, verify_cmd)
-    print(f"  [verify] {out}")
-    if err:
-        print(f"  [stderr] {err[:100]}")
+    result = ssh.execute(verify_cmd, timeout=15)
+    print(f"  [verify] {result.stdout}")
+    if result.stderr:
+        print(f"  [stderr] {result.stderr[:100]}")
 
 
-def verify(client):
+def verify(ssh: ParamikoSSHDriver) -> None:
     """Run verification checks."""
     # Health
-    code, out, err = sh(client, "curl -s http://localhost:8000/health")
-    print(f"  Backend health: {out}")
+    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
+    print(f"  Backend health: {result.stdout}")
 
     # Display devices
-    code, out, err = sh(client, "ls -la /dev/dri/card0 /dev/fb1 /dev/input/event0 2>&1")
-    print(f"  Devices:\n{out}")
+    result = ssh.execute(
+        "ls -la /dev/dri/card0 /dev/fb1 /dev/input/event0 2>&1",
+        timeout=10,
+    )
+    print(f"  Devices:\n{result.stdout}")
 
     # Check if lightdm is running
-    code, out, err = sh(client, "systemctl is-active lightdm 2>&1 || echo 'inactive'")
-    print(f"  lightdm: {out.strip()}")
+    result = ssh.execute(
+        "systemctl is-active lightdm 2>&1 || echo 'inactive'",
+        timeout=10,
+    )
+    print(f"  lightdm: {result.stdout.strip()}")
 
     # Check DRM card0 users
-    code, out, err = sh(client, "sudo fuser /dev/dri/card0 2>/dev/null | xargs ps -p 2>/dev/null | tail -3 || echo 'free'")
-    print(f"  DRM card0 users:\n{out}")
+    result = ssh.execute(
+        "sudo fuser /dev/dri/card0 2>/dev/null | xargs ps -p 2>/dev/null | tail -3 || echo 'free'",
+        timeout=10,
+    )
+    print(f"  DRM card0 users:\n{result.stdout}")
 
     # Import chain
     cmd = (
@@ -171,80 +193,89 @@ def verify(client):
         "from display.app import DisplayApp; "
         "print(\"ALL IMPORTS OK\")' 2>&1"
     )
-    code, out, err = sh(client, cmd, timeout=15)
-    print(f"  Import chain: {'OK' if 'ALL IMPORTS OK' in out else 'FAIL'}")
-    if err:
-        print(f"  [stderr] {err[:200]}")
+    result = ssh.execute(cmd, timeout=15)
+    print(f"  Import chain: {'OK' if 'ALL IMPORTS OK' in result.stdout else 'FAIL'}")
+    if result.stderr:
+        print(f"  [stderr] {result.stderr[:200]}")
 
 
-def ensure_backend(client):
+def ensure_backend(ssh: ParamikoSSHDriver) -> None:
     """Start backend if not running."""
-    code, out, err = sh(client, "curl -s http://localhost:8000/health")
-    if code == 0 and "ok" in out:
+    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
+    if result.ok and "ok" in result.stdout:
         print("  Backend already running")
         return
     print("  Starting backend...")
-    sh(client,
+    ssh.execute(
         f"cd {PI_BASE} && PYTHONPATH={PI_BASE} nohup {VENV_PY} "
         f"-m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 "
-        f"> /tmp/backend.log 2>&1 &"
+        f"> /tmp/backend.log 2>&1 &",
+        timeout=10,
     )
     time.sleep(2)
-    code, out, err = sh(client, "curl -s http://localhost:8000/health")
-    print(f"  Backend start: {'OK' if code == 0 else 'FAIL'} - {out}")
+    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
+    print(f"  Backend start: {'OK' if result.ok else 'FAIL'} - {result.stdout}")
 
 
-def stop_lightdm(client):
+def stop_lightdm(ssh: ParamikoSSHDriver) -> bool:
     """Stop lightdm to free /dev/dri/card0."""
-    code, out, err = sh(client, "systemctl is-active lightdm 2>&1 || echo 'inactive'")
-    if "active" not in out:
+    result = ssh.execute(
+        "systemctl is-active lightdm 2>&1 || echo 'inactive'",
+        timeout=10,
+    )
+    if "active" not in result.stdout:
         print("  lightdm already stopped")
         return True
 
     print("  Stopping lightdm...")
-    code, out, err = sh(client, "sudo systemctl stop lightdm", timeout=10)
+    ssh.execute("sudo systemctl stop lightdm", timeout=10)
     time.sleep(2)
 
-    # Verify card0 is free
-    code, out, err = sh(client, "sudo fuser /dev/dri/card0 2>/dev/null || echo 'free'")
-    if "free" in out:
+    result = ssh.execute(
+        "sudo fuser /dev/dri/card0 2>/dev/null || echo 'free'",
+        timeout=10,
+    )
+    if "free" in result.stdout:
         print("  lightdm stopped, /dev/dri/card0 liberated")
         return True
     else:
-        print(f"  [WARN] /dev/dri/card0 still in use by: {out}")
-        # Try force kill
-        sh(client, "sudo fuser -k /dev/dri/card0 2>/dev/null || true")
+        print(f"  [WARN] /dev/dri/card0 still in use by: {result.stdout}")
+        ssh.execute("sudo fuser -k /dev/dri/card0 2>/dev/null || true", timeout=10)
         time.sleep(1)
         return True
 
 
-def unbind_console(client):
+def unbind_console(ssh: ParamikoSSHDriver) -> None:
     """Unbind vtcon1 from fb1 (ili9486)."""
-    code, out, err = sh(client,
+    result = ssh.execute(
         "test -w /sys/class/vtconsole/vtcon1/bind && "
         "echo 0 | sudo tee /sys/class/vtconsole/vtcon1/bind > /dev/null 2>&1 && "
-        "echo 'vtcon1 unbound' || echo 'vtcon1 not available'"
+        "echo 'vtcon1 unbound' || echo 'vtcon1 not available'",
+        timeout=10,
     )
-    print(f"  Console: {out.strip()}")
+    print(f"  Console: {result.stdout.strip()}")
 
 
-def ensure_video_group(client):
+def ensure_video_group(ssh: ParamikoSSHDriver) -> None:
     """Add pi user to video group if needed."""
-    code, out, err = sh(client, "groups pi | grep -q video && echo 'yes' || echo 'no'")
-    if "yes" in out:
+    result = ssh.execute(
+        "groups pi | grep -q video && echo 'yes' || echo 'no'",
+        timeout=10,
+    )
+    if "yes" in result.stdout:
         print("  pi already in video group")
         return
     print("  Adding pi to video group...")
-    sh(client, "sudo usermod -a -G video pi")
+    ssh.execute("sudo usermod -a -G video pi", timeout=10)
     print("  Done. May need to logout/login for group to take effect.")
 
 
-def run_hmi(client):
+def run_hmi(ssh: ParamikoSSHDriver) -> None:
     """Run HMI app on Pi display (DRM/KMS)."""
     step("RUN HMI ON TFT DISPLAY")
-    stop_lightdm(client)
-    unbind_console(client)
-    ensure_video_group(client)
+    stop_lightdm(ssh)
+    unbind_console(ssh)
+    ensure_video_group(ssh)
 
     print("\n  Launching display/app.py on Pi TFT (ili9486)...")
     print("  Press Ctrl+C to stop.\n")
@@ -255,131 +286,127 @@ def run_hmi(client):
         f"PYTHONPATH={PI_BASE} PYTHONUNBUFFERED=1 "
         f"{VENV_PY} -m display.app --api-url http://localhost:8000 --debug"
     )
-    stdin, stdout, stderr = client.exec_command(cmd, get_pty=True)
-
+    # Interactive session requires direct paramiko channel for pty
+    # Use the underlying paramiko client for interactive sessions
     try:
-        while True:
-            chunk = stdout.channel.recv(1024)
-            if not chunk:
-                break
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
+        ssh._client.exec_command(cmd, get_pty=True)
+        import time as _time
+        while ssh.is_connected():
+            _time.sleep(1)
     except KeyboardInterrupt:
         print("\n  Stopped by user")
-        # Send Ctrl+C to remote process
-        stdin.channel.send(b'\x03')
 
 
-def install_services(client):
+def install_services(ssh: ParamikoSSHDriver) -> None:
     """Install systemd services on Pi (backend + display)."""
-    sftp = client.open_sftp()
-
-    # Create systemd dir (recursive)
-    for d in ["config", "config/systemd"]:
-        try:
-            sftp.mkdir(f"{PI_BASE}/{d}")
-        except IOError:
-            pass
+    ssh.execute(f"mkdir -p {PI_BASE}/config/systemd", timeout=10)
 
     for svc_file in (CONFIG_DIR / "systemd").glob("*.service"):
         rel = str(svc_file.relative_to(ROOT)).replace("\\", "/")
         remote = f"{PI_BASE}/{rel}"
-        sftp.put(str(svc_file), remote)
+        ssh.transfer_file(str(svc_file), remote)
         print(f"  Uploaded {svc_file.name}")
 
-        svc_name = svc_file.name
-        target = f"/etc/systemd/system/{svc_name}"
-
-        # Copy to systemd
-        code, out, err = sh(client, f"sudo cp {remote} {target}")
+        target = f"/etc/systemd/system/{svc_file.name}"
+        ssh.execute(f"sudo cp {remote} {target}", timeout=10)
         print(f"  Installed {target}")
 
-    sftp.close()
-
     # Reload systemd
-    sh(client, "sudo systemctl daemon-reload")
+    ssh.execute("sudo systemctl daemon-reload", timeout=10)
     print("  systemd daemon-reload done")
 
     # Enable services
     for svc_file in (CONFIG_DIR / "systemd").glob("*.service"):
-        svc_name = svc_file.name
-        code, out, err = sh(client, f"sudo systemctl enable {svc_name}")
-        print(f"  Enable {svc_name}: {out.strip()}")
+        result = ssh.execute(
+            f"sudo systemctl enable {svc_file.name}",
+            timeout=10,
+        )
+        print(f"  Enable {svc_file.name}: {result.stdout.strip()}")
 
     # Disable lightdm so it doesn't conflict
-    code, out, err = sh(client, "sudo systemctl disable lightdm 2>&1 || echo 'already'")
-    print(f"  Disable lightdm: {out.strip()}")
+    result = ssh.execute(
+        "sudo systemctl disable lightdm 2>&1 || echo 'already'",
+        timeout=10,
+    )
+    print(f"  Disable lightdm: {result.stdout.strip()}")
 
     print("\n  [DONE] Services installed. Reboot to start HMI on TFT:")
-    print(f"    ssh pi@{HOST} sudo reboot")
+    print(f"    ssh {USER}@{HOST} sudo reboot")
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(description="RPi HMI deploy script")
-    p.add_argument("--run", action="store_true", help="Run display app on Pi (requires console)")
-    p.add_argument("--hmi", action="store_true", help="Stop lightdm, run HMI on Pi TFT display")
-    p.add_argument("--verify", action="store_true", help="Only verify, no deploy")
-    p.add_argument("--install-service", action="store_true", help="Install systemd services + disable lightdm")
+    p.add_argument("--run", action="store_true",
+                   help="Run display app on Pi (requires console)")
+    p.add_argument("--hmi", action="store_true",
+                   help="Stop lightdm, run HMI on Pi TFT display")
+    p.add_argument("--verify", action="store_true",
+                   help="Only verify, no deploy")
+    p.add_argument("--install-service", action="store_true",
+                   help="Install systemd services + disable lightdm")
     args = p.parse_args()
 
-    client = ssh()
-    print("[OK] Connected to", HOST)
+    ssh = connect_ssh()
+    deploy_svc = DeployService(ssh, remote_root=PI_BASE)
 
-    if args.verify:
-        step("VERIFICATION")
-        verify(client)
-        client.close()
-        return
+    try:
+        if args.verify:
+            step("VERIFICATION")
+            verify(ssh)
+            return
 
-    if args.install_service:
-        deploy(client)
-        deploy_scripts(client)
-        install_deps(client)
-        step("INSTALL SYSTEMD SERVICES")
-        install_services(client)
-        client.close()
-        return
+        if args.install_service:
+            # Deploy backend using DeployService
+            step("DEPLOY BACKEND")
+            deploy_svc.deploy_app(project_root=str(ROOT))
+            step("DEPLOY DISPLAY FILES")
+            deploy_display_files(ssh)
+            deploy_scripts(ssh)
+            step("INSTALL DEPS")
+            install_display_deps(ssh)
+            step("INSTALL SYSTEMD SERVICES")
+            install_services(ssh)
+            return
 
-    if args.hmi:
-        deploy(client)
-        deploy_scripts(client)
-        install_deps(client)
-        run_hmi(client)
-        client.close()
-        return
+        if args.hmi:
+            step("DEPLOY BACKEND")
+            deploy_svc.deploy_app(project_root=str(ROOT))
+            step("DEPLOY DISPLAY FILES")
+            deploy_display_files(ssh)
+            deploy_scripts(ssh)
+            step("INSTALL DEPS")
+            install_display_deps(ssh)
+            run_hmi(ssh)
+            return
 
-    # Default: deploy + verify
-    step("ENSURE BACKEND")
-    ensure_backend(client)
+        # Default: deploy + verify
+        step("ENSURE BACKEND")
+        ensure_backend(ssh)
 
-    step("DEPLOY FILES")
-    deploy(client)
-    deploy_scripts(client)
+        step("DEPLOY FILES (Backend)")
+        deploy_svc.deploy_app(project_root=str(ROOT))
+        step("DEPLOY FILES (Display)")
+        deploy_display_files(ssh)
+        deploy_scripts(ssh)
 
-    step("INSTALL DEPS")
-    install_deps(client)
+        step("INSTALL DEPS")
+        install_display_deps(ssh)
 
-    step("VERIFY")
-    verify(client)
+        step("VERIFY")
+        verify(ssh)
 
-    if args.run:
-        step("RUN DISPLAY APP (Ctrl+C to stop)")
-        print("  Running display/app.py on Pi...")
-        cmd = (
-            f"cd {PI_BASE} && PYTHONPATH={PI_BASE} {VENV_PY} display/app.py"
-        )
-        stdin, stdout, stderr = client.exec_command(cmd, get_pty=True)
-        try:
-            while True:
-                chunk = stdout.channel.recv(1024)
-                if not chunk:
-                    break
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.buffer.flush()
-        except KeyboardInterrupt:
-            print("\n  Stopped by user")
+        if args.run:
+            step("RUN DISPLAY APP (Ctrl+C to stop)")
+            print("  Running display/app.py on Pi...")
+            cmd = (
+                f"cd {PI_BASE} && PYTHONPATH={PI_BASE} {VENV_PY} "
+                f"display/app.py"
+            )
+            ssh.execute(cmd, timeout=600)
 
-    client.close()
+    finally:
+        ssh.disconnect()
+
     print("\n[DONE]")
 
 

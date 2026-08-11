@@ -9,7 +9,6 @@ Tipos TypeScript equivalentes: frontend/src/types/api.ts
 
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -30,7 +29,7 @@ class LedState(BaseModel):
 
     state: Annotated[bool, Field(description="True = encendido, False = apagado")]
     label: str = Field(description="Etiqueta: ENCENDIDO | APAGADO")
-    gpio_pin: Annotated[int, Field(default=17, ge=0, le=27, description="Pin BCM del GPIO")]
+    gpio_pin: Annotated[int, Field(default=0, ge=0, le=27, description="Pin BCM del GPIO (cargado desde devices.yaml)")]
 
     @property
     def is_on(self) -> bool:
@@ -107,6 +106,7 @@ class SystemStatus(BaseModel):
         button: ButtonState,
         display: DisplayInfo | None,
         ws_count: int,
+        uptime_seconds: float,
     ) -> SystemStatus:
         """Factory method desde los componentes individuales.
 
@@ -114,7 +114,8 @@ class SystemStatus(BaseModel):
             led: Estado del LED desde StateManager.
             button: Estado del boton desde StateManager.
             display: Info del display o None.
-            ws_count: Clientes WebSocket activos.
+            ws_count: Clientes WebSocket activos (unicos).
+            uptime_seconds: Segundos desde el arranque del servicio.
 
         Returns:
             SystemStatus con timestamp UTC actual.
@@ -123,7 +124,7 @@ class SystemStatus(BaseModel):
             led=led,
             button=button,
             display=display,
-            uptime_seconds=time.monotonic(),
+            uptime_seconds=uptime_seconds,
             cpu_temp_celsius=cls._read_cpu_temp(),
             websocket_clients=ws_count,
             timestamp=datetime.now(timezone.utc),

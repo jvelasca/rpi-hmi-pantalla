@@ -70,8 +70,8 @@ scripts/pi_direct.py
 scripts/pi_display_setup.py
 scripts/fix_display.py
 
-# ── Terminal state (Cursor IDE) ──
-terminals/
+# ── TypeScript build cache ──
+*.tsbuildinfo
 
 # ── Agent transcripts (Cursor IDE) ──
 agent-transcripts/

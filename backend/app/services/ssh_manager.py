@@ -177,7 +177,7 @@ class ParamikoSSHDriver(SSHDriver):
     Ejemplo::
 
         ssh = ParamikoSSHDriver()
-        ssh.connect("192.168.1.100", "pi", "RaspberryB+2026!")
+        ssh.connect("192.168.1.100", "pi", password="your_password")
         result = ssh.execute("uname -a")
         print(result.stdout)
         ssh.disconnect()
@@ -228,7 +228,10 @@ class ParamikoSSHDriver(SSHDriver):
 
         try:
             self._client = paramiko.SSHClient()
-            self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # WarningPolicy: acepta la clave pero advierte. En red local es aceptable.
+            # Para entornos con requisitos estrictos, usar RejectPolicy + known_hosts.
+            self._client.set_missing_host_key_policy(paramiko.WarningPolicy())
+            logger.info("Politica SSH: WarningPolicy (se advierte si la host key es desconocida)")
 
             connect_kwargs = {
                 "hostname": host,

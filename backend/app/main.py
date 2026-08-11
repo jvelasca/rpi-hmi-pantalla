@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api import hmi_router, ws_router
+from backend.app.api import hmi_router, ws_router, admin_ssh_router, admin_deploy_router
 from backend.app.config import settings
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
@@ -53,10 +53,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("  RPi HMI Backend iniciando...")
     logger.info("=" * 50)
 
-    # Configurar GPIO
+    # Configurar GPIO — leer pin desde devices.yaml (fuente unica de verdad)
     try:
-        gpio_service.setup_output(17)
-        logger.info("GPIO 17 configurado como salida (LED)")
+        from backend.app.services.gpio_service import load_devices
+
+        devices = load_devices("backend/config/devices.yaml")
+        led_pin = 0
+        for dev_id, dev in devices.items():
+            if dev.config.get("driver") == "gpio" and dev.config.get("mode") == "output":
+                led_pin = int(dev.config.get("pin", 0))
+                logger.info("Dispositivo GPIO detectado: %s en pin %d", dev_id, led_pin)
+                break
+
+        if led_pin > 0:
+            gpio_service.setup_output(led_pin)
+            logger.info("GPIO %d configurado como salida (LED)", led_pin)
+        else:
+            logger.warning("No se encontro pin GPIO output en devices.yaml")
+            led_pin = 17  # fallback compatible
 
         # Conectar StateManager con GPIO via callback
         def _update_led(device: str, led_state: object) -> None:
@@ -96,27 +110,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 # ── App ───────────────────────────────────────────────────────
 
+# Deshabilitar docs en produccion segun configuracion
+_docs_url = "/docs" if settings.enable_docs else None
+_redoc_url = "/redoc" if settings.enable_docs else None
+
 app = FastAPI(
     title="RPi HMI Backend",
     description="Backend para panel de control HMI en Raspberry Pi. Controla GPIO, display fisico y expone API REST + WebSocket.",
     version="0.2.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
 )
 
-# CORS
+# CORS — origenes controlados desde configuracion
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Accept"],
 )
 
-# Routers
+# Routers HMI (sin autenticacion, acceso LAN)
 app.include_router(hmi_router)
 app.include_router(ws_router)
+
+# Routers administrativos (requieren API key)
+app.include_router(admin_ssh_router)
+app.include_router(admin_deploy_router)
 
 # ── Endpoints raiz ───────────────────────────────────────────
 
@@ -147,7 +169,7 @@ async def root() -> FileResponse:
         content={
             "message": "RPi HMI Backend",
             "version": "0.2.0",
-            "docs": "/docs",
+            "docs": "/docs" if settings.enable_docs else "deshabilitado",
             "api": "/api/status",
             "websocket": "/ws",
             "frontend": "No compilado. Ejecuta: cd frontend && npm run build",

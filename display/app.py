@@ -30,7 +30,6 @@ import signal
 import sys
 import threading
 import time
-from pathlib import Path
 
 import requests
 
@@ -112,9 +111,14 @@ class DisplayApp:
                 screen_width=BASE_WIDTH,
                 screen_height=BASE_HEIGHT,
             )
-            if mock and not self.touch.available:
+            if self.touch.available:
+                self.touch.on_touch_down = self._handle_touch_down
+                self.touch.on_touch_up = self._handle_touch_up
+                self.touch.on_touch_move = self._handle_touch_move
+                logger.info("Touch handler conectado en %s", self.touch.device_path)
+            elif mock:
                 logger.info("Modo mock: usando mouse como touch")
-            elif not self.touch.available:
+            else:
                 logger.warning("Touch no disponible")
 
         # Widgets
@@ -123,7 +127,11 @@ class DisplayApp:
         # WebSocket background thread
         self._ws_thread: threading.Thread | None = None
         self._ws_lock = threading.Lock()
-        self._ws_pending_updates: list[dict] = []
+        self._ws_dirty: bool = False  # WS thread signals new data available
+
+        # Button press feedback (non-blocking)
+        self._button_press_frame: int = -1
+        self._button_press_duration: int = 2  # frames
 
     # ── Layout ──────────────────────────────────────────────────
 
@@ -181,11 +189,8 @@ class DisplayApp:
     def _on_press_button(self) -> None:
         """Callback: el usuario tocó el botón principal."""
         logger.debug("Button press solicitado")
-        # Mostrar feedback visual inmediato
         self.button.pressed = True
-        self._render()
-        time.sleep(0.08)
-        self.button.pressed = False
+        self._button_press_frame = 0
 
         self._api_post("/api/button/press")
         self._sync_state()
@@ -281,11 +286,7 @@ class DisplayApp:
                     self.led_on = led_d.get("state", self.led_on)
                     self.led_label = led_d.get("label", self.led_label)
                     self.press_count = btn_d.get("press_count", self.press_count)
-
-                # Aplicar a widgets (se renderizan en el hilo principal)
-                self.led.on = self.led_on
-                self.led.label = self.led_label
-                self.button.press_count = self.press_count
+                self._ws_dirty = True
 
         def on_error(ws: WebSocketApp, error: Exception) -> None:
             logger.debug("WS error: %s", error)
@@ -361,10 +362,9 @@ class DisplayApp:
         logger.info("  ESC para salir")
 
         frame_count = 0
-        touch_pending = False
 
         while self.running:
-            dt = self.screen.tick(self.fps)
+            self.screen.tick(self.fps)
             dirty = False
 
             # ── Eventos Pygame (teclado, quit) ──
@@ -384,6 +384,18 @@ class DisplayApp:
             if self.touch and self.touch.available:
                 self.touch.poll()
 
+            # ── Aplicar estado recibido via WebSocket ──
+            if self._apply_ws_state():
+                dirty = True
+
+            # ── Liberar boton tras feedback visual ──
+            if self._button_press_frame >= 0:
+                self._button_press_frame += 1
+                if self._button_press_frame >= self._button_press_duration:
+                    self.button.pressed = False
+                    self._button_press_frame = -1
+                    dirty = True
+
             # ── Sincronizacion periodica con backend ──
             now = time.time()
             if now - self._last_sync > self._sync_interval:
@@ -397,7 +409,8 @@ class DisplayApp:
             # ── Actualizar status bar ──
             self.status_bar.time_str = time.strftime("%H:%M:%S")
             self.status_bar.backend_connected = self.backend_connected
-            self.status_bar.ws_connected = self.ws_connected
+            with self._ws_lock:
+                self.status_bar.ws_connected = self.ws_connected
             self.status_bar.fps = self.screen.get_fps()
 
             # ── Renderizar ──
@@ -416,6 +429,43 @@ class DisplayApp:
             if widget.hit_test(screen_x, screen_y):
                 widget.on_touch(screen_x, screen_y)
                 break
+
+    def _handle_touch_down(self, screen_x: int, screen_y: int) -> None:
+        """Manejador de touch down desde el driver evdev."""
+        self._dispatch_touch(screen_x, screen_y)
+
+    def _handle_touch_up(self, screen_x: int, screen_y: int) -> None:
+        """Manejador de touch up desde el driver evdev."""
+        pass  # Los widgets manejan solo touch-down por simplicidad
+
+    def _handle_touch_move(self, screen_x: int, screen_y: int) -> None:
+        """Manejador de touch move desde el driver evdev."""
+        pass  # No se usa arrastre en esta UI
+
+    def _apply_ws_state(self) -> bool:
+        """Aplica el estado recibido via WebSocket a los widgets.
+
+        Solo debe llamarse desde el hilo principal. Devuelve True si hubo cambios.
+        """
+        changed = False
+        with self._ws_lock:
+            if not self._ws_dirty:
+                return False
+            self._ws_dirty = False
+            # Copiar estado bajo lock
+            led_on = self.led_on
+            led_label = self.led_label
+            press_count = self.press_count
+
+        # Fuera del lock: aplicar a widgets (solo hilo principal)
+        if self.led.on != led_on or self.led.label != led_label:
+            self.led.on = led_on
+            self.led.label = led_label
+            changed = True
+        if self.button.press_count != press_count:
+            self.button.press_count = press_count
+            changed = True
+        return changed
 
     # ── Limpieza ────────────────────────────────────────────────
 

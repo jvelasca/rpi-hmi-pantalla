@@ -20,8 +20,8 @@ import mmap
 import struct
 import pytest
 
-# Añadir proyecto al path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Añadir proyecto al path (fb_ui está en legacy/)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "legacy"))
 import fb_ui
 
 

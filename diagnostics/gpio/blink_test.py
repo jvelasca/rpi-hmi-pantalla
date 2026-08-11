@@ -5,13 +5,15 @@ blink_test.py
 Prueba de parpadeo basada en el registro de dispositivos declarativo
 (`backend/config/devices.yaml`).
 
+Utiliza el GPIOService unificado y la funcion load_devices para
+resolver pines desde YAML sin hardcodear numeros de pin.
+
 Ejemplo de uso:
   python3 diagnostics/gpio/blink_test.py led1 --times 3
 
 El test usa MockGPIODriver por defecto para evitar tocar hardware
-accidentalmente durante la fase de diseño. Cuando se implemente
-RealGPIODriver, el script se podrá ejecutar en la Raspberry con
-permisos adecuados.
+accidentalmente durante la fase de diseno. Cuando se ejecuta en una
+Raspberry Pi, GPIOService detecta automaticamente el hardware real.
 """
 from __future__ import annotations
 
@@ -21,7 +23,11 @@ import time
 from pathlib import Path
 from typing import Dict
 
-from backend.app.hardware.hal import load_devices, MockGPIODriver, GPIODriver
+from backend.app.services.gpio_service import (
+    GPIOService,
+    MockGPIODriver,
+    load_devices,
+)
 
 logger = logging.getLogger("diagnostics.gpio.blink")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -37,7 +43,14 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def blink_test(device_id: str, devices_path: Path, times: int, on_time: float, off_time: float, driver: GPIODriver | None = None) -> None:
+def blink_test(
+    device_id: str,
+    devices_path: Path,
+    times: int,
+    on_time: float,
+    off_time: float,
+    gpio_service: GPIOService | None = None,
+) -> None:
     devices: Dict[str, object] = load_devices(str(devices_path))
     if device_id not in devices:
         raise SystemExit(f"Device {device_id} not found in {devices_path}")
@@ -48,21 +61,21 @@ def blink_test(device_id: str, devices_path: Path, times: int, on_time: float, o
 
     pin = int(dev.config.get("pin"))
 
-    if driver is None:
-        driver = MockGPIODriver()
+    if gpio_service is None:
+        gpio_service = GPIOService(driver=MockGPIODriver())
 
     logger.info("Setting up pin %s as output", pin)
-    driver.setup_output(pin)
+    gpio_service.setup_output(pin)
 
     for i in range(times):
         logger.info("Blink %d/%d: ON", i + 1, times)
-        driver.set_high(pin)
+        gpio_service.set_state(pin, True)
         time.sleep(on_time)
         logger.info("Blink %d/%d: OFF", i + 1, times)
-        driver.set_low(pin)
+        gpio_service.set_state(pin, False)
         time.sleep(off_time)
 
-    driver.cleanup()
+    gpio_service.cleanup()
     logger.info("Blink test finished for %s", device_id)
 
 

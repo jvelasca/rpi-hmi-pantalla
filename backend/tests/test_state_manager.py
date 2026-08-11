@@ -159,3 +159,43 @@ class TestSubscriptions:
         state_manager.set_led(True)
         # El mock no recibe mas mensajes porque se desuscribio
         assert len(ws.sent) == 1  # Solo el status_update inicial
+
+    @pytest.mark.asyncio
+    async def test_ws_count_counts_unique_clients(self):
+        """ws_count cuenta clientes unicos, no subscribers por topic."""
+        ws1 = MockWebSocket()
+        ws2 = MockWebSocket()
+
+        # Suscribir ws1 a led y button, ws2 solo a led
+        from backend.app.models.events import SubscriptionTopic
+        await state_manager.subscribe(ws1, topics=[SubscriptionTopic.LED, SubscriptionTopic.BUTTON])
+        await state_manager.subscribe(ws2, topics=[SubscriptionTopic.LED])
+
+        status = state_manager.get_status()
+        # Deben ser 2 clientes unicos, no 3 (led+button+led)
+        assert status.websocket_clients == 2
+
+    @pytest.mark.asyncio
+    async def test_ws_count_zero_with_no_clients(self):
+        """ws_count debe ser 0 sin clientes."""
+        status = state_manager.get_status()
+        assert status.websocket_clients == 0
+
+
+class TestUptime:
+    """Validacion del uptime del servicio."""
+
+    def test_uptime_starts_at_zero_or_near(self):
+        """Uptime debe ser >= 0 justo despues del init."""
+        status = state_manager.get_status()
+        assert status.uptime_seconds >= 0
+        # Recien iniciado debe ser pequeno (< 5 segundos)
+        assert status.uptime_seconds < 5
+
+    def test_uptime_increases_over_time(self):
+        """Uptime debe aumentar con el tiempo."""
+        import time
+        status1 = state_manager.get_status()
+        time.sleep(0.1)
+        status2 = state_manager.get_status()
+        assert status2.uptime_seconds > status1.uptime_seconds

@@ -279,8 +279,7 @@ class DeployService:
 
         # 1. Crear estructura de directorios
         t0 = time.time()
-        result = self.ssh.execute(f"mkdir -p {self.remote_root}/backend/app/hardware "
-                                  f"{self.remote_root}/backend/app/services "
+        result = self.ssh.execute(f"mkdir -p {self.remote_root}/backend/app/services "
                                   f"{self.remote_root}/backend/app/api "
                                   f"{self.remote_root}/backend/config "
                                   f"{self.remote_root}/diagnostics/gpio "
@@ -366,8 +365,6 @@ class DeployService:
         files_to_deploy = [
             ("backend/app/main.py", "backend/app/main.py"),
             ("backend/app/config.py", "backend/app/config.py"),
-            ("backend/app/hardware/__init__.py", "backend/app/hardware/__init__.py"),
-            ("backend/app/hardware/hal.py", "backend/app/hardware/hal.py"),
             ("backend/app/services/__init__.py", "backend/app/services/__init__.py"),
             ("backend/app/services/ssh_manager.py", "backend/app/services/ssh_manager.py"),
             ("backend/app/services/deploy_service.py", "backend/app/services/deploy_service.py"),

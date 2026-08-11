@@ -57,6 +57,10 @@ class ClientMessage(BaseModel):
         >>> ClientMessage(type="subscribe", topics=["led", "button"])
     """
 
+    version: Annotated[
+        str,
+        Field(default="1.0", description="Version del protocolo WebSocket"),
+    ]
     type: Annotated[
         Literal[
             "toggle_led",
@@ -99,6 +103,10 @@ class ServerMessage(BaseModel):
         >>> ServerMessage(type="error", data={"code": "GPIO_BUSY", "message": "GPIO 17 ocupado"})
     """
 
+    version: Annotated[
+        str,
+        Field(default="1.0", description="Version del protocolo WebSocket"),
+    ]
     type: Annotated[
         Literal[
             "status_update",

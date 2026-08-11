@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from typing import Any
 
 from backend.app.models.events import ServerMessage, SubscriptionTopic
@@ -43,11 +44,38 @@ class StateManager:
 
     def __init__(self) -> None:
         self._lock: threading.Lock = threading.Lock()
-        self._led_state: LedState = LedState(state=False, label="APAGADO", gpio_pin=17)
+        self._start_time: float = time.monotonic()
+        # Cargar pin desde devices.yaml (fuente unica de verdad)
+        pin = self._load_led_pin()
+        self._led_state: LedState = LedState(state=False, label="APAGADO", gpio_pin=pin)
         self._button_state: ButtonState = ButtonState(pressed=False, press_count=0)
         self._display_info: DisplayInfo | None = None
         self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
+
+    @staticmethod
+    def _load_led_pin() -> int:
+        """Carga el pin del LED desde devices.yaml.
+
+        Busca el primer dispositivo con driver=gpio y mode=output
+        en backend/config/devices.yaml.
+
+        Returns:
+            Numero de pin BCM, o 0 como fallback si no se encuentra.
+        """
+        try:
+            from backend.app.services.gpio_service import load_devices
+
+            devices = load_devices("backend/config/devices.yaml")
+            for dev_id, dev in devices.items():
+                if dev.config.get("driver") == "gpio" and dev.config.get("mode") == "output":
+                    pin = int(dev.config.get("pin", 0))
+                    logger.info("Pin LED cargado desde devices.yaml: %s -> GPIO %d", dev_id, pin)
+                    return pin
+            logger.warning("No se encontro dispositivo GPIO output en devices.yaml")
+        except Exception:
+            logger.warning("No se pudo cargar devices.yaml, usando pin 0 como fallback")
+        return 0
 
     # ── Propiedades thread-safe ────────────────────────────────
 
@@ -164,11 +192,15 @@ class StateManager:
             SystemStatus con todos los subsistemas.
         """
         with self._lock:
+            # Clientes unicos (set comprehension sobre todos los topics)
+            unique_clients = {ws for subs in self._subscribers.values() for ws in subs}
+            uptime = time.monotonic() - self._start_time
             return SystemStatus.from_manager(
                 led=self._led_state,
                 button=self._button_state,
                 display=self._display_info,
-                ws_count=sum(len(v) for v in self._subscribers.values()),
+                ws_count=len(unique_clients),
+                uptime_seconds=uptime,
             )
 
     # ── Suscripciones WebSocket ────────────────────────────────

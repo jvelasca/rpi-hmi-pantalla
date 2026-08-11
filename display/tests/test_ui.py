@@ -406,3 +406,315 @@ class TestLayoutSmoke:
         assert "ButtonWidget" in results
         # LED no deberia capturar en el centro del boton
         assert not led.hit_test(btn_cx, btn_cy), "LED no deberia capturar touch en area del boton"
+
+
+# ═══════════════════════════════════════════════════════════════
+# FASE 3: Thread-safety, touch dispatch, button feedback
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestDisplayAppThreadSafety:
+    """Pruebas de thread-safety del DisplayApp (FASE 3)."""
+
+    def test_apply_ws_state_no_dirty_returns_false(self, surface):
+        """_apply_ws_state retorna False cuando _ws_dirty es False."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        app._ws_lock = MagicMock()
+        # Simular lock como context manager real
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+
+        app.led = MagicMock()
+        app.button = MagicMock()
+
+        result = app._apply_ws_state()
+        assert result is False
+
+    def test_apply_ws_state_applies_led_changes(self, surface):
+        """_apply_ws_state aplica cambios de LED a widgets bajo lock."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget, LedIndicator
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+
+        # Estado compartido simulado (WS thread ya escribio)
+        app.led_on = True
+        app.led_label = "ENCENDIDO"
+        app.press_count = 5
+        app._ws_dirty = True
+
+        # Widgets reales (sin inicializar via __init__ completo)
+        app.led = LedIndicator(10, 50, 180, 230)
+        app.led.on = False
+        app.led.label = "APAGADO"
+        app.button = ButtonWidget(260, 50, 180, 230)
+        app.button.press_count = 0
+
+        result = app._apply_ws_state()
+        assert result is True
+        assert app.led.on is True
+        assert app.led.label == "ENCENDIDO"
+        assert app.button.press_count == 5
+        assert app._ws_dirty is False  # dirty flag se limpia
+
+    def test_apply_ws_state_no_changes_returns_false(self, surface):
+        """_apply_ws_state retorna False cuando el estado no cambio."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget, LedIndicator
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+
+        app.led_on = False
+        app.led_label = "APAGADO"
+        app.press_count = 0
+        app._ws_dirty = True
+
+        app.led = LedIndicator(10, 50, 180, 230)
+        app.led.on = False
+        app.led.label = "APAGADO"
+        app.button = ButtonWidget(260, 50, 180, 230)
+        app.button.press_count = 0
+
+        result = app._apply_ws_state()
+        assert result is False  # No hubo cambios
+        assert app._ws_dirty is False  # dirty flag igual se limpia
+
+
+class TestDisplayAppTouchDispatch:
+    """Pruebas de dispatch tactil del DisplayApp (FASE 3)."""
+
+    def test_handle_touch_down_dispatches_to_led(self, surface):
+        """_handle_touch_down despacha al LED correctamente."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import LedIndicator
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+
+        app.led = LedIndicator(10, 50, 180, 230)
+        toggled = []
+
+        def on_toggle():
+            toggled.append(True)
+
+        app.led.set_on_toggle(on_toggle)
+        app.button = MagicMock()
+        app.button.hit_test.return_value = False  # No capturar en area del LED
+
+        app._interactive_widgets = [app.button, app.led]
+
+        # Tocar en el area del boton toggle del LED
+        # LedIndicator: x=10, y=50, w=180, h=230
+        # _btn_rect = (10+10=20, 50+230-28-5=247, 160, 28)
+        # Centro: (20+80=100, 247+14=261)
+        btn_x = 100
+        btn_y = 261
+
+        app._handle_touch_down(btn_x, btn_y)
+        assert len(toggled) == 1
+
+    def test_handle_touch_down_dispatches_to_button(self, surface):
+        """_handle_touch_down despacha al boton correctamente."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+        app._button_press_frame = -1
+
+        app.led = MagicMock()
+        app.led.hit_test.return_value = False  # No capturar en area del boton
+        app.button = ButtonWidget(260, 50, 180, 230)
+        pressed = []
+
+        def on_press():
+            pressed.append(True)
+            app.button.pressed = True
+
+        app.button.set_on_press(on_press)
+
+        app._interactive_widgets = [app.button, app.led]
+
+        # Tocar en el centro del boton
+        cx = 260 + 90
+        cy = 50 + 20 + (230 - 20) // 2 - 5
+
+        app._handle_touch_down(cx, cy)
+        assert len(pressed) == 1
+        assert app.button.pressed is True
+
+    def test_handle_touch_down_miss_no_dispatch(self, surface):
+        """Touch fuera de widgets no activa ningun callback."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget, LedIndicator
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+
+        app.led = LedIndicator(10, 50, 180, 230)
+        app.button = ButtonWidget(260, 50, 180, 230)
+
+        led_toggled = []
+        btn_pressed = []
+
+        app.led.set_on_toggle(lambda: led_toggled.append(True))
+        app.button.set_on_press(lambda: btn_pressed.append(True))
+
+        app._interactive_widgets = [app.button, app.led]
+
+        # Tocar fuera de cualquier widget
+        app._handle_touch_down(0, 0)
+        assert len(led_toggled) == 0
+        assert len(btn_pressed) == 0
+
+
+class TestDisplayAppButtonFeedback:
+    """Pruebas de feedback no-bloqueante del boton (FASE 3)."""
+
+    def test_button_press_sets_frame_counter(self, surface):
+        """_on_press_button inicia el contador de frames."""
+        from unittest.mock import MagicMock, patch
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+        app.api_url = "http://localhost:8000"
+        app.backend_connected = True
+
+        app.button = ButtonWidget(260, 50, 180, 230)
+        app.button.pressed = False
+        app._button_press_frame = -1
+        app._button_press_duration = 2
+        app.led = MagicMock()
+        app.status_bar = MagicMock()
+
+        # Mockear las llamadas REST
+        with patch.object(app, '_api_post', return_value={"status": "ok"}), \
+             patch.object(app, '_sync_state'):
+            app._on_press_button()
+
+        assert app.button.pressed is True
+        assert app._button_press_frame == 0
+
+    def test_button_feedback_releases_after_duration(self, surface):
+        """El boton se libera tras _button_press_duration frames."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+        app._ws_dirty = False
+
+        app.button = ButtonWidget(260, 50, 180, 230)
+        app.button.pressed = True
+        app._button_press_frame = 0
+        app._button_press_duration = 2
+        app.led = MagicMock()
+
+        # Frame 0: pressed=True, frame=0
+        assert app._button_press_frame == 0
+
+        # Simular frame 1: incrementa pero no libera
+        app._button_press_frame += 1
+        assert app.button.pressed is True
+
+        # Simular frame 2: libera
+        app._button_press_frame += 1
+        if app._button_press_frame >= app._button_press_duration:
+            app.button.pressed = False
+            app._button_press_frame = -1
+
+        assert app.button.pressed is False
+        assert app._button_press_frame == -1
+
+    def test_button_feedback_does_not_release_early(self, surface):
+        """El boton no se libera antes de la duracion."""
+        from unittest.mock import MagicMock
+
+        from display.app import DisplayApp
+        from display.ui.widgets import ButtonWidget
+
+        app = DisplayApp.__new__(DisplayApp)
+        app.screen = MagicMock()
+        app.screen.width = 480
+        app.screen.height = 320
+        import threading
+        app._ws_lock = threading.Lock()
+
+        app.button = ButtonWidget(260, 50, 180, 230)
+        app.button.pressed = True
+        app._button_press_frame = 0
+        app._button_press_duration = 3  # 3 frames
+
+        # Frame 1
+        app._button_press_frame += 1
+        assert app.button.pressed is True, "No deberia liberarse en frame 1"
+
+        # Frame 2
+        app._button_press_frame += 1
+        assert app.button.pressed is True, "No deberia liberarse en frame 2"
+
+        # Frame 3 — libera
+        app._button_press_frame += 1
+        if app._button_press_frame >= app._button_press_duration:
+            app.button.pressed = False
+            app._button_press_frame = -1
+
+        assert app.button.pressed is False
+        assert app._button_press_frame == -1
