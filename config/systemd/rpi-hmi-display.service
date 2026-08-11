@@ -1,0 +1,34 @@
+[Unit]
+Description=RPi HMI Display (Pygame DRM/KMS)
+Documentation=https://github.com/user/rpi_hmi
+After=network.target rpi-hmi-backend.service
+Wants=network.target rpi-hmi-backend.service
+Requires=rpi-hmi-backend.service
+Conflicts=lightdm.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/rpi_hmi
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_KMSDRM_DEVICE_INDEX=0
+Environment=SDL_RENDER_DRIVER=software
+Environment=PYTHONPATH=/home/pi/rpi_hmi
+Environment=PYTHONUNBUFFERED=1
+
+# Dar tiempo al backend para estar listo
+ExecStartPre=/bin/sleep 3
+
+# Desvincular consola virtual de fb1 (ili9486) para que no escriba en la TFT
+ExecStartPre=/bin/sh -c 'test -w /sys/class/vtconsole/vtcon1/bind && echo 0 > /sys/class/vtconsole/vtcon1/bind || true'
+
+# Lanzar la app HMI en la TFT (ili9486)
+ExecStart=/home/pi/rpi_hmi/venv/bin/python3 -m display.app --api-url http://localhost:8000
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,77 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.eggs/
+
+# ── Virtual environments ──
+venv/
+.venv/
+env/
+.env
+
+# ── IDE / Editor ──
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Environment / Secrets ──
+.env
+!.env.example
+
+# ── Frontend ──
+node_modules/
+frontend/dist/
+
+# ── Testing / Coverage ──
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── MyPy ──
+.mypy_cache/
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+
+# ── Temporary / Logs ──
+*.log
+/tmp/
+*.tar.gz
+
+# ── PowerShell temp scripts ──
+scripts/*_diagnostic.ps1
+scripts/*_check.ps1
+scripts/*_test.py
+scripts/debug_imports.py
+scripts/final_*.py
+scripts/install_test.py
+scripts/sync_test.py
+scripts/*recheck*.py
+scripts/*diagnose*.py
+scripts/*verify_and_reboot*.py
+scripts/check_deploy.py
+scripts/check_drm_users.py
+scripts/deploy_display.py
+scripts/pi_direct.py
+scripts/pi_display_setup.py
+scripts/fix_display.py
+
+# ── Terminal state (Cursor IDE) ──
+terminals/
+
+# ── Agent transcripts (Cursor IDE) ──
+agent-transcripts/

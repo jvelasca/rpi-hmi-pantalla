@@ -1,0 +1,46 @@
+/**
+ * Header — Barra superior con titulo y estado de conexion.
+ */
+
+interface HeaderProps {
+  connected: boolean;
+  wsClients: number;
+}
+
+export function Header(props: HeaderProps) {
+  return (
+    <header class="bg-[#0f0f23] border-b border-[#1a1a3e] px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-[#e94560] font-bold text-lg tracking-wider">
+          RASPBERRY HMI
+        </span>
+        <span class="text-gray-600 text-xs">v3.0</span>
+      </div>
+
+      <div class="flex items-center gap-4">
+        {/* Estado display */}
+        <span class="text-gray-500 text-xs">Display OK</span>
+
+        {/* WebSocket status */}
+        <div class="flex items-center gap-1.5">
+          <span
+            class="w-2 h-2 rounded-full"
+            classList={{
+              "bg-green-500 animate-pulse": props.connected,
+              "bg-red-500": !props.connected,
+            }}
+          />
+          <span
+            class="text-xs font-mono"
+            classList={{
+              "text-green-500": props.connected,
+              "text-red-400": !props.connected,
+            }}
+          >
+            {props.connected ? `WS:${props.wsClients}` : "WS:--"}
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+}

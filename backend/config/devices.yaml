@@ -1,0 +1,10 @@
+# devices.yaml
+# Registro declarativo de dispositivos. Nunca hardcodear pines en la
+# aplicación: referenciar dispositivos por su id.
+
+devices:
+  led1:
+    name: "LED 1"
+    driver: "gpio"
+    pin: 17
+    mode: output
