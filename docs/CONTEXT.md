@@ -7,11 +7,11 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-11 (16:38 – 17:05)
+- **Fecha:** 2026-08-11 (17:11 – 17:22)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
 - **Branch:** main
-- **Trabajo actual:** Fase 4 completada. Servicios systemd instalados. HMI arranca automaticamente al boot en la TFT.
-  - Siguiente: Fase 5 — GitHub Actions, pre-commit, badges.
+- **Trabajo actual:** GitHub repo creado y push realizado. Proyecto público en https://github.com/jvelasca/rpi-hmi-pantalla.
+  - Siguiente: Fase 5 — GitHub Actions (CI), pre-commit hooks, badges dinámicos.
 
 ## Estado actual
 
