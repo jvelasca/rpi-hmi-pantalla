@@ -39,20 +39,18 @@ class TestPersistence:
 
     async def test_save_and_get_led(self, db):
         """Guarda y recupera el estado del LED."""
-        await db.save_led(state=True, gpio_pin=17)
-        state, pin = await db.get_led()
+        await db.save_led(state=True)
+        state = await db.get_led()
         assert state is True
-        assert pin == 17
 
-        await db.save_led(state=False, gpio_pin=17)
-        state, pin = await db.get_led()
+        await db.save_led(state=False)
+        state = await db.get_led()
         assert state is False
 
     async def test_get_led_defaults_on_first_run(self, db):
-        """Antes de guardar, get_led devuelve False/0."""
-        state, pin = await db.get_led()
+        """Antes de guardar, get_led devuelve False."""
+        state = await db.get_led()
         assert state is False
-        assert pin == 0
 
     async def test_save_and_get_button_count(self, db):
         """Guarda y recupera el contador de pulsaciones."""
@@ -132,3 +130,13 @@ class TestHealthEndpoint:
         for name, check in r.json()["checks"].items():
             assert check["status"] in ("pass", "warn", "fail"), f"{name}: status={check['status']}"
             assert isinstance(check["message"], str), f"{name}: message no es string"
+
+    def test_health_live_returns_200(self, client):
+        """GET /health/live siempre devuelve 200."""
+        r = client.get("/health/live")
+        assert r.status_code == 200
+
+    def test_health_ready_accessible(self, client):
+        """GET /health/ready es accesible."""
+        r = client.get("/health/ready")
+        assert r.status_code in (200, 503)

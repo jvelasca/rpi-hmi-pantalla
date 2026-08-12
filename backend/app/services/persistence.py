@@ -57,11 +57,12 @@ class Persistence:
         await self._conn.execute("PRAGMA journal_mode=WAL")
 
         # Crear tablas si no existen
+        # NOTA: gpio_pin NO se almacena en BD — la fuente unica de verdad
+        #       del hardware es devices.yaml, nunca SQLite.
         await self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS led_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 state INTEGER NOT NULL DEFAULT 0,
-                gpio_pin INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
             );
 
@@ -79,8 +80,8 @@ class Persistence:
             );
 
             -- Insertar filas iniciales si no existen
-            INSERT OR IGNORE INTO led_state (id, state, gpio_pin, updated_at)
-                VALUES (1, 0, 0, datetime('now'));
+            INSERT OR IGNORE INTO led_state (id, state, updated_at)
+                VALUES (1, 0, datetime('now'));
 
             INSERT OR IGNORE INTO button_state (id, press_count, updated_at)
                 VALUES (1, 0, datetime('now'));
@@ -98,34 +99,39 @@ class Persistence:
 
     # ── LED ────────────────────────────────────────────────────
 
-    async def get_led(self) -> tuple[bool, int]:
+    async def get_led(self) -> bool:
         """Recupera el estado del LED desde la BD.
 
+        La BD solo guarda el estado booleano (ON/OFF).
+        El pin GPIO se obtiene exclusivamente de devices.yaml.
+
         Returns:
-            (state, gpio_pin): state es True si encendido, gpio_pin es el pin BCM.
+            state: True si encendido, False si apagado.
         """
         if not self._conn:
-            return False, 0
+            return False
         cursor = await self._conn.execute(
-            "SELECT state, gpio_pin FROM led_state WHERE id = 1"
+            "SELECT state FROM led_state WHERE id = 1"
         )
         row = await cursor.fetchone()
         if row is None:
-            return False, 0
-        return bool(row[0]), int(row[1])
+            return False
+        return bool(row[0])
 
-    async def save_led(self, state: bool, gpio_pin: int) -> None:
+    async def save_led(self, state: bool) -> None:
         """Guarda el estado del LED en la BD.
+
+        Solo persiste el estado booleano. El pin GPIO NO se guarda
+        en BD — la fuente unica de verdad del hardware es devices.yaml.
 
         Args:
             state: True si encendido.
-            gpio_pin: Numero de pin BCM.
         """
         if not self._conn:
             return
         await self._conn.execute(
-            "UPDATE led_state SET state = ?, gpio_pin = ?, updated_at = ? WHERE id = 1",
-            (1 if state else 0, gpio_pin, datetime.now(timezone.utc).isoformat()),
+            "UPDATE led_state SET state = ?, updated_at = ? WHERE id = 1",
+            (1 if state else 0, datetime.now(timezone.utc).isoformat()),
         )
         await self._conn.commit()
 

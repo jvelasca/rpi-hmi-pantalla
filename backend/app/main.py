@@ -58,7 +58,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from backend.app.services.gpio_service import load_devices
         from backend.app.models.device import DeviceType
 
-        devices = load_devices("backend/config/devices.yaml")
+        # Usar ruta absoluta relativa a este archivo (main.py)
+        devices_path = str(
+            Path(__file__).resolve().parents[1] / "config" / "devices.yaml"
+        )
+        devices = load_devices(devices_path)
         led_pin = 0
         for dev_id, dev in devices.items():
             if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:

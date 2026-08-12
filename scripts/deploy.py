@@ -6,6 +6,8 @@ or from RPI_HOST, RPI_USER, RPI_PASSWORD, RPI_PORT env vars.
 Uses the project's own SSHDriver and DeployService instead of
 raw paramiko, eliminating SSH/SFTP logic duplication.
 
+Paths unificados: /home/pi/rpi_hmi con venv/ para todo.
+
 Usage:
     python scripts/deploy.py                     # deploy + verify
     python scripts/deploy.py --run               # deploy + run display app (solo Pi!)
@@ -25,7 +27,7 @@ from dotenv import load_dotenv
 # Cargar .env desde raiz del proyecto
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from backend.app.services.ssh_manager import ParamikoSSHDriver, SSHResult
+from backend.app.services.ssh_manager import ParamikoSSHDriver
 from backend.app.services.deploy_service import DeployService
 
 HOST = os.getenv("RPI_HOST", "192.168.88.211")
@@ -33,12 +35,11 @@ USER = os.getenv("RPI_USER", "pi")
 PASSWORD = os.getenv("RPI_PASSWORD", "")
 KEY_PATH = os.getenv("RPI_KEY_PATH", "")
 PORT = int(os.getenv("RPI_PORT", "22"))
+
+# ── Paths unificados ──────────────────────────────────────────
 PI_BASE = "/home/pi/rpi_hmi"
 VENV_PY = f"{PI_BASE}/venv/bin/python3"
 ROOT = Path(__file__).resolve().parents[1]
-DISPLAY_DIR = ROOT / "display"
-SCRIPTS_DIR = ROOT / "scripts"
-CONFIG_DIR = ROOT / "config"
 
 
 def connect_ssh() -> ParamikoSSHDriver:
@@ -70,11 +71,28 @@ def step(msg: str) -> None:
     print(f"\n{'='*55}\n  {msg}\n{'='*55}")
 
 
-# ── Display-specific operations (not in DeployService) ──────────
+# ── Health check helpers ──────────────────────────────────────
+
+
+def check_backend_ready(ssh: ParamikoSSHDriver) -> bool:
+    """Verifica que el backend esta listo usando /health/ready.
+
+    Usa codigo HTTP (200 = OK), no grep de texto.
+    """
+    result = ssh.execute(
+        "curl -fsS -o /dev/null -w '%{http_code}' "
+        "http://localhost:8000/health/ready 2>/dev/null || echo 'FAIL'",
+        timeout=10,
+    )
+    return result.ok and result.stdout.strip() == "200"
+
+
+# ── Display-specific operations ───────────────────────────────
 
 
 def deploy_display_files(ssh: ParamikoSSHDriver) -> int:
-    """Sync display/ files to Pi via SFTP using SSHDriver."""
+    """Sync display/ files to Pi via SFTP using SSHDriver (solo changed)."""
+    DISPLAY_DIR = ROOT / "display"
     count = 0
     for py_file in sorted(DISPLAY_DIR.rglob("*")):
         if "__pycache__" in py_file.parts:
@@ -86,12 +104,10 @@ def deploy_display_files(ssh: ParamikoSSHDriver) -> int:
         rel = str(py_file.relative_to(ROOT)).replace("\\", "/")
         remote = f"{PI_BASE}/{rel}"
         try:
-            # Ensure remote directory exists
             parent = str(Path(remote).parent)
             ssh.execute(f"mkdir -p {parent}", timeout=10)
 
             local_time = py_file.stat().st_mtime
-            # Check remote timestamp to skip unchanged files
             result = ssh.execute(
                 f"stat -c %Y {remote} 2>/dev/null || echo '0'",
                 timeout=10,
@@ -112,6 +128,7 @@ def deploy_display_files(ssh: ParamikoSSHDriver) -> int:
 
 def deploy_scripts(ssh: ParamikoSSHDriver) -> None:
     """Sync scripts/ to Pi (start_hmi.sh, etc.)."""
+    SCRIPTS_DIR = ROOT / "scripts"
     ssh.execute(f"mkdir -p {PI_BASE}/scripts", timeout=10)
     for script_file in SCRIPTS_DIR.glob("*"):
         if script_file.name.endswith(".pyc") or script_file.name == "__pycache__":
@@ -144,7 +161,6 @@ def install_display_deps(ssh: ParamikoSSHDriver) -> None:
     else:
         print("  All deps already installed")
 
-    # Verify
     verify_cmd = (
         f"{VENV_PY} -c 'import pygame,evdev,requests,websocket; "
         "print(f\"pygame={pygame.version.ver}, evdev OK, "
@@ -158,9 +174,15 @@ def install_display_deps(ssh: ParamikoSSHDriver) -> None:
 
 def verify(ssh: ParamikoSSHDriver) -> None:
     """Run verification checks."""
-    # Health
-    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
-    print(f"  Backend health: {result.stdout}")
+    # Health (usa /health/ready con HTTP status)
+    result = ssh.execute("curl -fsS http://localhost:8000/health 2>/dev/null || echo 'UNREACHABLE'", timeout=10)
+    print(f"  Backend health: {result.stdout[:200]}")
+
+    # Check ready endpoint
+    if check_backend_ready(ssh):
+        print("  Ready: YES")
+    else:
+        print("  Ready: NO")
 
     # Display devices
     result = ssh.execute(
@@ -200,21 +222,28 @@ def verify(ssh: ParamikoSSHDriver) -> None:
 
 
 def ensure_backend(ssh: ParamikoSSHDriver) -> None:
-    """Start backend if not running."""
-    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
-    if result.ok and "ok" in result.stdout:
-        print("  Backend already running")
+    """Start backend via systemctl if not already running.
+
+    Usa /health/ready (codigo HTTP 200) en lugar de grep -q ok.
+    """
+    if check_backend_ready(ssh):
+        print("  Backend already running and ready")
         return
-    print("  Starting backend...")
+
+    print("  Starting backend via systemctl...")
     ssh.execute(
+        "sudo systemctl start rpi-hmi-backend.service 2>&1 || "
         f"cd {PI_BASE} && PYTHONPATH={PI_BASE} nohup {VENV_PY} "
         f"-m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 "
         f"> /tmp/backend.log 2>&1 &",
-        timeout=10,
+        timeout=15,
     )
-    time.sleep(2)
-    result = ssh.execute("curl -s http://localhost:8000/health", timeout=10)
-    print(f"  Backend start: {'OK' if result.ok else 'FAIL'} - {result.stdout}")
+    time.sleep(3)
+
+    if check_backend_ready(ssh):
+        print("  Backend start: OK")
+    else:
+        print("  Backend start: FAIL (check /tmp/backend.log)")
 
 
 def stop_lightdm(ssh: ParamikoSSHDriver) -> bool:
@@ -286,21 +315,19 @@ def run_hmi(ssh: ParamikoSSHDriver) -> None:
         f"PYTHONPATH={PI_BASE} PYTHONUNBUFFERED=1 "
         f"{VENV_PY} -m display.app --api-url http://localhost:8000 --debug"
     )
-    # Interactive session requires direct paramiko channel for pty
-    # Use the underlying paramiko client for interactive sessions
+    # Interactive session via SSH driver
     try:
-        ssh._client.exec_command(cmd, get_pty=True)
-        import time as _time
-        while ssh.is_connected():
-            _time.sleep(1)
+        result = ssh.execute(cmd, timeout=3600)
+        print(f"\n  HMI finished: exit_code={result.exit_code}")
     except KeyboardInterrupt:
         print("\n  Stopped by user")
 
 
 def install_services(ssh: ParamikoSSHDriver) -> None:
     """Install systemd services on Pi (backend + display)."""
-    ssh.execute(f"mkdir -p {PI_BASE}/config/systemd", timeout=10)
+    CONFIG_DIR = ROOT / "config"
 
+    ssh.execute(f"mkdir -p {PI_BASE}/config/systemd", timeout=10)
     for svc_file in (CONFIG_DIR / "systemd").glob("*.service"):
         rel = str(svc_file.relative_to(ROOT)).replace("\\", "/")
         remote = f"{PI_BASE}/{rel}"
@@ -311,24 +338,17 @@ def install_services(ssh: ParamikoSSHDriver) -> None:
         ssh.execute(f"sudo cp {remote} {target}", timeout=10)
         print(f"  Installed {target}")
 
-    # Reload systemd
     ssh.execute("sudo systemctl daemon-reload", timeout=10)
     print("  systemd daemon-reload done")
 
-    # Enable services
-    for svc_file in (CONFIG_DIR / "systemd").glob("*.service"):
-        result = ssh.execute(
-            f"sudo systemctl enable {svc_file.name}",
-            timeout=10,
-        )
-        print(f"  Enable {svc_file.name}: {result.stdout.strip()}")
-
-    # Disable lightdm so it doesn't conflict
-    result = ssh.execute(
-        "sudo systemctl disable lightdm 2>&1 || echo 'already'",
+    ssh.execute(
+        "sudo systemctl enable rpi-hmi-backend.service rpi-hmi-display.service",
         timeout=10,
     )
-    print(f"  Disable lightdm: {result.stdout.strip()}")
+    print("  Services enabled")
+
+    ssh.execute("sudo systemctl disable lightdm 2>&1 || true", timeout=10)
+    print("  lightdm disabled")
 
     print("\n  [DONE] Services installed. Reboot to start HMI on TFT:")
     print(f"    ssh {USER}@{HOST} sudo reboot")
@@ -356,7 +376,6 @@ def main() -> None:
             return
 
         if args.install_service:
-            # Deploy backend using DeployService
             step("DEPLOY BACKEND")
             deploy_svc.deploy_app(project_root=str(ROOT))
             step("DEPLOY DISPLAY FILES")

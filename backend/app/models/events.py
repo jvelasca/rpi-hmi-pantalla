@@ -97,9 +97,11 @@ class ServerMessage(BaseModel):
 
     El campo `type` discrimina el tipo de evento.
     `data` contiene el payload especifico del evento.
+    `sequence` es un contador monotonicamente creciente que permite
+    a los clientes ordenar mensajes y detectar mensajes perdidos.
 
     Examples:
-        >>> ServerMessage(type="led_changed", data={"state": True})
+        >>> ServerMessage(type="led_changed", data={"state": True}, sequence=1)
         >>> ServerMessage(type="error", data={"code": "GPIO_BUSY", "message": "GPIO 17 ocupado"})
     """
 
@@ -119,6 +121,10 @@ class ServerMessage(BaseModel):
         Field(description="Tipo de evento"),
     ]
     data: Annotated[dict, Field(description="Payload del evento")]
+    sequence: Annotated[
+        int | None,
+        Field(default=None, ge=0, description="Contador secuencial de eventos (None para errores)"),
+    ]
     timestamp: Annotated[
         datetime,
         Field(

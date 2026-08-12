@@ -49,6 +49,7 @@ class StateManager:
         self._lock: threading.Lock = threading.Lock()
         self._start_time: float = time.monotonic()
         self._persistence: Any = None  # Persistence instance (seteado en set_persistence)
+        self._sequence: int = 0  # Contador de eventos para ordenamiento WS
 
         # Cargar pin desde devices.yaml (fuente unica de verdad)
         pin = self._load_led_pin()
@@ -69,55 +70,73 @@ class StateManager:
     async def restore_from_db(self) -> None:
         """Restaura el estado desde SQLite si hay persistencia configurada.
 
-        Debe llamarse DESPUES de set_persistence y antes de empezar a
-        aceptar peticiones.
+        Debe llamarse DESPUES de set_persistence y despues de registrar
+        el updater_callback (para que el GPIO fisico se sincronice).
+
+        El pin GPIO se obtiene exclusivamente de devices.yaml (fuente unica).
+        La BD solo guarda el estado booleano del LED.
+
+        Despues de restaurar el estado logico, aplica el estado al GPIO fisico
+        via el updater_callback.
         """
         if not self._persistence:
             return
         try:
-            led_on, gpio_pin = await self._persistence.get_led()
+            led_on = await self._persistence.get_led()
             count = await self._persistence.get_button_count()
+            pin = self._load_led_pin()  # Siempre desde devices.yaml
             with self._lock:
-                if gpio_pin:
-                    self._led_state = LedState(
-                        state=led_on,
-                        label="ENCENDIDO" if led_on else "APAGADO",
-                        gpio_pin=gpio_pin,
-                    )
+                self._led_state = LedState(
+                    state=led_on,
+                    label="ENCENDIDO" if led_on else "APAGADO",
+                    gpio_pin=pin,
+                )
                 self._button_state = ButtonState(
                     pressed=False,
                     press_count=count,
                 )
             logger.info(
-                "Estado restaurado de BD: led=%s, button_count=%d",
-                led_on, count,
+                "Estado restaurado de BD: led=%s, button_count=%d, pin=%d",
+                led_on, count, pin,
             )
+
+            # Aplicar estado restaurado al GPIO fisico
+            self._apply_hardware_state()
         except Exception:
             logger.warning("No se pudo restaurar estado desde BD", exc_info=True)
 
     @staticmethod
     def _load_led_pin() -> int:
-        """Carga el pin del LED desde devices.yaml.
+        """Carga el pin del LED desde devices.yaml usando ruta absoluta.
 
-        Busca el primer dispositivo con driver=gpio y mode=output
-        en backend/config/devices.yaml.
+        Usa Path(__file__) para resolver la ruta del proyecto, evitando
+        dependencias del current working directory.
 
         Returns:
             Numero de pin BCM, o 0 como fallback si no se encuentra.
         """
+        from pathlib import Path as _Path
+
         try:
             from backend.app.services.gpio_service import load_devices
             from backend.app.models.device import DeviceType
 
-            devices = load_devices("backend/config/devices.yaml")
+            # Resolver ruta absoluta relativa a este archivo
+            project_root = _Path(__file__).resolve().parents[3]  # services -> app -> backend -> root
+            devices_path = project_root / "backend" / "config" / "devices.yaml"
+
+            devices = load_devices(str(devices_path))
             for dev_id, dev in devices.items():
                 if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:
                     pin = dev.pin.bcm
-                    logger.info("Pin LED cargado desde devices.yaml: %s -> GPIO %d", dev_id, pin)
+                    logger.info(
+                        "Pin LED cargado desde %s: %s -> GPIO %d",
+                        devices_path, dev_id, pin,
+                    )
                     return pin
-            logger.warning("No se encontro dispositivo GPIO output en devices.yaml")
+            logger.warning("No se encontro dispositivo GPIO output en %s", devices_path)
         except Exception:
-            logger.warning("No se pudo cargar devices.yaml, usando pin 0 como fallback")
+            logger.warning("No se pudo cargar devices.yaml, usando pin 0 como fallback", exc_info=True)
         return 0
 
     # ── Propiedades thread-safe ────────────────────────────────
@@ -153,6 +172,7 @@ class StateManager:
         """
         label = "ENCENDIDO" if state else "APAGADO"
         with self._lock:
+            self._sequence += 1
             self._led_state = LedState(state=state, label=label, gpio_pin=self._led_state.gpio_pin)
 
         # Notificar a la HAL para actualizar GPIO fisico
@@ -165,10 +185,16 @@ class StateManager:
         # Persistir
         self._persist_led(state)
 
-        # Broadcast async
-        msg = ServerMessage(type="led_changed", data=self._led_state.model_dump())
+        # Broadcast async con sequence
+        seq = self._sequence
+        msg = ServerMessage(
+            type="led_changed",
+            data=self._led_state.model_dump(),
+            sequence=seq,
+        )
         self._schedule_broadcast(msg)
-        logger.info("LED -> %s", label)
+        self._log_event("led_" + ("on" if state else "off"), {"gpio_pin": self._led_state.gpio_pin})
+        logger.info("LED -> %s (seq=%d)", label, self._sequence)
         return self._led_state
 
     def toggle_led(self) -> LedState:
@@ -186,6 +212,7 @@ class StateManager:
             ButtonState actualizado.
         """
         with self._lock:
+            self._sequence += 1
             count = self._button_state.press_count + 1
             self._button_state = ButtonState(
                 pressed=True,
@@ -194,9 +221,11 @@ class StateManager:
         # Persistir
         self._persist_button(count)
 
-        msg = ServerMessage(type="button_pressed", data=self._button_state.model_dump())
+        seq = self._sequence
+        msg = ServerMessage(type="button_pressed", data=self._button_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
-        logger.info("Boton presionado (count=%d)", count)
+        self._log_event("button_pressed", {"count": count})
+        logger.info("Boton presionado (count=%d, seq=%d)", count, self._sequence)
         return self._button_state
 
     def release_button(self) -> ButtonState:
@@ -206,13 +235,15 @@ class StateManager:
             ButtonState actualizado.
         """
         with self._lock:
+            self._sequence += 1
             self._button_state = ButtonState(
                 pressed=False,
                 press_count=self._button_state.press_count,
             )
-        msg = ServerMessage(type="button_released", data=self._button_state.model_dump())
+        seq = self._sequence
+        msg = ServerMessage(type="button_released", data=self._button_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
-        logger.info("Boton liberado")
+        logger.info("Boton liberado (seq=%d)", seq)
         return self._button_state
 
     def set_display(self, connected: bool, resolution: str = "480x320", driver: str = "ili9486") -> None:
@@ -229,7 +260,7 @@ class StateManager:
                 resolution=resolution,
                 driver=driver,
             )
-        msg = ServerMessage(type="display_changed", data=self._display_info.model_dump())
+        msg = ServerMessage(type="display_changed", data=self._display_info.model_dump(), sequence=self._sequence)
         self._schedule_broadcast(msg)
         logger.info("Display: connected=%s, %s, %s", connected, resolution, driver)
 
@@ -298,15 +329,33 @@ class StateManager:
         """
         self._updater_callback = callback
 
+    def _apply_hardware_state(self) -> None:
+        """Aplica el estado logico actual al GPIO fisico.
+
+        Necesario despues de restore_from_db() para sincronizar
+        el GPIO con el estado restaurado de SQLite.
+        """
+        if not self._updater_callback:
+            logger.debug("No hay callback GPIO registrado, omitiendo sync hardware")
+            return
+        try:
+            self._updater_callback("led", self._led_state)
+            logger.info("GPIO fisico sincronizado: LED=%s", self._led_state.label)
+        except Exception:
+            logger.exception("Error al sincronizar GPIO fisico")
+
     # ── Persistencia interna ───────────────────────────────────
 
     def _persist_led(self, state: bool) -> None:
-        """Persiste el estado del LED en SQLite (en background)."""
+        """Persiste el estado del LED en SQLite (en background).
+
+        Solo guarda el estado booleano. El pin GPIO viene de devices.yaml.
+        """
         if not self._persistence:
             return
         try:
             asyncio.create_task(
-                self._persistence.save_led(state, self._led_state.gpio_pin)
+                self._persistence.save_led(state)
             )
         except RuntimeError:
             logger.debug("Persistencia LED omitida (sin event loop)")
@@ -321,6 +370,22 @@ class StateManager:
             )
         except RuntimeError:
             logger.debug("Persistencia boton omitida (sin event loop)")
+
+    # ── Event Log ──────────────────────────────────────────────
+
+    def _log_event(self, event_type: str, payload: dict | None = None) -> None:
+        """Registra un evento en el log historico de SQLite."""
+        import json as _json
+
+        if not self._persistence:
+            return
+        try:
+            payload_str = _json.dumps(payload) if payload else None
+            asyncio.create_task(
+                self._persistence.log_event(event_type, payload_str)
+            )
+        except RuntimeError:
+            logger.debug("Event log omitido (sin event loop)")
 
     # ── Interno ────────────────────────────────────────────────
 

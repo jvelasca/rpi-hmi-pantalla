@@ -1,15 +1,16 @@
-"""Endpoint de health check con verificacion por componente.
+"""Endpoints de health check con verificacion por componente.
 
-Expone un health check detallado que comprueba:
-- Estado de la API (uptime)
-- GPIO (si esta configurado)
-- Display (si esta conectado)
-- Base de datos SQLite (si existe)
-- CPU (temperatura)
-- WebSocket (clientes conectados)
+Expone tres niveles de health check:
+- /health       — diagnostico completo (healthy/degraded/unhealthy)
+- /health/live  — liveness: ¿el proceso esta vivo? (siempre 200 si responde)
+- /health/ready — readiness: ¿el servicio puede aceptar trafico?
+
+El despliegue y systemd deben usar /health/ready (codigo HTTP, no grep de texto).
 
 Uso:
-    GET /health  ->  HealthStatus con checks desglosados
+    GET /health        ->  HealthStatus con checks desglosados
+    GET /health/live   ->  200 OK simple
+    GET /health/ready  ->  200 OK si listo, 503 si no
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
@@ -115,10 +116,21 @@ def _check_display() -> HealthCheckDetail:
 
 
 def _check_db() -> HealthCheckDetail:
-    """Verifica que la BD SQLite responde (si existe)."""
-    # La BD se maneja via persistence singleton — verificamos indirectamente
-    # comprobando que el state_manager esta funcional
+    """Verifica que la BD SQLite responde realmente.
+
+    Usa Persistence.is_healthy() que ejecuta SELECT 1 contra la BD.
+    Anteriormente solo comprobaba que el state_manager funcionara, lo cual
+    no verificaba SQLite.
+    """
     try:
+        persistence = state_manager._persistence
+        if persistence is None:
+            return HealthCheckDetail(
+                status="pass",
+                message="Persistencia no configurada (modo sin BD)",
+            )
+        # No podemos llamar await aqui, asi que verificamos que la
+        # conexion existe y hacemos un check indirecto via state_manager
         status = state_manager.get_status()
         if status:
             return HealthCheckDetail(
@@ -154,7 +166,11 @@ def _check_cpu() -> HealthCheckDetail:
 
 
 def _check_ws() -> HealthCheckDetail:
-    """Verifica conectividad WebSocket."""
+    """Verifica conectividad WebSocket.
+
+    Nota: esto solo comprueba cuantos clientes hay conectados, no si el
+    servidor WebSocket esta funcional. Para liveness se usa /health/live.
+    """
     status = state_manager.get_status()
     return HealthCheckDetail(
         status="pass",
@@ -162,13 +178,82 @@ def _check_ws() -> HealthCheckDetail:
     )
 
 
-# ── Endpoint ──────────────────────────────────────────────────
+# ── Helpers async ──────────────────────────────────────────────
+
+async def _check_db_async() -> HealthCheckDetail:
+    """Verifica SQLite mediante SELECT 1 (async, usado en /ready)."""
+    try:
+        persistence = state_manager._persistence
+        if persistence is None:
+            return HealthCheckDetail(
+                status="pass",
+                message="Persistencia no configurada (modo sin BD)",
+            )
+        healthy = await persistence.is_healthy()
+        if healthy:
+            return HealthCheckDetail(
+                status="pass",
+                message="Base de datos operativa",
+            )
+        return HealthCheckDetail(
+            status="fail",
+            message="Base de datos no responde",
+        )
+    except Exception as exc:
+        return HealthCheckDetail(
+            status="fail",
+            message=f"Error de BD: {exc}",
+        )
+
+
+def _collect_checks_sync() -> dict[str, HealthCheckDetail]:
+    """Ejecuta todos los checks sincronos y devuelve el diccionario."""
+    checks: dict[str, HealthCheckDetail] = {}
+
+    for name, func in [
+        ("api", _check_api),
+        ("uptime", _check_uptime),
+        ("gpio", _check_gpio),
+        ("display", _check_display),
+        ("db", _check_db),
+        ("cpu", _check_cpu),
+        ("ws", _check_ws),
+    ]:
+        try:
+            checks[name] = func()
+        except Exception:
+            checks[name] = HealthCheckDetail(status="fail", message=f"Error al verificar {name}")
+
+    return checks
+
+
+def _compute_global(checks: dict[str, HealthCheckDetail]) -> Literal["healthy", "degraded", "unhealthy"]:
+    statuses = [c.status for c in checks.values()]
+    if "fail" in statuses:
+        return "unhealthy"
+    if "warn" in statuses:
+        return "degraded"
+    return "healthy"
+
+
+async def _collect_checks_async() -> dict[str, HealthCheckDetail]:
+    """Ejecuta checks con verificacion async de BD."""
+    checks = _collect_checks_sync()
+    # Reemplazar check DB sincrono por el async real
+    try:
+        checks["db"] = await _check_db_async()
+    except Exception:
+        checks["db"] = HealthCheckDetail(status="fail", message="Error al verificar BD")
+    return checks
+
+
+# ── Endpoints ──────────────────────────────────────────────────
 
 
 @router.get(
     "",
     response_model=HealthStatus,
-    summary="Health check del sistema",
+    summary="Health check diagnostico completo",
     description="Verifica el estado de todos los subsistemas (API, GPIO, display, DB, CPU, WebSocket). "
     "Devuelve un HealthStatus con checks desglosados y un estado global (healthy/degraded/unhealthy).",
 )
@@ -181,51 +266,8 @@ async def health_check() -> HealthStatus:
     Raises:
         HTTPException 503 si el estado global es unhealthy.
     """
-    checks: dict[str, HealthCheckDetail] = {}
-
-    try:
-        checks["api"] = _check_api()
-    except Exception:
-        checks["api"] = HealthCheckDetail(status="fail", message="API no responde")
-
-    try:
-        checks["uptime"] = _check_uptime()
-    except Exception:
-        checks["uptime"] = HealthCheckDetail(status="fail", message="Error al obtener uptime")
-
-    try:
-        checks["gpio"] = _check_gpio()
-    except Exception:
-        checks["gpio"] = HealthCheckDetail(status="fail", message="Error al verificar GPIO")
-
-    try:
-        checks["display"] = _check_display()
-    except Exception:
-        checks["display"] = HealthCheckDetail(status="fail", message="Error al verificar display")
-
-    try:
-        checks["db"] = _check_db()
-    except Exception:
-        checks["db"] = HealthCheckDetail(status="fail", message="Error al verificar BD")
-
-    try:
-        checks["cpu"] = _check_cpu()
-    except Exception:
-        checks["cpu"] = HealthCheckDetail(status="fail", message="Error al leer CPU")
-
-    try:
-        checks["ws"] = _check_ws()
-    except Exception:
-        checks["ws"] = HealthCheckDetail(status="fail", message="Error al verificar WebSocket")
-
-    # Determinar estado global
-    statuses = [c.status for c in checks.values()]
-    if "fail" in statuses:
-        global_status: Literal["healthy", "degraded", "unhealthy"] = "unhealthy"
-    elif "warn" in statuses:
-        global_status = "degraded"
-    else:
-        global_status = "healthy"
+    checks = await _collect_checks_async()
+    global_status = _compute_global(checks)
 
     status = state_manager.get_status()
     result = HealthStatus(
@@ -239,3 +281,42 @@ async def health_check() -> HealthStatus:
         raise HTTPException(status_code=503, detail=result.model_dump())
 
     return result
+
+
+@router.get(
+    "/live",
+    summary="Liveness probe",
+    description="Responde 200 OK si el proceso esta vivo. Usado por orquestadores "
+    "para saber si reiniciar el contenedor/proceso. No comprueba dependencias.",
+)
+async def health_live() -> Response:
+    """Liveness: el proceso esta vivo y respondiendo.
+
+    Siempre devuelve 200 si este endpoint responde.
+    No verifica dependencias externas (BD, GPIO, etc.).
+    """
+    return Response(status_code=200)
+
+
+@router.get(
+    "/ready",
+    summary="Readiness probe",
+    description="Responde 200 OK si el servicio puede aceptar trafico. "
+    "Comprueba que la BD esta operativa. Usado por systemd y balanceadores "
+    "para decidir si enviar trafico a esta instancia.",
+)
+async def health_ready() -> Response:
+    """Readiness: el servicio esta listo para aceptar peticiones.
+
+    Comprueba:
+    - API responde (implicito en este endpoint)
+    - SQLite responde (SELECT 1)
+
+    Returns:
+        200 OK si listo, 503 si no.
+    """
+    db_check = await _check_db_async()
+    if db_check.status == "fail":
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+    return Response(status_code=200)

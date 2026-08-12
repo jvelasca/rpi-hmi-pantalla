@@ -18,6 +18,7 @@ TODOS los endpoints requieren autenticacion via header X-API-Key.
 from __future__ import annotations
 
 import logging
+import secrets as _secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Security
@@ -52,7 +53,7 @@ def _verify_api_key(api_key: Optional[str] = Security(_api_key_header)) -> None:
             status_code=503,
             detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
         )
-    if api_key != settings.admin_api_key:
+    if not _secrets.compare_digest(api_key or "", settings.admin_api_key):
         raise HTTPException(status_code=401, detail="API key invalida")
 
 

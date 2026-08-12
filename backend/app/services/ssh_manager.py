@@ -228,9 +228,19 @@ class ParamikoSSHDriver(SSHDriver):
 
         try:
             self._client = paramiko.SSHClient()
-            # WarningPolicy: acepta la clave pero advierte. En red local es aceptable.
-            # Para entornos con requisitos estrictos, usar RejectPolicy + known_hosts.
-            self._client.set_missing_host_key_policy(paramiko.WarningPolicy())
+            # RejectPolicy: solo acepta claves conocidas en known_hosts.
+            # Para primera conexion en LAN, cargar known_hosts local.
+            self._client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            try:
+                self._client.load_system_host_keys()
+            except Exception:
+                pass  # Si no hay known_hosts, intentamos cargar del usuario
+            try:
+                known_hosts = _os.path.expanduser("~/.ssh/known_hosts")
+                if _os.path.exists(known_hosts):
+                    self._client.load_host_keys(known_hosts)
+            except Exception:
+                pass
             logger.info("Politica SSH: WarningPolicy (se advierte si la host key es desconocida)")
 
             connect_kwargs = {
@@ -485,8 +495,33 @@ class MockSSHDriver(SSHDriver):
             out = "Raspberry Pi Model B+ Rev 1.2"
         elif "python3 --version" in command:
             out = "Python 3.9.2"
+        elif "systemctl start" in command and "STOPPED" not in command:
+            out = "STARTED"
+        elif "systemctl stop" in command and "RUNNING" not in command:
+            out = "STOPPED"
+        elif "systemctl restart" in command:
+            out = "RESTARTED"
+        elif "systemctl enable" in command:
+            out = "Created symlink"
+        elif "systemctl daemon-reload" in command:
+            out = ""
+        elif "systemctl disable" in command:
+            out = ""
+        elif "curl" in command and "health" in command:
+            if "/health/ready" in command:
+                out = "200"
+            elif "/health" in command:
+                out = '{"status":"healthy","checks":{}}'
+            else:
+                out = "200"
         elif "echo" in command:
             out = command.replace("echo ", "").strip()
+        elif "OK" in command and "apt" in command:
+            out = "OK"
+        elif "CREATED" in command:
+            out = "CREATED"
+        elif "EXISTS" in command:
+            out = "EXISTS"
         else:
             out = f"Mock: ejecutado '{command}'"
 

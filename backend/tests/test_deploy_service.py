@@ -101,17 +101,13 @@ class TestDeployService:
         assert steps[3].step == "pip_install"
 
     def test_deploy_app_empty(self, deploy_service: DeployService) -> None:
-        """deploy_app() sin archivos locales devuelve fallos controlados."""
-        # Usar un directorio temporal vacío como project_root
+        """deploy_app() sin directorios de proyecto devuelve lista vacia."""
         import tempfile
-        import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
             steps = deploy_service.deploy_app(project_root=tmpdir)
-            # Todos los archivos deben fallar porque no existen
-            assert len(steps) > 0
-            # Al menos algunos deben tener success=False
-            assert any(not s.success for s in steps)
+            # Con directorio vacio, no hay archivos que desplegar
+            assert len(steps) == 0
 
     def test_run_diagnostics(self, deploy_service: DeployService) -> None:
         """run_diagnostics() debe devolver un DeployStatus."""
@@ -138,7 +134,7 @@ class TestDeployService:
         assert status.step == "stop_backend"
 
     def test_full_deploy(self, deploy_service: DeployService) -> None:
-        """full_deploy() debe devolver diccionario con 4 claves."""
+        """full_deploy() debe devolver diccionario con 5 claves."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,7 +142,8 @@ class TestDeployService:
             assert isinstance(result, dict)
             assert "environment" in result
             assert "deploy" in result
-            assert "start" in result
+            assert "services" in result
+            assert "restart" in result
             assert "health" in result
 
     def test_status_log_accumulates(self, deploy_service: DeployService) -> None:

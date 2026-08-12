@@ -5,10 +5,13 @@ backend.app.services.deploy_service
 Servicio de despliegue remoto sobre SSH.
 
 Utiliza ``SSHDriver`` para escanear la red local en busca de la
-Raspberry Pi, configurar el entorno Python, copiar archivos del
-proyecto, ejecutar diagnósticos y verificar la salud del backend.
+Raspberry Pi, configurar el entorno Python, sincronizar archivos del
+proyecto completo, ejecutar diagnosticos y verificar la salud del backend.
 
-    Uso típico::
+La ruta de despliegue esta unificada en REMOTE_ROOT y la gestion
+de servicios se hace via systemctl (nada de nohup/pkill).
+
+    Uso tipico::
 
         from backend.app.services.ssh_manager import ParamikoSSHDriver
         from backend.app.services.deploy_service import DeployService
@@ -18,11 +21,13 @@ proyecto, ejecutar diagnósticos y verificar la salud del backend.
         deploy = DeployService(ssh)
         deploy.setup_environment()
         deploy.deploy_app()
+        deploy.restart_backend()
         status = deploy.health_check()
 """
 from __future__ import annotations
 
 import logging
+import os
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +36,29 @@ from typing import Optional, List, Dict
 from backend.app.services.ssh_manager import SSHDriver, SSHResult
 
 logger = logging.getLogger("backend.services.deploy")
+
+# ── Constantes unificadas ────────────────────────────────────────────────
+REMOTE_ROOT = "/home/pi/rpi_hmi"
+VENV_PYTHON = f"{REMOTE_ROOT}/venv/bin/python3"
+VENV_PIP = f"{REMOTE_ROOT}/venv/bin/pip"
+
+# Directorios que deben desplegarse completos (todos los .py, .yaml, .txt, .json, .toml)
+DEPLOY_DIRECTORIES = [
+    "backend/app",
+    "backend/config",
+    "backend/tests",
+    "display",
+    "config/systemd",
+    "scripts",
+]
+
+# Archivos raiz individuales que deben copiarse
+DEPLOY_ROOT_FILES = [
+    "backend/pyproject.toml",
+    "backend/requirements.txt",
+    "backend/__init__.py",
+    "VERSION",
+]
 
 
 # ── Network Scanner ────────────────────────────────────────────────────
@@ -41,7 +69,7 @@ class ScanResult:
     """Resultado del escaneo de red para localizar una Raspberry Pi.
 
     Atributos:
-        ip: Dirección IP donde se detectó una Pi.
+        ip: Direccion IP donde se detecto una Pi.
         hostname: Hostname reportado (puede ser None).
         model: Modelo detectado (desde /proc/device-tree/model).
         ssh_available: True si el puerto 22 responde.
@@ -54,13 +82,13 @@ class ScanResult:
 
 
 class NetworkScanner:
-    """Escáner de red local para detectar Raspberry Pi.
+    """Escanner de red local para detectar Raspberry Pi.
 
     Busca dispositivos con puerto SSH abierto e intenta identificar
     modelos Raspberry Pi mediante comandos remotos.
 
-    No requiere credenciales SSH para la detección básica (solo sondeo TCP),
-    pero para identificar el modelo necesita conexión autenticada.
+    No requiere credenciales SSH para la deteccion basica (solo sondeo TCP),
+    pero para identificar el modelo necesita conexion autenticada.
     """
 
     @staticmethod
@@ -81,22 +109,12 @@ class NetworkScanner:
                 if len(parts) == 2:
                     subnets.append(parts[0])
         except Exception:
-            # Fallback: subredes comunes
             subnets = ["192.168.1", "192.168.0", "10.0.0"]
         return subnets or ["192.168.1", "192.168.0", "10.0.0"]
 
     @staticmethod
     def _check_ssh(ip: str, port: int = 22, timeout: float = 1.0) -> bool:
-        """Verifica si un host tiene el puerto SSH abierto.
-
-        Args:
-            ip: Dirección IP a sondear.
-            port: Puerto TCP (por defecto 22).
-            timeout: Timeout en segundos.
-
-        Returns:
-            True si el puerto responde.
-        """
+        """Verifica si un host tiene el puerto SSH abierto."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
@@ -108,26 +126,12 @@ class NetworkScanner:
 
     @staticmethod
     def scan(timeout: float = 1.0, max_hosts: int = 20) -> List[ScanResult]:
-        """Escanea la red local en busca de Raspberry Pi.
-
-        Prueba las IPs .1 a .max_hosts en cada subred local, buscando
-        puerto SSH (22) abierto. Las IPs con SSH se reportan como
-        posibles Raspberry Pi.
-
-        Args:
-            timeout: Timeout en segundos para cada sondeo TCP.
-            max_hosts: Número máximo de hosts a sondear por subred.
-
-        Returns:
-            Lista de ScanResult con dispositivos detectados.
-        """
+        """Escanea la red local en busca de Raspberry Pi."""
         results: List[ScanResult] = []
         subnets = NetworkScanner._get_local_subnets()
         logger.info(
             "Escaneando %d subred(es), rango .1-.%d, timeout=%.1fs",
-            len(subnets),
-            max_hosts,
-            timeout,
+            len(subnets), max_hosts, timeout,
         )
 
         for subnet in subnets:
@@ -135,43 +139,28 @@ class NetworkScanner:
                 ip = f"{subnet}.{i}"
                 if NetworkScanner._check_ssh(ip, timeout=timeout):
                     logger.info("SSH detectado en %s", ip)
-                    # Intentar resolver hostname
                     hostname = None
                     try:
                         hostname = socket.gethostbyaddr(ip)[0]
                     except Exception:
                         pass
-
                     results.append(ScanResult(ip=ip, hostname=hostname, ssh_available=True))
-
-                    # Si encontramos una, paramos (optimización)
                     if len(results) >= 3:
-                        logger.info("Límite de resultados alcanzado, deteniendo escaneo")
+                        logger.info("Limite de resultados alcanzado, deteniendo escaneo")
                         return results
 
         if not results:
             logger.warning("No se encontraron dispositivos con SSH en la red local")
-
         return results
 
     @staticmethod
     def identify(ip: str, ssh: SSHDriver) -> Optional[ScanResult]:
-        """Identifica el modelo de un dispositivo ya detectado vía SSH.
-
-        Args:
-            ip: IP del dispositivo.
-            ssh: Driver SSH ya conectado al dispositivo.
-
-        Returns:
-            ScanResult con el modelo detectado, o None si falla.
-        """
+        """Identifica el modelo de un dispositivo ya detectado via SSH."""
         try:
             model_result = ssh.execute("cat /proc/device-tree/model 2>/dev/null || echo 'unknown'")
             model = model_result.stdout.strip() if model_result.ok else None
-
             hostname_result = ssh.execute("hostname")
             hostname = hostname_result.stdout.strip() if hostname_result.ok else None
-
             return ScanResult(ip=ip, hostname=hostname, model=model, ssh_available=True)
         except Exception as exc:
             logger.warning("No se pudo identificar %s: %s", ip, exc)
@@ -183,15 +172,7 @@ class NetworkScanner:
 
 @dataclass
 class DeployStatus:
-    """Estado de una operación de despliegue.
-
-    Atributos:
-        step: Nombre del paso ejecutado.
-        success: True si el paso se completó correctamente.
-        message: Descripción del resultado.
-        output: Salida de consola relevante (stdout/stderr).
-        duration_ms: Duración del paso en milisegundos.
-    """
+    """Estado de una operacion de despliegue."""
 
     step: str
     success: bool
@@ -204,30 +185,23 @@ class DeployService:
     """Servicio de despliegue remoto para la Raspberry Pi.
 
     Utiliza un ``SSHDriver`` inyectado para ejecutar todas las operaciones
-    de configuración, copia de archivos, diagnóstico y verificación en
+    de configuracion, copia de archivos, diagnostico y verificacion en
     la Raspberry Pi objetivo.
 
+    La gestion del backend se hace via systemctl, no via nohup/pkill.
+
     Atributos:
-        ssh: Driver SSH (real o mock) usado para la comunicación.
-        remote_root: Ruta raíz del proyecto en la Pi.
+        ssh: Driver SSH (real o mock) usado para la comunicacion.
+        remote_root: Ruta raiz del proyecto en la Pi (/home/pi/rpi_hmi).
         status_log: Historial de pasos ejecutados con su resultado.
-
-    Ejemplo::
-
-        ssh = ParamikoSSHDriver()
-        ssh.connect("192.168.1.100", "pi", "password")
-        deploy = DeployService(ssh)
-        deploy.setup_environment()
-        deploy.deploy_app()
-        print(deploy.health_check())
     """
 
-    def __init__(self, ssh: SSHDriver, remote_root: str = "/home/pi/Rpi_Pantalla_V1") -> None:
+    def __init__(self, ssh: SSHDriver, remote_root: str = REMOTE_ROOT) -> None:
         """Inicializa el servicio de despliegue.
 
         Args:
             ssh: Driver SSH conectado a la Raspberry Pi.
-            remote_root: Directorio raíz del proyecto en la Pi.
+            remote_root: Directorio raiz del proyecto en la Pi.
         """
         self.ssh = ssh
         self.remote_root = remote_root
@@ -237,15 +211,8 @@ class DeployService:
     # ── Escaneo ──────────────────────────────────────────────────────
 
     def detect_raspberry_pi(self, timeout: float = 1.0) -> List[ScanResult]:
-        """Escanea la red local en busca de Raspberry Pi.
-
-        Args:
-            timeout: Timeout en segundos para cada sondeo TCP.
-
-        Returns:
-            Lista de ScanResult con los dispositivos detectados.
-        """
-        logger.info("Iniciando detección de Raspberry Pi en la red local")
+        """Escanea la red local en busca de Raspberry Pi."""
+        logger.info("Iniciando deteccion de Raspberry Pi en la red local")
         results = NetworkScanner.scan(timeout=timeout)
         self.status_log.append(DeployStatus(
             step="detect",
@@ -255,22 +222,15 @@ class DeployService:
         ))
         return results
 
-    # ── Configuración del entorno ────────────────────────────────────
+    # ── Configuracion del entorno ────────────────────────────────────
 
     def setup_environment(self) -> List[DeployStatus]:
         """Configura el entorno Python en la Raspberry Pi.
 
-        Crea el directorio del proyecto, el entorno virtual (.venv) e
+        Crea el directorio del proyecto, el entorno virtual (venv/) e
         instala las dependencias desde requirements.txt.
 
-        Pasos ejecutados:
-            1. Crear estructura de directorios.
-            2. Instalar paquetes del sistema (python3-venv, etc.).
-            3. Crear entorno virtual Python.
-            4. Instalar dependencias pip.
-
-        Returns:
-            Lista de DeployStatus con el resultado de cada paso.
+        NOTA: Usa venv/ (no .venv) para consistencia con systemd.
         """
         import time
 
@@ -279,11 +239,20 @@ class DeployService:
 
         # 1. Crear estructura de directorios
         t0 = time.time()
-        result = self.ssh.execute(f"mkdir -p {self.remote_root}/backend/app/services "
-                                  f"{self.remote_root}/backend/app/api "
-                                  f"{self.remote_root}/backend/config "
-                                  f"{self.remote_root}/diagnostics/gpio "
-                                  f"{self.remote_root}/scripts")
+        result = self.ssh.execute(
+            f"mkdir -p {self.remote_root}"
+            f" {self.remote_root}/backend/app/services"
+            f" {self.remote_root}/backend/app/api"
+            f" {self.remote_root}/backend/app/models"
+            f" {self.remote_root}/backend/app/hardware"
+            f" {self.remote_root}/backend/config"
+            f" {self.remote_root}/backend/tests"
+            f" {self.remote_root}/display/ui"
+            f" {self.remote_root}/display/tests"
+            f" {self.remote_root}/config/systemd"
+            f" {self.remote_root}/scripts"
+            f" {self.remote_root}/data"
+        )
         steps.append(DeployStatus(
             step="mkdir",
             success=result.ok,
@@ -294,8 +263,10 @@ class DeployService:
 
         # 2. Verificar/instalar python3-venv
         t0 = time.time()
-        result = self.ssh.execute("dpkg -l python3-venv 2>/dev/null | grep -q '^ii' && echo 'OK' || "
-                                  "(sudo apt update -qq && sudo apt install -y python3-venv python3-pip python3-dev -qq && echo 'OK')")
+        result = self.ssh.execute(
+            "dpkg -l python3-venv 2>/dev/null | grep -q '^ii' && echo 'OK' || "
+            "(sudo apt update -qq && sudo apt install -y python3-venv python3-pip python3-dev -qq && echo 'OK')"
+        )
         steps.append(DeployStatus(
             step="install_system_deps",
             success=result.ok and "OK" in result.stdout,
@@ -304,11 +275,11 @@ class DeployService:
             duration_ms=(time.time() - t0) * 1000,
         ))
 
-        # 3. Crear entorno virtual
+        # 3. Crear entorno virtual (venv/ para consistencia con systemd)
         t0 = time.time()
         result = self.ssh.execute(
             f"cd {self.remote_root} && "
-            f"if [ ! -d .venv ]; then python3 -m venv .venv && echo 'CREATED'; else echo 'EXISTS'; fi"
+            f"if [ ! -d venv ]; then python3 -m venv venv && echo 'CREATED'; else echo 'EXISTS'; fi"
         )
         steps.append(DeployStatus(
             step="create_venv",
@@ -322,14 +293,14 @@ class DeployService:
         t0 = time.time()
         result = self.ssh.execute(
             f"cd {self.remote_root} && "
-            f".venv/bin/pip install --upgrade pip -q && "
-            f".venv/bin/pip install -r backend/requirements.txt -q 2>&1"
+            f"{VENV_PIP} install --upgrade pip -q && "
+            f"{VENV_PIP} install -r backend/requirements.txt -q 2>&1"
         )
         pip_ok = result.ok and "error" not in result.stderr.lower()
         steps.append(DeployStatus(
             step="pip_install",
             success=pip_ok,
-            message="Dependencias instaladas" if pip_ok else f"Error instalando dependencias: {result.stderr[:200]}",
+            message="Dependencias instaladas" if pip_ok else f"Error: {result.stderr[:200]}",
             output=result.stdout + "\n" + result.stderr,
             duration_ms=(time.time() - t0) * 1000,
         ))
@@ -337,172 +308,188 @@ class DeployService:
         self.status_log.extend(steps)
         return steps
 
-    # ── Despliegue de la aplicación ──────────────────────────────────
+    # ── Despliegue de la aplicacion ──────────────────────────────────
 
     def deploy_app(self, project_root: Optional[str] = None) -> List[DeployStatus]:
-        """Copia los archivos del proyecto a la Raspberry Pi.
+        """Copia el proyecto completo a la Raspberry Pi via SFTP.
 
-        Transfiere todos los archivos .py, .yaml y .txt del proyecto
-        local al directorio remoto usando SFTP.
+        Despliega directorios completos (con sus archivos .py, .yaml, .toml)
+        en lugar de una lista manual de archivos. Esto garantiza que el
+        despliegue siempre coincida con el codigo en Git.
 
         Args:
             project_root: Ruta local del proyecto. Si es None, se usa
-                          el directorio de trabajo actual (Path.cwd()).
+                          el directorio de trabajo actual.
 
         Returns:
             Lista de DeployStatus con el resultado de cada archivo.
         """
-        import os
         import time
 
         if project_root is None:
             project_root = str(Path.cwd())
 
         steps: List[DeployStatus] = []
-        logger.info("Desplegando archivos desde %s → %s", project_root, self.remote_root)
+        logger.info("Desplegando proyecto desde %s -> %s", project_root, self.remote_root)
 
-        # Archivos a desplegar (local → remoto relativo)
-        files_to_deploy = [
-            ("backend/app/main.py", "backend/app/main.py"),
-            ("backend/app/config.py", "backend/app/config.py"),
-            ("backend/app/services/__init__.py", "backend/app/services/__init__.py"),
-            ("backend/app/services/ssh_manager.py", "backend/app/services/ssh_manager.py"),
-            ("backend/app/services/deploy_service.py", "backend/app/services/deploy_service.py"),
-            ("backend/app/api/__init__.py", "backend/app/api/__init__.py"),
-            ("backend/app/api/ssh.py", "backend/app/api/ssh.py"),
-            ("backend/app/api/deploy.py", "backend/app/api/deploy.py"),
-            ("backend/config/devices.yaml", "backend/config/devices.yaml"),
-            ("backend/requirements.txt", "backend/requirements.txt"),
-            ("diagnostics/run_diagnostics.py", "diagnostics/run_diagnostics.py"),
-            ("diagnostics/gpio/blink_test.py", "diagnostics/gpio/blink_test.py"),
-        ]
+        # Desplegar directorios completos (solo .py, .yaml, .json, .toml, .txt, .sh)
+        allowed_extensions = {".py", ".yaml", ".yml", ".json", ".toml", ".txt", ".sh", ".service"}
 
-        for local_rel, remote_rel in files_to_deploy:
-            local_path = os.path.join(project_root, local_rel)
-            remote_path = f"{self.remote_root}/{remote_rel}"
-
-            if not os.path.isfile(local_path):
-                logger.warning("Archivo local no encontrado, saltando: %s", local_path)
-                steps.append(DeployStatus(
-                    step=f"deploy:{local_rel}",
-                    success=False,
-                    message=f"Archivo local no encontrado: {local_rel}",
-                ))
+        for dir_rel in DEPLOY_DIRECTORIES:
+            local_dir = Path(project_root) / dir_rel
+            if not local_dir.is_dir():
+                logger.warning("Directorio local no encontrado, saltando: %s", dir_rel)
                 continue
+
+            for local_file in local_dir.rglob("*"):
+                if local_file.is_dir():
+                    continue
+                if "__pycache__" in local_file.parts:
+                    continue
+                if local_file.suffix == ".pyc":
+                    continue
+                if local_file.suffix not in allowed_extensions and local_file.suffix:
+                    continue
+
+                rel = str(local_file.relative_to(project_root)).replace("\\", "/")
+                remote = f"{self.remote_root}/{rel}"
+
+                # Ensure remote directory exists
+                remote_dir = str(Path(remote).parent)
+                self.ssh.execute(f"mkdir -p {remote_dir}", timeout=10)
+
+                t0 = time.time()
+                try:
+                    self.ssh.transfer_file(str(local_file), remote)
+                    steps.append(DeployStatus(
+                        step=f"deploy:{rel}",
+                        success=True,
+                        message=f"Copiado: {rel}",
+                        duration_ms=(time.time() - t0) * 1000,
+                    ))
+                except Exception as exc:
+                    logger.exception("Error copiando %s", rel)
+                    steps.append(DeployStatus(
+                        step=f"deploy:{rel}",
+                        success=False,
+                        message=f"Error: {exc}",
+                        duration_ms=(time.time() - t0) * 1000,
+                    ))
+
+        # Archivos raiz individuales
+        for root_file_rel in DEPLOY_ROOT_FILES:
+            local_path = Path(project_root) / root_file_rel
+            if not local_path.is_file():
+                continue
+            remote = f"{self.remote_root}/{root_file_rel}"
+            remote_dir = str(Path(remote).parent)
+            self.ssh.execute(f"mkdir -p {remote_dir}", timeout=10)
 
             t0 = time.time()
             try:
-                self.ssh.transfer_file(local_path, remote_path)
+                self.ssh.transfer_file(str(local_path), remote)
                 steps.append(DeployStatus(
-                    step=f"deploy:{local_rel}",
+                    step=f"deploy:{root_file_rel}",
                     success=True,
-                    message=f"Copiado: {local_rel}",
+                    message=f"Copiado: {root_file_rel}",
                     duration_ms=(time.time() - t0) * 1000,
                 ))
             except Exception as exc:
-                logger.exception("Error copiando %s", local_rel)
                 steps.append(DeployStatus(
-                    step=f"deploy:{local_rel}",
+                    step=f"deploy:{root_file_rel}",
                     success=False,
                     message=f"Error: {exc}",
                     duration_ms=(time.time() - t0) * 1000,
                 ))
 
+        logger.info("Despliegue completado: %d archivos copiados", len(steps))
         self.status_log.extend(steps)
         return steps
 
-    # ── Diagnóstico remoto ───────────────────────────────────────────
+    # ── Diagnostico remoto ───────────────────────────────────────────
 
     def run_diagnostics(self) -> DeployStatus:
-        """Ejecuta el script de diagnóstico en la Raspberry Pi.
-
-        Returns:
-            DeployStatus con el resultado completo del diagnóstico.
-        """
+        """Ejecuta el script de diagnostico en la Raspberry Pi."""
         import time
 
-        logger.info("Ejecutando diagnóstico remoto...")
+        logger.info("Ejecutando diagnostico remoto...")
         t0 = time.time()
         remote_script = f"{self.remote_root}/diagnostics/run_diagnostics.py"
         result = self.ssh.execute(
-            f"cd {self.remote_root} && .venv/bin/python {remote_script} --output {self.remote_root}/diagnostics/report"
+            f"cd {self.remote_root} && {VENV_PYTHON} {remote_script} "
+            f"--output {self.remote_root}/diagnostics/report"
         )
 
         status = DeployStatus(
             step="diagnostics",
             success=result.ok,
-            message="Diagnóstico completado" if result.ok else f"Error: {result.stderr[:200]}",
+            message="Diagnostico completado" if result.ok else f"Error: {result.stderr[:200]}",
             output=result.stdout + "\n" + result.stderr,
             duration_ms=(time.time() - t0) * 1000,
         )
         self.status_log.append(status)
         return status
 
-    # ── Verificación de salud ────────────────────────────────────────
+    # ── Verificacion de salud ────────────────────────────────────────
 
     def health_check(self, port: int = 8000) -> DeployStatus:
         """Verifica que el backend FastAPI responde en la Pi.
 
-        Realiza una petición HTTP al endpoint /health del backend remoto.
+        Usa /health/ready (solo codigo HTTP, no grep de texto).
 
         Args:
             port: Puerto donde escucha el backend remoto.
 
         Returns:
-            DeployStatus indicando si el backend está respondiendo.
+            DeployStatus indicando si el backend esta respondiendo.
         """
         import time
 
         logger.info("Verificando salud del backend remoto en puerto %d...", port)
         t0 = time.time()
 
-        # Usar curl desde la propia Pi para verificar localhost
+        # Usar curl con -fsS: fail on error, silent, show errors
+        # /health/ready devuelve 200 si listo, 503 si no
         result = self.ssh.execute(
-            f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/health 2>/dev/null || echo 'FAIL'"
+            f"curl -fsS -o /dev/null -w '%{{http_code}}' "
+            f"http://localhost:{port}/health/ready 2>/dev/null || echo 'FAIL'"
         )
 
         is_healthy = result.stdout.strip() == "200"
         status = DeployStatus(
             step="health_check",
             success=is_healthy,
-            message="Backend responde correctamente" if is_healthy else f"Backend no responde (código: {result.stdout.strip()})",
+            message="Backend responde correctamente" if is_healthy
+            else f"Backend no responde (codigo: {result.stdout.strip()})",
             output=result.stdout,
             duration_ms=(time.time() - t0) * 1000,
         )
         self.status_log.append(status)
         return status
 
-    # ── Inicio / parada del backend ──────────────────────────────────
+    # ── Gestion del backend via systemctl ───────────────────────────
 
-    def start_backend(self, port: int = 8000) -> DeployStatus:
-        """Inicia el backend FastAPI en la Raspberry Pi en segundo plano.
+    def start_backend(self) -> DeployStatus:
+        """Inicia el backend via systemctl.
 
-        Args:
-            port: Puerto donde escuchará el backend.
-
-        Returns:
-            DeployStatus con el resultado del inicio.
+        En lugar de nohup/pkill, usa el servicio systemd instalado.
         """
         import time
 
-        logger.info("Iniciando backend en puerto %d...", port)
+        logger.info("Iniciando backend via systemctl...")
         t0 = time.time()
 
-        # Matar instancia previa si existe
-        self.ssh.execute("pkill -f 'uvicorn backend.app.main:app' 2>/dev/null || true")
-
-        # Iniciar en segundo plano
         result = self.ssh.execute(
-            f"cd {self.remote_root} && "
-            f"nohup .venv/bin/python -m uvicorn backend.app.main:app --host 0.0.0.0 --port {port} "
-            f"> /tmp/hmi_backend.log 2>&1 & echo $!"
+            "sudo systemctl start rpi-hmi-backend.service 2>&1 && echo 'STARTED' || echo 'FAILED'",
+            timeout=30,
         )
 
-        pid = result.stdout.strip()
+        ok = "STARTED" in result.stdout
         status = DeployStatus(
             step="start_backend",
-            success=result.ok and pid.isdigit(),
-            message=f"Backend iniciado (PID: {pid})" if pid.isdigit() else "Error al iniciar backend",
+            success=ok,
+            message="Backend iniciado via systemctl" if ok
+            else f"Error: {result.stderr[:200]}",
             output=result.stdout,
             duration_ms=(time.time() - t0) * 1000,
         )
@@ -510,21 +497,79 @@ class DeployService:
         return status
 
     def stop_backend(self) -> DeployStatus:
-        """Detiene el backend FastAPI en la Raspberry Pi.
-
-        Returns:
-            DeployStatus con el resultado de la parada.
-        """
+        """Detiene el backend via systemctl."""
         import time
 
-        logger.info("Deteniendo backend remoto...")
+        logger.info("Deteniendo backend via systemctl...")
         t0 = time.time()
-        result = self.ssh.execute("pkill -f 'uvicorn backend.app.main:app' 2>/dev/null && echo 'STOPPED' || echo 'NOT_RUNNING'")
+
+        result = self.ssh.execute(
+            "sudo systemctl stop rpi-hmi-backend.service 2>&1 && echo 'STOPPED' || echo 'NOT_RUNNING'",
+            timeout=30,
+        )
 
         status = DeployStatus(
             step="stop_backend",
             success=True,
             message=result.stdout.strip(),
+            output=result.stdout,
+            duration_ms=(time.time() - t0) * 1000,
+        )
+        self.status_log.append(status)
+        return status
+
+    def restart_backend(self) -> DeployStatus:
+        """Reinicia el backend via systemctl.
+
+        Este es el metodo preferido para aplicar cambios tras un deploy.
+        """
+        import time
+
+        logger.info("Reiniciando backend via systemctl...")
+        t0 = time.time()
+
+        result = self.ssh.execute(
+            "sudo systemctl restart rpi-hmi-backend.service 2>&1 && echo 'RESTARTED' || echo 'FAILED'",
+            timeout=30,
+        )
+
+        ok = "RESTARTED" in result.stdout
+        status = DeployStatus(
+            step="restart_backend",
+            success=ok,
+            message="Backend reiniciado via systemctl" if ok
+            else f"Error: {result.stderr[:200]}",
+            output=result.stdout,
+            duration_ms=(time.time() - t0) * 1000,
+        )
+        self.status_log.append(status)
+        return status
+
+    def install_services(self) -> DeployStatus:
+        """Instala y habilita los servicios systemd en la Pi."""
+        import time
+
+        logger.info("Instalando servicios systemd...")
+        t0 = time.time()
+
+        # Copiar archivos .service a /etc/systemd/system/
+        svc_dir = f"{self.remote_root}/config/systemd"
+        result = self.ssh.execute(
+            f"sudo cp {svc_dir}/rpi-hmi-backend.service /etc/systemd/system/ && "
+            f"sudo cp {svc_dir}/rpi-hmi-display.service /etc/systemd/system/ && "
+            f"sudo systemctl daemon-reload && "
+            f"sudo systemctl enable rpi-hmi-backend.service rpi-hmi-display.service && "
+            f"sudo systemctl disable lightdm 2>/dev/null || true && "
+            f"echo 'INSTALLED'",
+            timeout=30,
+        )
+
+        ok = "INSTALLED" in result.stdout
+        status = DeployStatus(
+            step="install_services",
+            success=ok,
+            message="Servicios systemd instalados y habilitados" if ok
+            else f"Error: {result.stderr[:200]}",
             output=result.stdout,
             duration_ms=(time.time() - t0) * 1000,
         )
@@ -539,8 +584,9 @@ class DeployService:
         Pasos:
             1. setup_environment()
             2. deploy_app()
-            3. start_backend()
-            4. health_check()
+            3. install_services()
+            4. restart_backend()
+            5. health_check()
 
         Args:
             project_root: Ruta local del proyecto (None = auto-detectar).
@@ -553,6 +599,7 @@ class DeployService:
         return {
             "environment": self.setup_environment(),
             "deploy": self.deploy_app(project_root),
-            "start": [self.start_backend()],
+            "services": [self.install_services()],
+            "restart": [self.restart_backend()],
             "health": [self.health_check()],
         }

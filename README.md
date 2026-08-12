@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141-green?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SolidJS](https://img.shields.io/badge/SolidJS-1.9-blue?logo=solid)](https://www.solidjs.com/)
-[![Tests](https://img.shields.io/badge/tests-103%2F103-green)]()
+[![Tests](https://img.shields.io/badge/tests-184%2F184-green)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/jvelasca/rpi-hmi-pantalla/blob/main/LICENSE)
 
 Plataforma HMI (Human-Machine Interface) para Raspberry Pi con pantalla táctil 3.5",
@@ -63,7 +63,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 | **Touch** | evdev | Driver ADS7846/XPT2046 |
 | **Frontend Web** | SolidJS + TypeScript + Vite + Tailwind v4 | Panel de control < 11 KB gzip |
 | **Systemd** | 2 services | Auto-boot backend + display (lightdm disabled) |
-| **Tests** | Pytest | 77 backend + 26 display = 103 tests |
+| **Tests** | Pytest | 149 backend + 35 display = 184 tests |
 
 ---
 
@@ -92,7 +92,7 @@ Todos los endpoints disponibles en `http://192.168.88.211:8000`:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | `GET` | `/api/status` | Estado completo (LED + botón + WS clients) |
-| `GET` | `/health` | Health check |
+| `GET` | `/health` | Health check completo |\n| `GET` | `/health/live` | Liveness probe (siempre 200) |\n| `GET` | `/health/ready` | Readiness probe (200 si BD OK) |
 
 ### WebSocket
 
@@ -208,10 +208,10 @@ rpi-hmi-pantalla/
 pytest backend/tests/ display/tests/
 
 # Backend
-pytest backend/tests/ -v         # 77 tests
+pytest backend/tests/ -v         # 149 tests
 
 # Display (mock mode, sin GPU)
-pytest display/tests/ -v         # 26 tests
+pytest display/tests/ -v         # 35 tests
 ```
 
 ---

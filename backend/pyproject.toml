@@ -31,6 +31,8 @@ dependencies = [
     "gpiozero>=2.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
+    "aiosqlite>=0.20.0",
+    "paramiko>=3.4",
 ]
 
 [project.optional-dependencies]
