@@ -48,9 +48,10 @@ def main() -> None:
     if not DIST.exists():
         sys.exit(f"ERROR: {DIST} no existe. Ejecuta: cd frontend && npm run build")
 
-    try:
-        target_dir = f"{PI_BASE}/frontend/dist"
+    target_dir = f"{PI_BASE}/frontend/dist"
+    transfer_errors = 0
 
+    try:
         # Clean and recreate target directory
         ssh.execute(f"rm -rf {target_dir} && mkdir -p {target_dir}", timeout=10)
         print(f"  Cleaned {target_dir}/")
@@ -74,6 +75,12 @@ def main() -> None:
                 count += 1
             except Exception as e:
                 print(f"  ERR {rel}: {e}")
+                transfer_errors += 1
+
+        # Fail-fast if any transfer failed
+        if transfer_errors:
+            print(f"\n[ERROR] {transfer_errors} archivo(s) no se transfirieron. Abortando deploy.")
+            sys.exit(1)
 
         # Verify
         print(f"\n  Files on Pi ({target_dir}/):")
@@ -85,10 +92,17 @@ def main() -> None:
         result = ssh.execute("curl -s http://localhost:8000/ | head -1", timeout=10)
         print("  " + (result.stdout.strip()[:120] if result.stdout.strip() else "(empty)"))
 
-        # Restart backend to pick up new frontend (in case of cached static files)
+        # Restart backend to pick up new frontend
         print("\n  Restarting backend...")
-        ssh.execute("sudo systemctl restart rpi-hmi-backend.service 2>/dev/null || true", timeout=15)
-        print("  Backend restarted")
+        result = ssh.execute(
+            "sudo systemctl restart rpi-hmi-backend.service 2>&1 && echo 'RESTARTED' || echo 'FAILED'",
+            timeout=15,
+        )
+        if "RESTARTED" in result.stdout:
+            print("  Backend restart: OK")
+        else:
+            print(f"  [ERROR] Backend restart failed. Revisa: sudo journalctl -u rpi-hmi-backend")
+            sys.exit(1)
 
         print(f"\n[DONE] {count} files -> http://{HOST}:8000/")
 
