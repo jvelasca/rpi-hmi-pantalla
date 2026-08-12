@@ -50,6 +50,7 @@ class StateManager:
         self._start_time: float = time.monotonic()
         self._persistence: Any = None  # Persistence instance (seteado en set_persistence)
         self._sequence: int = 0  # Contador de eventos para ordenamiento WS
+        self._pending_persistence_tasks: set[asyncio.Task] = set()  # Track persistence tasks for drain
 
         # Cargar pin desde devices.yaml (fuente unica de verdad)
         pin = self._load_led_pin()
@@ -58,6 +59,8 @@ class StateManager:
         self._display_info: DisplayInfo | None = None
         self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
+        self._broadcast_queues: dict[str, asyncio.Queue] = {}  # topic -> queue for serialized broadcasts
+        self._broadcast_workers: dict[str, asyncio.Task] = {}  # topic -> worker task
 
     def set_persistence(self, persistence: Any) -> None:
         """Registra la capa de persistencia.
@@ -236,12 +239,17 @@ class StateManager:
         return new_state
 
     def toggle_led(self) -> LedState:
-        """Alterna el estado del LED.
+        """Alterna el estado del LED de forma atomica.
+
+        La lectura y escritura ocurren dentro del mismo lock
+        para evitar carreras read-modify-write.
 
         Returns:
             Nuevo LedState tras el toggle.
         """
-        return self.set_led(not self.led.state)
+        with self._lock:
+            new_state_val = not self._led_state.state
+        return self.set_led(new_state_val)
 
     def press_button(self) -> ButtonState:
         """Registra una pulsacion del boton.
@@ -392,6 +400,15 @@ class StateManager:
 
     # ── Persistencia interna ───────────────────────────────────
 
+    def _schedule_persist(self, coro) -> None:
+        """Schedule a persistence coroutine and track it for shutdown drain."""
+        try:
+            task = asyncio.create_task(coro)
+            self._pending_persistence_tasks.add(task)
+            task.add_done_callback(self._pending_persistence_tasks.discard)
+        except RuntimeError:
+            logger.debug("Persistencia omitida (sin event loop)")
+
     def _persist_led(self, state: bool) -> None:
         """Persiste el estado del LED en SQLite (en background).
 
@@ -399,23 +416,13 @@ class StateManager:
         """
         if not self._persistence:
             return
-        try:
-            asyncio.create_task(
-                self._persistence.save_led(state)
-            )
-        except RuntimeError:
-            logger.debug("Persistencia LED omitida (sin event loop)")
+        self._schedule_persist(self._persistence.save_led(state))
 
     def _persist_button(self, count: int) -> None:
         """Persiste el contador del boton en SQLite (en background)."""
         if not self._persistence:
             return
-        try:
-            asyncio.create_task(
-                self._persistence.save_button_count(count)
-            )
-        except RuntimeError:
-            logger.debug("Persistencia boton omitida (sin event loop)")
+        self._schedule_persist(self._persistence.save_button_count(count))
 
     # ── Event Log ──────────────────────────────────────────────
 
@@ -425,52 +432,73 @@ class StateManager:
 
         if not self._persistence:
             return
-        try:
-            payload_str = _json.dumps(payload) if payload else None
-            asyncio.create_task(
-                self._persistence.log_event(event_type, payload_str)
-            )
-        except RuntimeError:
-            logger.debug("Event log omitido (sin event loop)")
+        payload_str = _json.dumps(payload) if payload else None
+        self._schedule_persist(self._persistence.log_event(event_type, payload_str))
 
     # ── Drain de tareas de persistencia ────────────────────────
 
     async def flush_pending_tasks(self) -> None:
-        """Espera a que todas las tareas de persistencia pendientes terminen.
+        """Espera a que las tareas de persistencia pendientes terminen.
+
+        Solo espera las tareas de persistencia registradas explicitamente,
+        no todas las tareas del event loop.
 
         Debe llamarse durante el shutdown para garantizar que los datos
         se escriben en SQLite antes de cerrar la conexion.
         """
-        import asyncio as _asyncio
-
-        if not self._persistence:
+        if not self._persistence or not self._pending_persistence_tasks:
             return
 
-        # Recoger todas las tareas pendientes del event loop
-        tasks = [t for t in _asyncio.all_tasks()
-                 if t is not _asyncio.current_task()]
-
-        if tasks:
-            logger.info("Drenando %d tareas de persistencia pendientes...", len(tasks))
+        pending = list(self._pending_persistence_tasks)
+        if pending:
+            logger.info("Drenando %d tareas de persistencia pendientes...", len(pending))
             try:
-                await _asyncio.gather(*tasks, return_exceptions=True)
+                await asyncio.gather(*pending, return_exceptions=True)
             except Exception as exc:
                 logger.warning("Error durante drain de tareas: %s", exc)
 
     # ── Interno ────────────────────────────────────────────────
 
     def _schedule_broadcast(self, message: ServerMessage) -> None:
-        """Programa un broadcast de forma segura en cualquier contexto.
+        """Programa un broadcast serializado por topico.
 
-        En contexto async: usa asyncio.create_task.
-        En contexto sincrono: ignora (no hay clientes WS en tests unitarios).
+        Usa una cola por topico para garantizar que los mensajes
+        se entregan en orden de sequence a cada cliente.
         """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._broadcast(message))
+            topic = message.type.split("_")[0]  # "led_changed" -> "led"
+
+            # Lazy-init queue and worker for this topic
+            if topic not in self._broadcast_queues:
+                self._broadcast_queues[topic] = asyncio.Queue()
+                self._broadcast_workers[topic] = loop.create_task(
+                    self._broadcast_worker(topic)
+                )
+
+            # Put message in the queue (non-blocking)
+            self._broadcast_queues[topic].put_nowait(message)
         except RuntimeError:
-            # No hay event loop (ej. tests sincronos) — ignorar
             logger.debug("Broadcast omitido (sin event loop): %s", message.type)
+
+    async def _broadcast_worker(self, topic: str) -> None:
+        """Worker que serializa broadcasts para un topico.
+
+        Garantiza que los mensajes se envian en orden FIFO
+        a todos los suscriptores del topico.
+        """
+        queue = self._broadcast_queues.get(topic)
+        if not queue:
+            return
+
+        while True:
+            try:
+                message = await queue.get()
+                await self._broadcast(message)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error en broadcast worker para %s", topic)
 
     async def _broadcast(self, message: ServerMessage) -> None:
         """Envia un mensaje a todos los suscriptores del topico correspondiente.

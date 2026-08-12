@@ -1,4 +1,4 @@
-﻿"""
+"""
 backend.app.services.deploy_service
 ====================================
 
@@ -51,6 +51,7 @@ DEPLOY_DIRECTORIES = [
     "config/systemd",
     "scripts",
     "frontend/dist",
+    "diagnostics",
 ]
 
 # Archivos raiz individuales que deben copiarse
@@ -581,14 +582,9 @@ class DeployService:
     # ── Despliegue completo ──────────────────────────────────────────
 
     def full_deploy(self, project_root: Optional[str] = None) -> Dict[str, List[DeployStatus]]:
-        """Ejecuta el ciclo completo de despliegue.
+        """Ejecuta el ciclo completo de despliegue con fail-fast.
 
-        Pasos:
-            1. setup_environment()
-            2. deploy_app()
-            3. install_services()
-            4. restart_backend()
-            5. health_check()
+        Si un paso falla, no continua con los siguientes.
 
         Args:
             project_root: Ruta local del proyecto (None = auto-detectar).
@@ -597,11 +593,38 @@ class DeployService:
             Diccionario con los resultados agrupados por fase.
         """
         logger.info("=== INICIANDO DESPLIEGUE COMPLETO ===")
+        results: Dict[str, List[DeployStatus]] = {}
 
-        return {
-            "environment": self.setup_environment(),
-            "deploy": self.deploy_app(project_root),
-            "services": [self.install_services()],
-            "restart": [self.restart_backend()],
-            "health": [self.health_check()],
-        }
+        # 1. Environment
+        env_steps = self.setup_environment()
+        results["environment"] = env_steps
+        if any(not s.success for s in env_steps):
+            logger.error("Fase environment fallida, abortando deploy")
+            return results
+
+        # 2. Deploy
+        deploy_steps = self.deploy_app(project_root)
+        results["deploy"] = deploy_steps
+        if any(not s.success for s in deploy_steps):
+            logger.error("Fase deploy fallida, abortando deploy")
+            return results
+
+        # 3. Services
+        service_status = self.install_services()
+        results["services"] = [service_status]
+        if not service_status.success:
+            logger.error("Fase services fallida, abortando deploy")
+            return results
+
+        # 4. Restart
+        restart_status = self.restart_backend()
+        results["restart"] = [restart_status]
+        if not restart_status.success:
+            logger.error("Fase restart fallida, abortando deploy")
+            return results
+
+        # 5. Health
+        health_status = self.health_check()
+        results["health"] = [health_status]
+
+        return results

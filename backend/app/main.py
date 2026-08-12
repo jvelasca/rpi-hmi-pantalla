@@ -17,7 +17,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api import hmi_router, ws_router, health_router, admin_ssh_router, admin_deploy_router
@@ -191,38 +191,32 @@ if settings.enable_admin_api:
     app.include_router(admin_deploy_router)
     logger.warning("ADMIN_API habilitada. Deshabilita con ENABLE_ADMIN_API=false en .env para produccion.")
 
-# ── Endpoints raiz ───────────────────────────────────────────
+# ── Frontend SolidJS compilado ────────────────────────────────
+# Montado DESPUES de todos los routers. FastAPI prueba primero
+# las rutas registradas (API, WS, health) y solo si no hay match
+# sirve archivos estaticos del frontend compilado con Vite.
+#
+# html=True permite SPA routing: cualquier ruta no encontrada en
+# el directorio estatico sirve index.html como fallback.
+#
+# Si el frontend no esta compilado (modo desarrollo/sin npm build),
+# se registra un endpoint JSON informativo en su lugar.
 
+dist_dir = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
-@app.get("/")
-async def root() -> FileResponse:
-    """Sirve el frontend compilado (index.html).
-
-    Si no existe, devuelve mensaje informativo.
-
-    Returns:
-        FileResponse con index.html o JSON con instrucciones.
-    """
-    index_path = Path(__file__).parent / "static" / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return JSONResponse(
-        content={
+if dist_dir.exists() and (dist_dir / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="frontend")
+else:
+    @app.get("/")
+    async def root() -> JSONResponse:
+        return JSONResponse(content={
             "message": "RPi HMI Backend",
             "version": "0.3.0",
             "docs": "/docs" if settings.enable_docs else "deshabilitado",
             "api": "/api/status",
             "websocket": "/ws",
             "frontend": "No compilado. Ejecuta: cd frontend && npm run build",
-        }
-    )
-
-
-# ── Montar archivos estaticos ─────────────────────────────────
-
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        })
 
 
 # ── Entry point ──────────────────────────────────────────────

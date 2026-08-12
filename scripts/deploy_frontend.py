@@ -1,10 +1,10 @@
-"""Deploy frontend build to Pi via DeployService (SFTP dist/ -> backend/app/static/).
+"""Deploy frontend build to Pi (SFTP frontend/dist/ -> /home/pi/rpi_hmi/frontend/dist/).
+
+FastAPI sirve el frontend directamente desde frontend/dist/ en la Pi
+(main.py monta ese directorio en la raiz con StaticFiles html=True).
 
 Credentials are loaded from environment variables (.env file)
 or from RPI_HOST, RPI_USER, RPI_PASSWORD, RPI_KEY_PATH env vars.
-
-Uses the project's own SSHDriver and DeployService instead of
-raw paramiko, eliminating SSH/SFTP logic duplication.
 
 Usage:
     python scripts/deploy_frontend.py
@@ -18,8 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from backend.app.services.ssh_manager import ParamikoSSHDriver, SSHResult  # noqa: E402
-from backend.app.services.deploy_service import DeployService  # noqa: E402
+from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
 HOST = os.getenv("RPI_HOST", "192.168.88.211")
 USER = os.getenv("RPI_USER", "pi")
@@ -46,45 +45,50 @@ def main() -> None:
     )
     print(f"[OK] Connected to {HOST}")
 
+    if not DIST.exists():
+        sys.exit(f"ERROR: {DIST} no existe. Ejecuta: cd frontend && npm run build")
+
     try:
-        deploy_svc = DeployService(ssh, remote_root=PI_BASE)
-        static_dir = f"{PI_BASE}/backend/app/static"
+        target_dir = f"{PI_BASE}/frontend/dist"
 
-        # Clean and create static directory
-        result = ssh.execute(
-            f"rm -rf {static_dir}/* && mkdir -p {static_dir}/assets",
-            timeout=10,
-        )
-        print("  Cleaned static/")
+        # Clean and recreate target directory
+        ssh.execute(f"rm -rf {target_dir} && mkdir -p {target_dir}", timeout=10)
+        print(f"  Cleaned {target_dir}/")
 
-        # Upload files via DeployService SFTP
+        # Upload files via SFTP
         count = 0
         for local_file in sorted(DIST.rglob("*")):
             if local_file.is_dir():
                 continue
             rel = local_file.relative_to(DIST).as_posix()
-            remote_path = f"{static_dir}/{rel}"
+            remote_path = f"{target_dir}/{rel}"
+
+            # Ensure subdirectories exist
+            remote_parent = str(Path(remote_path).parent)
+            ssh.execute(f"mkdir -p {remote_parent}", timeout=5)
+
             try:
                 ssh.transfer_file(str(local_file), remote_path)
                 size = local_file.stat().st_size
-                print(f"  OK  static/{rel} ({size}B)")
+                print(f"  OK  frontend/dist/{rel} ({size}B)")
                 count += 1
             except Exception as e:
                 print(f"  ERR {rel}: {e}")
 
         # Verify
-        print("\n  Files on Pi:")
-        result = ssh.execute(
-            f"find {static_dir} -type f -ls 2>/dev/null",
-            timeout=10,
-        )
+        print(f"\n  Files on Pi ({target_dir}/):")
+        result = ssh.execute(f"find {target_dir} -type f -ls 2>/dev/null", timeout=10)
         print(result.stdout)
 
         # Check root page serves the new frontend
-        print("\n  Root page:")
-        result = ssh.execute("curl -s http://localhost:8000/", timeout=10)
-        html = result.stdout
-        print("  " + html.split("\n")[0][:80])
+        print("\n  Root page (index.html):")
+        result = ssh.execute("curl -s http://localhost:8000/ | head -1", timeout=10)
+        print("  " + (result.stdout.strip()[:120] if result.stdout.strip() else "(empty)"))
+
+        # Restart backend to pick up new frontend (in case of cached static files)
+        print("\n  Restarting backend...")
+        ssh.execute("sudo systemctl restart rpi-hmi-backend.service 2>/dev/null || true", timeout=15)
+        print("  Backend restarted")
 
         print(f"\n[DONE] {count} files -> http://{HOST}:8000/")
 

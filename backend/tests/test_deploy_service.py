@@ -1,4 +1,4 @@
-"""
+﻿"""
 backend.tests.test_deploy_service
 ==================================
 
@@ -134,17 +134,22 @@ class TestDeployService:
         assert status.step == "stop_backend"
 
     def test_full_deploy(self, deploy_service: DeployService) -> None:
-        """full_deploy() debe devolver diccionario con 5 claves."""
+        """full_deploy() devuelve dict con fail-fast: si un paso falla, no continua."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             result = deploy_service.full_deploy(project_root=tmpdir)
             assert isinstance(result, dict)
+            # Los primeros pasos deben estar siempre
             assert "environment" in result
             assert "deploy" in result
             assert "services" in result
-            assert "restart" in result
-            assert "health" in result
+            # services falla con mock (output != 'INSTALLED'), asi que
+            # restart y health NO deben aparecer (fail-fast)
+            assert "restart" not in result
+            assert "health" not in result
+            # services.status debe ser False
+            assert result["services"][0].success is False
 
     def test_status_log_accumulates(self, deploy_service: DeployService) -> None:
         """Cada operación debe añadir entradas a status_log."""

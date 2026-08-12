@@ -83,16 +83,12 @@ def _check_deploy_steps(steps, label="Deploy"):
 
 
 def _build_frontend(root: Path) -> None:
-    """Compila el frontend (npm run build) si dist/index.html no existe.
+    """Compila el frontend (npm run build) siempre.
 
-    No transfiere archivos — eso lo hace DeployService.deploy_app().
+    En deploy nunca se salta la compilacion para evitar enviar
+    una version obsoleta del frontend.
     """
     frontend_dir = root / "frontend"
-    dist_index = frontend_dir / "dist" / "index.html"
-
-    if dist_index.exists():
-        print("  Frontend ya compilado (dist/index.html existe)")
-        return
 
     print("  Compilando frontend con npm run build...")
     try:
@@ -100,6 +96,7 @@ def _build_frontend(root: Path) -> None:
             ["npm", "run", "build"],
             cwd=str(frontend_dir),
             check=True,
+            capture_output=False,  # Show build output
         )
         print("  Frontend compilado OK")
     except subprocess.CalledProcessError:
@@ -158,14 +155,18 @@ def check_backend_ready(ssh: ParamikoSSHDriver) -> bool:
 # ── Display-specific operations ───────────────────────────────
 
 
-def install_display_deps(ssh: ParamikoSSHDriver) -> None:
-    """Install display dependencies from requirements file."""
+def install_display_deps(ssh: ParamikoSSHDriver) -> bool:
+    """Install display dependencies from requirements file.
+
+    Returns:
+        True if successful, False if error.
+    """
     req_path = f"{PI_BASE}/display/requirements.txt"
     # Check if requirements file exists
     result = ssh.execute(f"test -f {req_path} && echo 'FOUND' || echo 'MISSING'", timeout=10)
     if "MISSING" in result.stdout:
-        print(f"  [WARN] {req_path} not found on Pi. Deploy display files first.")
-        return
+        print(f"  [ERROR] {req_path} not found on Pi. Deploy display files first.")
+        return False
 
     print(f"  Installing from {req_path}...")
     result = ssh.execute(
@@ -174,6 +175,11 @@ def install_display_deps(ssh: ParamikoSSHDriver) -> None:
     )
     print(f"  pip exit={result.exit_code}")
     print(f"  {result.stdout.strip()}")
+
+    if result.exit_code != 0:
+        print(f"  [ERROR] pip install failed with exit code {result.exit_code}")
+        return False
+    return True
 
 
 def verify(ssh: ParamikoSSHDriver) -> None:
@@ -225,29 +231,32 @@ def verify(ssh: ParamikoSSHDriver) -> None:
         print(f"  [stderr] {result.stderr[:200]}")
 
 
-def ensure_backend(ssh: ParamikoSSHDriver) -> None:
+def ensure_backend(ssh: ParamikoSSHDriver) -> bool:
     """Start backend via systemctl if not already running.
 
     Usa /health/ready (codigo HTTP 200) en lugar de grep -q ok.
+
+    Returns:
+        True si el backend esta corriendo al finalizar.
     """
     if check_backend_ready(ssh):
         print("  Backend already running and ready")
-        return
+        return True
 
     print("  Starting backend via systemctl...")
-    ssh.execute(
-        "sudo systemctl start rpi-hmi-backend.service 2>&1 || "
-        f"cd {PI_BASE} && PYTHONPATH={PI_BASE} nohup {VENV_PY} "
-        f"-m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 "
-        f"> /tmp/backend.log 2>&1 &",
+    result = ssh.execute(
+        "sudo systemctl start rpi-hmi-backend.service 2>&1 && echo 'STARTED' || echo 'FAILED'",
         timeout=15,
     )
-    time.sleep(3)
 
-    if check_backend_ready(ssh):
-        print("  Backend start: OK")
-    else:
-        print("  Backend start: FAIL (check /tmp/backend.log)")
+    if "STARTED" in result.stdout:
+        time.sleep(3)
+        if check_backend_ready(ssh):
+            print("  Backend start: OK")
+            return True
+
+    print("  Backend start: FAIL (check journalctl -u rpi-hmi-backend)")
+    return False
 
 
 def stop_lightdm(ssh: ParamikoSSHDriver) -> bool:
@@ -352,7 +361,8 @@ def main() -> None:
 
         # 1. Setup environment
         step("SETUP ENVIRONMENT")
-        deploy_svc.setup_environment()
+        env_steps = deploy_svc.setup_environment()
+        _check_deploy_steps(env_steps, "Environment setup")
 
         # 2. Build frontend locally (must run before deploy_app which transfers frontend/dist/)
         step("BUILD FRONTEND")
@@ -374,17 +384,27 @@ def main() -> None:
 
         # 5. Install display dependencies
         step("INSTALL DEPS")
-        install_display_deps(ssh)
+        if not install_display_deps(ssh):
+            print("\n[ERROR] Failed to install display dependencies. Aborting.")
+            sys.exit(1)
 
         # 6. Restart backend
         step("RESTART BACKEND")
-        deploy_svc.restart_backend()
+        restart_status = deploy_svc.restart_backend()
+        if not restart_status.success:
+            print(f"\n[ERROR] Backend restart failed: {restart_status.message}")
+            sys.exit(1)
+        print(f"  Backend restart: {restart_status.message}")
 
         # ── Path-specific post-processing ──
 
         if args.install_service:
             step("INSTALL SYSTEMD SERVICES")
-            deploy_svc.install_services()
+            svc_status = deploy_svc.install_services()
+            if not svc_status.success:
+                print(f"\n[ERROR] Service installation failed: {svc_status.message}")
+                sys.exit(1)
+            print(f"  Service installation: {svc_status.message}")
             print("\n  [DONE] Services installed. Reboot to start HMI on TFT:")
             print(f"    ssh {USER}@{HOST} sudo reboot")
             return
