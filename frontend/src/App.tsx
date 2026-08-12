@@ -2,14 +2,20 @@
  * App — Componente raiz. Orquesta WebSocket, estado y layout.
  */
 
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { useApi } from "@/hooks/useApi";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { Header } from "@/components/Header";
 import { LedPanel } from "@/components/LedPanel";
 import { ButtonPanel } from "@/components/ButtonPanel";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
-import type { LedState, ButtonState, SystemStatus, ServerMessage } from "@/types/api";
+import { ConfigPanel } from "@/components/ConfigPanel";
+import { ConfigScreen } from "@/components/ConfigScreen";
+import { ScreenTest } from "@/components/ScreenTest";
+import { TouchCalibration } from "@/components/TouchCalibration";
+import type { LedState, ButtonState, ServerMessage } from "@/types/api";
+
+type View = "main" | "config" | "screenTest" | "touchCalibration";
 
 export function App() {
   // ── Estado ──────────────────────────────────────────
@@ -23,6 +29,9 @@ export function App() {
     press_count: 0,
   });
   const [wsClients, setWsClients] = createSignal(0);
+
+  // ── Navegacion (main, config, screenTest, touchCalibration) ─
+  const [view, setView] = createSignal<View>("main");
 
   // ── API REST (fallback) ─────────────────────────────
   const api = useApi();
@@ -84,16 +93,38 @@ export function App() {
   // ── Render ──────────────────────────────────────────
   return (
     <div class="min-h-screen flex flex-col bg-[#141428]">
-      <Header connected={ws.connected()} wsClients={wsClients()} />
+      <Show when={view() === "screenTest"}>
+        <ScreenTest onBack={() => setView("config")} />
+      </Show>
 
-      <main class="flex-1 flex items-center justify-center p-6">
-        <div class="flex flex-wrap gap-6 justify-center items-start">
-          <LedPanel led={led()} onToggle={toggleLed} />
-          <ButtonPanel button={button()} onPress={pressButton} />
-        </div>
-      </main>
+      <Show when={view() === "touchCalibration"}>
+        <TouchCalibration onBack={() => setView("config")} />
+      </Show>
 
-      <ConnectionStatus connected={ws.connected()} error={api.error()} />
+      <Show when={view() === "main" || view() === "config"}>
+        <Header connected={ws.connected()} wsClients={wsClients()} />
+
+        <main class="flex-1 flex items-center justify-center p-6">
+          <div class="flex flex-wrap gap-6 justify-center items-start">
+            <LedPanel led={led()} onToggle={toggleLed} />
+            <ButtonPanel button={button()} onPress={pressButton} />
+          </div>
+        </main>
+
+        <ConnectionStatus connected={ws.connected()} error={api.error()} />
+
+        {/* Boton de configuracion */}
+        <ConfigPanel onOpen={() => setView("config")} />
+
+        {/* Modal de configuracion */}
+        <Show when={view() === "config"}>
+          <ConfigScreen
+            onScreenTest={() => setView("screenTest")}
+            onTouchCalibration={() => setView("touchCalibration")}
+            onBack={() => setView("main")}
+          />
+        </Show>
+      </Show>
     </div>
   );
 }

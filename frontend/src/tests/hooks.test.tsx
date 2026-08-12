@@ -115,11 +115,12 @@ describe("useApi", () => {
 
     mockFetch.mockRejectedValueOnce(new Error("Network error"));
 
-    let apiRef: { error: () => string | null } | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let apiRef: Record<string, any> | null = null;
     let result: unknown = "not-null";
     createRoot((disposer) => {
       apiRef = useApi();
-      apiRef.getLed().then((r) => {
+      apiRef.getStatus().then((r: unknown) => {
         result = r;
         disposer();
       });
@@ -145,7 +146,7 @@ describe("useApi", () => {
     let result: unknown = "not-null";
     createRoot((disposer) => {
       const api = useApi();
-      api.getLed().then((r) => {
+      api.getStatus().then((r: unknown) => {
         result = r;
         disposer();
       });
