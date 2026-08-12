@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api import hmi_router, ws_router, admin_ssh_router, admin_deploy_router
+from backend.app.api import hmi_router, ws_router, health_router, admin_ssh_router, admin_deploy_router
 from backend.app.config import settings
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Gestiona el ciclo de vida de la aplicacion.
 
     Startup:
-    - Configura GPIO para LED en pin 17
+    - Lee configuracion de pines desde devices.yaml (fuente unica de verdad)
     - Registra callback de actualizacion hardware
     - Detecta display fisico
 
@@ -56,21 +56,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Configurar GPIO — leer pin desde devices.yaml (fuente unica de verdad)
     try:
         from backend.app.services.gpio_service import load_devices
+        from backend.app.models.device import DeviceType
 
         devices = load_devices("backend/config/devices.yaml")
         led_pin = 0
         for dev_id, dev in devices.items():
-            if dev.config.get("driver") == "gpio" and dev.config.get("mode") == "output":
-                led_pin = int(dev.config.get("pin", 0))
-                logger.info("Dispositivo GPIO detectado: %s en pin %d", dev_id, led_pin)
+            if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:
+                led_pin = dev.pin.bcm
+                logger.info(
+                    "Dispositivo GPIO detectado: %s en pin %d (%s)",
+                    dev_id,
+                    led_pin,
+                    dev.name,
+                )
                 break
 
         if led_pin > 0:
             gpio_service.setup_output(led_pin)
             logger.info("GPIO %d configurado como salida (LED)", led_pin)
         else:
-            logger.warning("No se encontro pin GPIO output en devices.yaml")
-            led_pin = 17  # fallback compatible
+            logger.warning(
+                "No se encontro pin GPIO output en devices.yaml. "
+                "El LED funcionara en modo virtual (sin GPIO fisico). "
+                "Verifica backend/config/devices.yaml"
+            )
 
         # Conectar StateManager con GPIO via callback
         def _update_led(device: str, led_state: object) -> None:
@@ -97,6 +106,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Display no disponible")
 
+    # Auto-conexion SSH (migrada desde router.on_event('startup')).
+    # Si hay credenciales configuradas, intenta conectar al arrancar.
+    try:
+        from backend.app.api.ssh import auto_connect_ssh
+
+        await auto_connect_ssh()
+    except Exception as exc:
+        logger.debug("Auto-conexion SSH ignorada: %s", exc)
+
+    # Inicializar persistencia SQLite
+    try:
+        from backend.app.services.persistence import get_persistence
+
+        db = await get_persistence(settings.db_path)
+        state_manager.set_persistence(db)
+        await state_manager.restore_from_db()
+        logger.info("Persistencia SQLite inicializada en %s", settings.db_path)
+    except Exception as exc:
+        logger.warning("Persistencia SQLite no disponible: %s", exc)
+
     yield  # ── App corriendo ──
 
     # Shutdown
@@ -105,6 +134,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         gpio_service.cleanup()
     except Exception as exc:
         logger.warning("Error en cleanup GPIO: %s", exc)
+    # Cerrar persistencia
+    try:
+        from backend.app.services.persistence import close_persistence
+        await close_persistence()
+    except Exception as exc:
+        logger.warning("Error al cerrar persistencia: %s", exc)
     logger.info("RPi HMI Backend detenido.")
 
 
@@ -136,21 +171,14 @@ app.add_middleware(
 app.include_router(hmi_router)
 app.include_router(ws_router)
 
+# Health check (publico)
+app.include_router(health_router)
+
 # Routers administrativos (requieren API key)
 app.include_router(admin_ssh_router)
 app.include_router(admin_deploy_router)
 
 # ── Endpoints raiz ───────────────────────────────────────────
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check para monitoreo.
-
-    Returns:
-        {"status": "ok"}
-    """
-    return {"status": "ok"}
 
 
 @app.get("/")

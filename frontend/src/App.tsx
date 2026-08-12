@@ -64,7 +64,7 @@ export function App() {
   async function toggleLed() {
     // Try WS first
     if (ws.connected()) {
-      ws.send({ type: "toggle_led" });
+      ws.send({ type: "toggle_led", version: "1.0" });
       return;
     }
     // Fallback to REST
@@ -74,7 +74,7 @@ export function App() {
 
   async function pressButton() {
     if (ws.connected()) {
-      ws.send({ type: "press_button" });
+      ws.send({ type: "press_button", version: "1.0" });
       return;
     }
     const result = await api.pressButton();

@@ -203,8 +203,8 @@ Write-Host "Para conectarte por SSH, ejecuta:" -ForegroundColor White
 Write-Host ""
 Write-Host "   ssh $User@$($target.IP)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Contraseña predeterminada: RaspberryB+2026!" -ForegroundColor DarkGray
-Write-Host "              (o 'raspberry' si es una instalación limpia)" -ForegroundColor DarkGray
+Write-Host "Contraseña: definida en variable de entorno RPI_PASSWORD" -ForegroundColor DarkGray
+Write-Host "  (configúrala con: `$env:RPI_PASSWORD='tu_contraseña')" -ForegroundColor DarkGray
 Write-Host ""
 
 # Exportar variables para otros scripts

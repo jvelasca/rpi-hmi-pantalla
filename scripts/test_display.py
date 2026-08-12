@@ -1,25 +1,69 @@
-"""Check all deps and test display app on Pi."""
-import paramiko, time
+"""Check all deps and test display app on Pi.
 
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("192.168.88.211", port=22, username="pi", password="RaspberryB+2026!", timeout=15)
+Credentials are loaded from environment variables (.env file)
+or from RPI_HOST, RPI_USER, RPI_PASSWORD, RPI_KEY_PATH env vars.
+"""
+import os
+import sys
+import time
+from pathlib import Path
 
-# Check evdev and websocket
-cmd = "/home/pi/rpi_hmi/venv/bin/python3 -c 'import evdev; print(\"evdev OK\"); import websocket; print(\"ws OK\"); import requests; print(\"requests OK\")'"
-stdin, stdout, stderr = c.exec_command(cmd)
-print("[DEPS]", stdout.read().decode("utf-8","replace").strip())
-err = stderr.read().decode("utf-8","replace").strip()
-if err: print("[STDERR]", err[:300])
+from dotenv import load_dotenv
 
-# Quick test run (5 sec timeout, mock mode to avoid DRM issues)
-print("\n[RUNTEST] Running display app (5s)...")
-cmd = "cd /home/pi/rpi_hmi && PYTHONPATH=/home/pi/rpi_hmi timeout 6 /home/pi/rpi_hmi/venv/bin/python3 display/app.py --debug 2>&1 || true"
-stdin, stdout, stderr = c.exec_command(cmd, timeout=10)
-out = stdout.read().decode("utf-8","replace")
-err_out = stderr.read().decode("utf-8","replace")
-print(out[-600:])
-if err_out:
-    print("[STDERR]", err_out[-400:])
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-c.close()
+from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
+
+HOST = os.getenv("RPI_HOST", "192.168.88.211")
+USER = os.getenv("RPI_USER", "pi")
+PASSWORD = os.getenv("RPI_PASSWORD", "")
+KEY_PATH = os.getenv("RPI_KEY_PATH", "")
+PORT = int(os.getenv("RPI_PORT", "22"))
+
+
+def main() -> None:
+    ssh = ParamikoSSHDriver()
+
+    if not KEY_PATH and not PASSWORD:
+        sys.exit("ERROR: Define RPI_PASSWORD o RPI_KEY_PATH en .env")
+
+    ssh.connect(
+        host=HOST,
+        user=USER,
+        password=PASSWORD,
+        port=PORT,
+        key_path=KEY_PATH,
+        timeout=15,
+    )
+    print(f"[OK] Connected to {HOST}")
+
+    try:
+        # Check evdev and websocket
+        result = ssh.execute(
+            "/home/pi/rpi_hmi/venv/bin/python3 -c "
+            "'import evdev; print(\"evdev OK\"); "
+            "import websocket; print(\"ws OK\"); "
+            "import requests; print(\"requests OK\")'",
+            timeout=15,
+        )
+        print("[DEPS]", result.stdout.strip())
+        if result.stderr:
+            print("[STDERR]", result.stderr[:300])
+
+        # Quick test run (5 sec timeout, mock mode to avoid DRM issues)
+        print("\n[RUNTEST] Running display app (5s)...")
+        result = ssh.execute(
+            "cd /home/pi/rpi_hmi && PYTHONPATH=/home/pi/rpi_hmi "
+            "timeout 6 /home/pi/rpi_hmi/venv/bin/python3 display/app.py --debug 2>&1 || true",
+            timeout=15,
+        )
+        print(result.stdout[-600:])
+        if result.stderr:
+            print("[STDERR]", result.stderr[-400:])
+
+    finally:
+        ssh.disconnect()
+
+
+if __name__ == "__main__":
+    main()

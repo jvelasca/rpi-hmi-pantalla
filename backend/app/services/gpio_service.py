@@ -17,7 +17,7 @@ Uso:
     gpio_service.set_low(17)              # Apagar LED en GPIO17
 
     devices = load_devices("backend/config/devices.yaml")
-    pin = devices["led1"].config["pin"]   # Leer pin desde YAML
+    pin = devices["led1"].pin.bcm if devices["led1"].pin else 0  # Leer pin desde YAML
 """
 
 from __future__ import annotations
@@ -28,64 +28,34 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
-import yaml
+import yaml  # noqa: F401 — kept for backward compat, unused after migration
+
+from backend.app.models.device import DeviceConfig, load_devices as _load_devices  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["GPIOService", "gpio_service", "load_devices", "Device", "MockGPIODriver", "RealGPIODriver"]
-
-# ── Device Registry ───────────────────────────────────────────
-
-
-@dataclass
-class Device:
-    """Representacion generica de un dispositivo.
-
-    Campos:
-    - id: identificador unico (string)
-    - name: nombre legible
-    - type: tipo logico (led, relay, sensor...)
-    - config: configuracion arbitraria cargada desde YAML
-    """
-
-    id: str
-    name: str
-    type: str
-    config: Dict[str, Any] = field(default_factory=dict)
+__all__ = [
+    "GPIOService",
+    "gpio_service",
+    "load_devices",
+    "DeviceConfig",
+    "MockGPIODriver",
+    "RealGPIODriver",
+]
 
 
-def load_devices(path: str) -> Dict[str, Device]:
+def load_devices(path: str) -> Dict[str, DeviceConfig]:
     """Carga el registro de dispositivos desde un fichero YAML.
 
-    El formato esperado es:
-
-    devices:
-      led1:
-        name: "LED 1"
-        driver: gpio
-        pin: 17
+    Delega en backend.app.models.device.load_devices (modelo Pydantic).
 
     Args:
         path: Ruta al archivo devices.yaml.
 
     Returns:
-        Diccionario id -> Device.
+        Diccionario id -> DeviceConfig.
     """
-    logger.info("Cargando devices desde %s", path)
-    with open(path, "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
-
-    devices: Dict[str, Device] = {}
-    for dev_id, cfg in (data.get("devices") or {}).items():
-        devices[dev_id] = Device(
-            id=dev_id,
-            name=cfg.get("name", dev_id),
-            type=cfg.get("driver", "unknown"),
-            config=cfg,
-        )
-
-    logger.info("Dispositivos cargados: %s", list(devices.keys()))
-    return devices
+    return _load_devices(path)
 
 
 # ── Driver Interface ──────────────────────────────────────────

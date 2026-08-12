@@ -39,7 +39,12 @@ else { Write-Host "[ERROR] Backend no responde: $h" -ForegroundColor Red; $wc.Di
 
 # ── Conectar SSH ──────────────────────────────────────────
 Write-Host "Conectando SSH..." -ForegroundColor Yellow
-$conn = PostApi "/api/ssh/connect" "{""host"":""$PiHost"",""user"":""pi"",""password"":""RaspberryB+2026!"",""port"":22}"
+if (-not $env:RPI_PASSWORD) {
+    Write-Host "[ERROR] Define RPI_PASSWORD en variables de entorno" -ForegroundColor Red
+    $wc.Dispose()
+    exit 1
+}
+$conn = PostApi "/api/ssh/connect" "{""host"":""$PiHost"",""user"":""pi"",""password"":""$env:RPI_PASSWORD"",""port"":22}"
 if ($conn -match "success.*true") { Write-Host "[OK] SSH conectado" -ForegroundColor Green }
 else { Write-Host "[ERROR] SSH: $conn" -ForegroundColor Red; $wc.Dispose(); exit 1 }
 
@@ -87,7 +92,7 @@ if ($hasFB -and $hasIli) {
         Start-Sleep 100
         
         Write-Host "Reconectando SSH..." -ForegroundColor Yellow
-        PostApi "/api/ssh/connect" "{""host"":""$PiHost"",""user"":""pi"",""password"":""RaspberryB+2026!"",""port"":22}" | Out-Null
+        PostApi "/api/ssh/connect" "{""host"":""$PiHost"",""user"":""pi"",""password"":""$env:RPI_PASSWORD"",""port"":22}" | Out-Null
         Start-Sleep 3
         
         Write-Host "Verificando /dev/fb0..." -ForegroundColor Yellow

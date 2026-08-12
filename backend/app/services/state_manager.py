@@ -3,6 +3,8 @@
 Singleton que centraliza el estado de LED, boton y display,
 y emite broadcasts WebSocket a todos los clientes suscritos.
 
+Persiste cambios en SQLite via el modulo `persistence.py`.
+
 Uso:
     from backend.app.services.state_manager import state_manager
 
@@ -40,11 +42,14 @@ class StateManager:
     """Gestiona el estado del sistema con broadcast WebSocket automatico.
 
     Thread-safe. Disenado como singleton (instancia unica `state_manager`).
+    Con persistencia SQLite opcional para sobrevivir reinicios.
     """
 
     def __init__(self) -> None:
         self._lock: threading.Lock = threading.Lock()
         self._start_time: float = time.monotonic()
+        self._persistence: Any = None  # Persistence instance (seteado en set_persistence)
+
         # Cargar pin desde devices.yaml (fuente unica de verdad)
         pin = self._load_led_pin()
         self._led_state: LedState = LedState(state=False, label="APAGADO", gpio_pin=pin)
@@ -52,6 +57,43 @@ class StateManager:
         self._display_info: DisplayInfo | None = None
         self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
+
+    def set_persistence(self, persistence: Any) -> None:
+        """Registra la capa de persistencia.
+
+        Args:
+            persistence: Instancia de Persistence (backend.app.services.persistence.Persistence).
+        """
+        self._persistence = persistence
+
+    async def restore_from_db(self) -> None:
+        """Restaura el estado desde SQLite si hay persistencia configurada.
+
+        Debe llamarse DESPUES de set_persistence y antes de empezar a
+        aceptar peticiones.
+        """
+        if not self._persistence:
+            return
+        try:
+            led_on, gpio_pin = await self._persistence.get_led()
+            count = await self._persistence.get_button_count()
+            with self._lock:
+                if gpio_pin:
+                    self._led_state = LedState(
+                        state=led_on,
+                        label="ENCENDIDO" if led_on else "APAGADO",
+                        gpio_pin=gpio_pin,
+                    )
+                self._button_state = ButtonState(
+                    pressed=False,
+                    press_count=count,
+                )
+            logger.info(
+                "Estado restaurado de BD: led=%s, button_count=%d",
+                led_on, count,
+            )
+        except Exception:
+            logger.warning("No se pudo restaurar estado desde BD", exc_info=True)
 
     @staticmethod
     def _load_led_pin() -> int:
@@ -65,11 +107,12 @@ class StateManager:
         """
         try:
             from backend.app.services.gpio_service import load_devices
+            from backend.app.models.device import DeviceType
 
             devices = load_devices("backend/config/devices.yaml")
             for dev_id, dev in devices.items():
-                if dev.config.get("driver") == "gpio" and dev.config.get("mode") == "output":
-                    pin = int(dev.config.get("pin", 0))
+                if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:
+                    pin = dev.pin.bcm
                     logger.info("Pin LED cargado desde devices.yaml: %s -> GPIO %d", dev_id, pin)
                     return pin
             logger.warning("No se encontro dispositivo GPIO output en devices.yaml")
@@ -119,6 +162,9 @@ class StateManager:
             except Exception:
                 logger.exception("Error en callback GPIO para LED")
 
+        # Persistir
+        self._persist_led(state)
+
         # Broadcast async
         msg = ServerMessage(type="led_changed", data=self._led_state.model_dump())
         self._schedule_broadcast(msg)
@@ -140,13 +186,17 @@ class StateManager:
             ButtonState actualizado.
         """
         with self._lock:
+            count = self._button_state.press_count + 1
             self._button_state = ButtonState(
                 pressed=True,
-                press_count=self._button_state.press_count + 1,
+                press_count=count,
             )
+        # Persistir
+        self._persist_button(count)
+
         msg = ServerMessage(type="button_pressed", data=self._button_state.model_dump())
         self._schedule_broadcast(msg)
-        logger.info("Boton presionado (count=%d)", self._button_state.press_count)
+        logger.info("Boton presionado (count=%d)", count)
         return self._button_state
 
     def release_button(self) -> ButtonState:
@@ -247,6 +297,30 @@ class StateManager:
             callback: Funcion con firma callback(device: str, state: LedState).
         """
         self._updater_callback = callback
+
+    # ── Persistencia interna ───────────────────────────────────
+
+    def _persist_led(self, state: bool) -> None:
+        """Persiste el estado del LED en SQLite (en background)."""
+        if not self._persistence:
+            return
+        try:
+            asyncio.create_task(
+                self._persistence.save_led(state, self._led_state.gpio_pin)
+            )
+        except RuntimeError:
+            logger.debug("Persistencia LED omitida (sin event loop)")
+
+    def _persist_button(self, count: int) -> None:
+        """Persiste el contador del boton en SQLite (en background)."""
+        if not self._persistence:
+            return
+        try:
+            asyncio.create_task(
+                self._persistence.save_button_count(count)
+            )
+        except RuntimeError:
+            logger.debug("Persistencia boton omitida (sin event loop)")
 
     # ── Interno ────────────────────────────────────────────────
 

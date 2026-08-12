@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="info", description="Nivel de logging")
 
+    # Persistencia
+    db_path: str = Field(
+        default="data/state.db",
+        description="Ruta al archivo SQLite de persistencia",
+    )
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Devuelve la lista de origenes CORS."""

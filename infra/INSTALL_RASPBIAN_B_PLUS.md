@@ -80,7 +80,7 @@ Se abrirá un diálogo con la opción "Edit settings". **Click en "EDIT SETTINGS
 #### General
 - **Hostname:** `raspberrypi` (o el nombre que prefieras)
 - **Username:** `pi`
-- **Password:** una contraseña segura (p.ej. `RaspberryB+2026!`)
+- **Password:** una contraseña segura (ej: `mi_contraseña_segura`)
 
 #### Configuración de red
 - **WiFi:** No aplica (B+ V1.2 no tiene WiFi)
@@ -160,7 +160,7 @@ Opción 2: Conecta a tu router desde navegador y mira los dispositivos conectado
 ```powershell
 ssh pi@192.168.1.X
 # Reemplaza 192.168.1.X con la IP real
-# Contraseña: la que configuraste en Imager (ej: RaspberryB+2026!)
+# Contraseña: la que configuraste en Imager (ej: tu_contraseña)
 ```
 
 **Linux/macOS:**

@@ -12,9 +12,10 @@ Consenso de 3 auditorías independientes (propia + 2 externas).
 | 🟠 FASE 1 | ✅ COMPLETADA | Arquitectura: unificar HAL, limpiar legacy, devices.yaml |
 | 🟠 FASE 2 | ✅ COMPLETADA | Estado/eventos: corregir ws_count, uptime, versionar WS |
 | 🟠 FASE 3 | ✅ COMPLETADA | Display: thread-safety, rendimiento, touch robusto |
-| 🟡 FASE 4 | ⏳ PENDIENTE | Deploy/CI: GitHub Actions, rollback, artefactos |
-| 🟢 FASE 5 | ⏳ PENDIENTE | Calidad: tests integración, cobertura real, frontend |
-| 🟢 FASE 6 | ⏳ PENDIENTE | Persistencia: SQLite, health check, tipos OpenAPI |
+| 🟠 FASE 3.5 | ✅ COMPLETADA | Corrección P0/P1: credenciales, WS display, contrato TS, HAL unificada |
+| 🟡 FASE 4 | ✅ COMPLETADA | Deploy/CI: GitHub Actions, rollback, artefactos |
+| 🟢 FASE 5 | ✅ COMPLETADA | Calidad: tests integración, cobertura real, frontend |
+| 🟢 FASE 6 | ✅ COMPLETADA | Persistencia: SQLite, health check, tipos OpenAPI |
 
 ---
 

@@ -30,9 +30,9 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
     ws.onopen = () => {
       setConnected(true);
       // Suscribirse a todos los topicos
-      send({ type: "subscribe", topics: ["led", "button", "display", "system"] });
+      send({ type: "subscribe", topics: ["led", "button", "display", "system"], version: "1.0" });
       // Pedir estado inicial
-      send({ type: "get_status" });
+      send({ type: "get_status", version: "1.0" });
     };
 
     ws.onmessage = (event) => {

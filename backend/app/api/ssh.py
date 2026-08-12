@@ -283,13 +283,15 @@ _load_dotenv()
 _auto_connect_done = False
 
 
-@router.on_event("startup")
-async def _auto_connect_ssh():
+async def auto_connect_ssh() -> None:
     """Conecta automaticamente a la Raspberry Pi al arrancar el backend.
 
     Lee las credenciales del archivo .env en la raiz del proyecto.
     Si la conexion falla, el backend sigue funcionando (se puede
     conectar manualmente via POST /admin/ssh/connect).
+
+    Se llama desde el lifespan del app en main.py en lugar
+    de usar el deprecated router.on_event('startup').
     """
     global _ssh_driver, _auto_connect_done
     if _auto_connect_done:

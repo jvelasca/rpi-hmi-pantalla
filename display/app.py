@@ -338,6 +338,10 @@ class DisplayApp:
             self.touch.screen_width = self.screen.width
             self.touch.screen_height = self.screen.height
 
+        # Marcar como running ANTES de iniciar el thread WebSocket,
+        # para que while self.running en _ws_loop no termine inmediatamente.
+        self.running = True
+
         # Iniciar WebSocket en background
         self._start_ws_thread()
 
@@ -348,8 +352,6 @@ class DisplayApp:
         # Primer render
         self._render()
         self.screen.flip()
-
-        self.running = True
         logger.info(
             "Display app iniciada — %dx%d, driver=%s, fps=%d",
             self.screen.width,

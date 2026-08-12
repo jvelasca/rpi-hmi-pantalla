@@ -11,35 +11,9 @@ Valida:
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from fastapi.testclient import TestClient
 
 from backend.app.main import app
 from backend.app.services.state_manager import StateManager
-
-
-@pytest.fixture
-def client():
-    """Cliente de test sincrono."""
-    return TestClient(app)
-
-
-@pytest.fixture
-async def async_client():
-    """Cliente de test asincrono (httpx)."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-
-
-@pytest.fixture(autouse=True)
-def reset_state():
-    """Resetea el StateManager antes de cada test."""
-    from backend.app.services.state_manager import state_manager
-
-    state_manager.set_led(False)
-    StateManager.__init__(state_manager)  # type: ignore
-    yield
 
 
 # ── Health Check ──────────────────────────────────────────────
@@ -49,16 +23,24 @@ class TestHealthCheck:
     """Tests de health check."""
 
     def test_health_returns_ok(self, client):
-        """GET /health devuelve status ok."""
+        """GET /health devuelve HealthStatus con checks."""
         r = client.get("/health")
         assert r.status_code == 200
-        assert r.json() == {"status": "ok"}
+        data = r.json()
+        assert data["status"] in ("healthy", "degraded", "unhealthy")
+        assert "checks" in data
+        assert "api" in data["checks"]
+        assert "uptime" in data["checks"]
+        assert "timestamp" in data
+        assert "uptime_seconds" in data
 
     async def test_health_async(self, async_client):
         """GET /health via async client."""
         r = await async_client.get("/health")
         assert r.status_code == 200
-        assert r.json() == {"status": "ok"}
+        data = r.json()
+        assert data["status"] in ("healthy", "degraded", "unhealthy")
+        assert "checks" in data
 
 
 # ── LED Endpoints ─────────────────────────────────────────────

@@ -12,9 +12,14 @@
 
 $ErrorActionPreference = "Continue"
 $ProjectRoot = "E:\SINCRONIZADO\Informatica\Proyectos VisualStudio\Python\Rapsberry\Rpi_Pantalla_V1"
-$PiIP = "192.168.88.211"
-$PiUser = "pi"
-$PiPass = "RaspberryB+2026!"
+$PiIP = if ($env:RPI_HOST) { $env:RPI_HOST } else { "192.168.88.211" }
+$PiUser = if ($env:RPI_USER) { $env:RPI_USER } else { "pi" }
+$PiPass = if ($env:RPI_PASSWORD) { $env:RPI_PASSWORD } else { "" }
+
+if (-not $PiPass) {
+    Write-Host "[ERROR] Define RPI_PASSWORD en variables de entorno" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host ""
 Write-Host "══════════════════════════════════════════════════════" -ForegroundColor Cyan

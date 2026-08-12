@@ -1,10 +1,18 @@
 # devices.yaml
 # Registro declarativo de dispositivos. Nunca hardcodear pines en la
-# aplicación: referenciar dispositivos por su id.
+# aplicacion: referenciar dispositivos por su id.
+#
+# Formato Pydantic (DeviceConfig):
+#   - id: identificador unico del dispositivo
+#   - type: tipo (digital_output, digital_input, analog_input, etc.)
+#   - name: nombre descriptivo legible
+#   - pin: mapeo de pines (bcm + name) - None si no usa GPIO directo
+#   - kwargs: parametros adicionales especificos del dispositivo
 
 devices:
-  led1:
+  - id: led1
+    type: digital_output
     name: "LED 1"
-    driver: "gpio"
-    pin: 17
-    mode: output
+    pin:
+      bcm: 17
+      name: "LED_ROJO"

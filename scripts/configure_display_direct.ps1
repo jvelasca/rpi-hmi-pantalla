@@ -5,9 +5,15 @@
 #>
 
 $ErrorActionPreference = "Continue"
-$PiHost = "192.168.88.211"
-$PiUser = "pi"
-$PiPassword = "RaspberryB+2026!"
+$PiHost = if ($env:RPI_HOST) { $env:RPI_HOST } else { "192.168.88.211" }
+$PiUser = if ($env:RPI_USER) { $env:RPI_USER } else { "pi" }
+$PiPassword = if ($env:RPI_PASSWORD) { $env:RPI_PASSWORD } else { "" }
+
+if (-not $PiPassword) {
+    Write-Host "[ERROR] Define RPI_PASSWORD en variables de entorno" -ForegroundColor Red
+    exit 1
+}
+
 $sshCmd = "sshpass -p '$PiPassword' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${PiUser}@${PiHost}"
 
 function Write-Step { Write-Host "`n==============================================" -ForegroundColor Yellow; Write-Host "  $($args[0])" -ForegroundColor Yellow; Write-Host "==============================================" -ForegroundColor Yellow }
@@ -42,7 +48,7 @@ Write-Host "══════════════════════�
 Write-Host "  Para configurar la pantalla, ejecuta MANUALMENTE:" -ForegroundColor Cyan
 Write-Host "" -ForegroundColor Cyan
 Write-Host "  ssh pi@192.168.88.211" -ForegroundColor White
-Write-Host "  (password: RaspberryB+2026!)" -ForegroundColor White
+Write-Host "  (password: definida en variable de entorno RPI_PASSWORD)" -ForegroundColor White
 Write-Host "" -ForegroundColor Cyan
 Write-Host "  Luego en la Pi:" -ForegroundColor Cyan
 Write-Host "  sudo cp /boot/config.txt /boot/config.txt.backup" -ForegroundColor White

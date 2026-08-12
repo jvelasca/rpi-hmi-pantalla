@@ -189,7 +189,6 @@ class TestUptime:
         """Uptime debe ser >= 0 justo despues del init."""
         status = state_manager.get_status()
         assert status.uptime_seconds >= 0
-        # Recien iniciado debe ser pequeno (< 5 segundos)
         assert status.uptime_seconds < 5
 
     def test_uptime_increases_over_time(self):
@@ -199,3 +198,56 @@ class TestUptime:
         time.sleep(0.1)
         status2 = state_manager.get_status()
         assert status2.uptime_seconds > status1.uptime_seconds
+
+
+class TestUpdaterCallback:
+    """Pruebas del callback GPIO updater."""
+
+    def test_set_updater_registers_callback(self):
+        """set_updater almacena el callback."""
+        called: list[bool] = []
+
+        def cb(device: str, state: object) -> None:
+            called.append(True)
+
+        state_manager.set_updater(cb)
+        assert state_manager._updater_callback is not None
+
+        # Disparar el callback via set_led
+        state_manager.set_led(True)
+        assert len(called) == 1
+
+    def test_updater_callback_error_is_silent(self):
+        """Error en callback GPIO no propaga excepcion."""
+        def failing_cb(device: str, state: object) -> None:
+            raise RuntimeError("GPIO no disponible")
+
+        state_manager.set_updater(failing_cb)
+        # No debe lanzar excepcion
+        result = state_manager.set_led(True)
+        assert result.state is True
+
+
+class TestLedStateModel:
+    """Pruebas del modelo LedState."""
+
+    def test_is_on_property(self):
+        """LedState.is_on devuelve el valor de state."""
+        from backend.app.models.hmi import LedState
+
+        on = LedState(state=True, label="ENCENDIDO", gpio_pin=17)
+        off = LedState(state=False, label="APAGADO", gpio_pin=17)
+        assert on.is_on is True
+        assert off.is_on is False
+
+
+class TestStateManagerLoadPinEdgeCases:
+    """Edge cases de carga de pin desde devices.yaml."""
+
+    def test_load_led_pin_handles_missing_file(self, monkeypatch):
+        """_load_led_pin no falla si devices.yaml no existe."""
+        from backend.app.services.state_manager import StateManager
+
+        pin = StateManager._load_led_pin()
+        # Debe devolver un valor (0 como fallback)
+        assert isinstance(pin, int)

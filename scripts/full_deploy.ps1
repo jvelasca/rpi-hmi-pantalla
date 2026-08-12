@@ -165,7 +165,7 @@ Write-INFO "Usuario: $User"
 Write-STEP "FASE 2/5: Verificando conexión SSH con $Ip"
 
 Write-INFO "Probando SSH... (se te pedirá la contraseña)"
-Write-HOST "   Contraseñas a probar: RaspberryB+2026! o raspberry" -ForegroundColor DarkGray
+Write-HOST "   Usando contraseña de variable de entorno RPI_PASSWORD" -ForegroundColor DarkGray
 Write-Host ""
 
 # Probar conexión con comando simple

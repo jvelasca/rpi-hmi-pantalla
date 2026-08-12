@@ -228,7 +228,7 @@ python display/app.py --mock --api-url http://192.168.88.211:8000 --debug
 ```env
 RPI_HOST=192.168.88.211
 RPI_USER=pi
-RPI_PASSWORD=RaspberryB+2026!
+RPI_PASSWORD=
 RPI_PORT=22
 BACKEND_PORT=8000
 ```
