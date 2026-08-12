@@ -241,7 +241,7 @@ class ParamikoSSHDriver(SSHDriver):
                     self._client.load_host_keys(known_hosts)
             except Exception:
                 pass
-            logger.info("Politica SSH: WarningPolicy (se advierte si la host key es desconocida)")
+            logger.info("Politica SSH: RejectPolicy (solo acepta claves conocidas en known_hosts)")
 
             connect_kwargs = {
                 "hostname": host,

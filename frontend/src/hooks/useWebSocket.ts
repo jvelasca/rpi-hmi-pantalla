@@ -37,7 +37,12 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data) as ServerMessage;
+        const raw = JSON.parse(event.data);
+        if (typeof raw.type !== "string") {
+          console.warn("useWebSocket: mensaje sin tipo valido, ignorado", raw);
+          return;
+        }
+        const msg = raw as ServerMessage;
         onMessage(msg);
       } catch {
         // Ignore malformed messages

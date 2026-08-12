@@ -174,7 +174,7 @@ class StateManager:
         with self._lock:
             self._sequence += 1
             self._led_state = LedState(state=state, label=label, gpio_pin=self._led_state.gpio_pin)
-
+            seq = self._sequence
         # Notificar a la HAL para actualizar GPIO fisico
         if self._updater_callback:
             try:
@@ -186,7 +186,6 @@ class StateManager:
         self._persist_led(state)
 
         # Broadcast async con sequence
-        seq = self._sequence
         msg = ServerMessage(
             type="led_changed",
             data=self._led_state.model_dump(),
@@ -194,7 +193,7 @@ class StateManager:
         )
         self._schedule_broadcast(msg)
         self._log_event("led_" + ("on" if state else "off"), {"gpio_pin": self._led_state.gpio_pin})
-        logger.info("LED -> %s (seq=%d)", label, self._sequence)
+        logger.info("LED -> %s (seq=%d)", label, seq)
         return self._led_state
 
     def toggle_led(self) -> LedState:
@@ -218,14 +217,14 @@ class StateManager:
                 pressed=True,
                 press_count=count,
             )
+            seq = self._sequence
         # Persistir
         self._persist_button(count)
 
-        seq = self._sequence
         msg = ServerMessage(type="button_pressed", data=self._button_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
         self._log_event("button_pressed", {"count": count})
-        logger.info("Boton presionado (count=%d, seq=%d)", count, self._sequence)
+        logger.info("Boton presionado (count=%d, seq=%d)", count, seq)
         return self._button_state
 
     def release_button(self) -> ButtonState:
@@ -240,7 +239,7 @@ class StateManager:
                 pressed=False,
                 press_count=self._button_state.press_count,
             )
-        seq = self._sequence
+            seq = self._sequence
         msg = ServerMessage(type="button_released", data=self._button_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
         logger.info("Boton liberado (seq=%d)", seq)
@@ -255,12 +254,14 @@ class StateManager:
             driver: Nombre del driver kernel.
         """
         with self._lock:
+            self._sequence += 1
             self._display_info = DisplayInfo(
                 connected=connected,
                 resolution=resolution,
                 driver=driver,
             )
-        msg = ServerMessage(type="display_changed", data=self._display_info.model_dump(), sequence=self._sequence)
+            seq = self._sequence
+        msg = ServerMessage(type="display_changed", data=self._display_info.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
         logger.info("Display: connected=%s, %s, %s", connected, resolution, driver)
 

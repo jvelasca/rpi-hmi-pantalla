@@ -121,7 +121,7 @@ fi
 echo ""
 echo -e "${YELLOW}━━━ FASE 5: Entorno virtual Python ━━━${NC}"
 
-PROJECT_DIR="/home/pi/Rpi_Pantalla_V1"
+PROJECT_DIR="/home/pi/rpi_hmi"
 cd "$PROJECT_DIR" 2>/dev/null || {
     warn "Directorio del proyecto no encontrado en $PROJECT_DIR"
     info "¿Clonar repositorio? (s/n)"
@@ -138,11 +138,11 @@ cd "$PROJECT_DIR" 2>/dev/null || {
     fi
 }
 
-VENV_DIR="$PROJECT_DIR/.venv"
+VENV_DIR="$PROJECT_DIR/venv"
 if [ -d "$VENV_DIR" ]; then
-    info "Entorno virtual ya existe en .venv"
+    info "Entorno virtual ya existe en venv"
 else
-    info "Creando entorno virtual en .venv..."
+    info "Creando entorno virtual en venv..."
     python3 -m venv "$VENV_DIR"
     ok "Entorno virtual creado"
 fi
@@ -215,16 +215,21 @@ echo ""
 echo -e "${YELLOW}━━━ FASE 10: Backend FastAPI ━━━${NC}"
 info "Iniciando servidor FastAPI en segundo plano (puerto 8000)..."
 cd "$PROJECT_DIR"
-nohup python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 > /tmp/hmi_backend.log 2>&1 &
+sudo systemctl start rpi-hmi-backend.service 2>/dev/null || \
+    nohup python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 > /tmp/hmi_backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > /tmp/hmi_backend.pid
 sleep 2
 
-if kill -0 $BACKEND_PID 2>/dev/null; then
+if [ -n "$BACKEND_PID" ] && kill -0 $BACKEND_PID 2>/dev/null; then
     ok "Backend iniciado (PID: $BACKEND_PID)"
     ok "Accede desde tu PC a: http://$(hostname -I | awk '{print $1}'):8000/health"
     info "Logs: tail -f /tmp/hmi_backend.log"
     info "Para detener: kill \$(cat /tmp/hmi_backend.pid)"
+elif systemctl is-active --quiet rpi-hmi-backend.service; then
+    ok "Backend iniciado via systemctl"
+    ok "Accede desde tu PC a: http://$(hostname -I | awk '{print $1}'):8000/health"
+    info "Logs: sudo journalctl -u rpi-hmi-backend.service -f"
 else
     err "El backend no se inició. Revisa: cat /tmp/hmi_backend.log"
 fi

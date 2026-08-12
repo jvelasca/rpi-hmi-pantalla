@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -354,6 +355,43 @@ def install_services(ssh: ParamikoSSHDriver) -> None:
     print(f"    ssh {USER}@{HOST} sudo reboot")
 
 
+def _deploy_frontend_static(ssh: ParamikoSSHDriver, root: Path) -> None:
+    """Compila el frontend (npm run build) y copia dist/ a la Pi.
+
+    Si dist/index.html no existe, ejecuta npm run build localmente.
+    Luego copia todos los archivos de frontend/dist/ a
+    {PI_BASE}/backend/app/static/ via SFTP.
+    """
+    frontend_dir = root / "frontend"
+    dist_dir = frontend_dir / "dist"
+
+    if not (dist_dir / "index.html").exists():
+        print("  Compilando frontend con npm run build...")
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(frontend_dir),
+            check=True,
+        )
+
+    remote_static = f"{PI_BASE}/backend/app/static"
+    ssh.execute(f"mkdir -p {remote_static}", timeout=10)
+
+    count = 0
+    for local_file in sorted(dist_dir.rglob("*")):
+        if local_file.is_dir():
+            continue
+        rel = str(local_file.relative_to(dist_dir)).replace("\\", "/")
+        remote = f"{remote_static}/{rel}"
+        # Asegurar directorio remoto padre
+        remote_dir = str(Path(remote).parent)
+        ssh.execute(f"mkdir -p {remote_dir}", timeout=10)
+        ssh.transfer_file(str(local_file), remote)
+        size = local_file.stat().st_size
+        print(f"  OK  frontend/dist/{rel} ({size}B)")
+        count += 1
+    print(f"  Total frontend: {count} files synced")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="RPi HMI deploy script")
     p.add_argument("--run", action="store_true",
@@ -381,10 +419,20 @@ def main() -> None:
             step("DEPLOY DISPLAY FILES")
             deploy_display_files(ssh)
             deploy_scripts(ssh)
+            _deploy_frontend_static(ssh, ROOT)
             step("INSTALL DEPS")
             install_display_deps(ssh)
             step("INSTALL SYSTEMD SERVICES")
             install_services(ssh)
+            step("RESTART BACKEND")
+            deploy_svc.restart_backend()
+            for i in range(30):
+                if check_backend_ready(ssh):
+                    print(f"  Backend ready after {i+1}s")
+                    break
+                time.sleep(1)
+            else:
+                print("  [WARN] Backend not ready after 30s")
             return
 
         if args.hmi:
@@ -393,23 +441,41 @@ def main() -> None:
             step("DEPLOY DISPLAY FILES")
             deploy_display_files(ssh)
             deploy_scripts(ssh)
+            _deploy_frontend_static(ssh, ROOT)
             step("INSTALL DEPS")
             install_display_deps(ssh)
+            deploy_svc.restart_backend()
             run_hmi(ssh)
             return
 
         # Default: deploy + verify
-        step("ENSURE BACKEND")
-        ensure_backend(ssh)
-
         step("DEPLOY FILES (Backend)")
         deploy_svc.deploy_app(project_root=str(ROOT))
         step("DEPLOY FILES (Display)")
         deploy_display_files(ssh)
         deploy_scripts(ssh)
+        _deploy_frontend_static(ssh, ROOT)
 
         step("INSTALL DEPS")
         install_display_deps(ssh)
+
+        step("RESTART BACKEND")
+        deploy_svc.restart_backend()
+        # Wait for /health/ready (30 intentos, 1s cada uno)
+        for i in range(30):
+            if check_backend_ready(ssh):
+                print(f"  Backend ready after {i+1}s")
+                break
+            time.sleep(1)
+        else:
+            print("  [WARN] Backend not ready after 30s")
+
+        # Restart display service
+        ssh.execute(
+            "sudo systemctl restart rpi-hmi-display.service 2>/dev/null || true",
+            timeout=10,
+        )
+        print("  Display service restarted")
 
         step("VERIFY")
         verify(ssh)

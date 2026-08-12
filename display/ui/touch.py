@@ -59,7 +59,8 @@ def _find_touch_device(preferred: str = "/dev/input/event0") -> str | None:
     # Fallback
     if Path(preferred).exists():
         return preferred
-    return candidates[0] if candidates else None
+    logger.warning("No se encontro dispositivo tactil. Touch deshabilitado.")
+    return None
 
 
 class TouchHandler:

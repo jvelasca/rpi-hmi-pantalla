@@ -110,14 +110,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Display no disponible")
 
-    # Auto-conexion SSH (migrada desde router.on_event('startup')).
-    # Si hay credenciales configuradas, intenta conectar al arrancar.
-    try:
-        from backend.app.api.ssh import auto_connect_ssh
+    # Auto-conexion SSH — solo cuando la admin API esta habilitada
+    if settings.enable_admin_api:
+        try:
+            from backend.app.api.ssh import auto_connect_ssh
 
-        await auto_connect_ssh()
-    except Exception as exc:
-        logger.debug("Auto-conexion SSH ignorada: %s", exc)
+            await auto_connect_ssh()
+        except Exception as exc:
+            logger.debug("Auto-conexion SSH ignorada: %s", exc)
 
     # Inicializar persistencia SQLite
     try:
@@ -156,7 +156,7 @@ _redoc_url = "/redoc" if settings.enable_docs else None
 app = FastAPI(
     title="RPi HMI Backend",
     description="Backend para panel de control HMI en Raspberry Pi. Controla GPIO, display fisico y expone API REST + WebSocket.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     docs_url=_docs_url,
     redoc_url=_redoc_url,
@@ -178,9 +178,11 @@ app.include_router(ws_router)
 # Health check (publico)
 app.include_router(health_router)
 
-# Routers administrativos (requieren API key)
-app.include_router(admin_ssh_router)
-app.include_router(admin_deploy_router)
+# Routers administrativos — solo cuando la admin API esta habilitada
+if settings.enable_admin_api:
+    app.include_router(admin_ssh_router)
+    app.include_router(admin_deploy_router)
+    logger.warning("ADMIN_API habilitada. Deshabilita con ENABLE_ADMIN_API=false en .env para produccion.")
 
 # ── Endpoints raiz ───────────────────────────────────────────
 
@@ -200,7 +202,7 @@ async def root() -> FileResponse:
     return JSONResponse(
         content={
             "message": "RPi HMI Backend",
-            "version": "0.2.0",
+            "version": "0.3.0",
             "docs": "/docs" if settings.enable_docs else "deshabilitado",
             "api": "/api/status",
             "websocket": "/ws",

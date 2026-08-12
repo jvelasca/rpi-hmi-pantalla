@@ -215,7 +215,7 @@ def _collect_checks_sync() -> dict[str, HealthCheckDetail]:
         ("uptime", _check_uptime),
         ("gpio", _check_gpio),
         ("display", _check_display),
-        ("db", _check_db),
+        # ("db", ...) se añade async en _collect_checks_async
         ("cpu", _check_cpu),
         ("ws", _check_ws),
     ]:

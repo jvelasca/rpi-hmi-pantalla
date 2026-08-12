@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     )
     enable_docs: bool = Field(default=False, description="Habilitar documentacion OpenAPI")
 
+    # Admin API (deshabilitada por defecto en produccion)
+    enable_admin_api: bool = Field(
+        default=False,
+        description="Habilitar endpoints administrativos /admin/* (SSH, deploy). "
+                    "SOLO para desarrollo.",
+    )
+
     # Logging
     log_level: str = Field(default="info", description="Nivel de logging")
 
@@ -72,6 +79,29 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         """Devuelve la lista de origenes CORS."""
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def model_post_init(self, __context: object) -> None:
+        """Valida la configuracion de seguridad al iniciar."""
+        import logging
+
+        logger = logging.getLogger("rpi_hmi.config")
+
+        if self.enable_admin_api and not self.admin_api_key:
+            logger.critical(
+                "ADMIN_API_KEY no configurada pero enable_admin_api=True. "
+                "Los endpoints /admin/* estan expuestos sin proteccion."
+            )
+        elif self.admin_api_key == "cambia-esto-por-una-clave-segura":
+            logger.critical(
+                "ADMIN_API_KEY tiene el valor por defecto 'cambia-esto-por-una-clave-segura'. "
+                "Genera una clave segura con: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+        elif self.admin_api_key and len(self.admin_api_key) < 16:
+            logger.warning(
+                "ADMIN_API_KEY es demasiado corta (%d caracteres). "
+                "Usa al menos 32 caracteres para produccion.",
+                len(self.admin_api_key),
+            )
 
 
 # Singleton

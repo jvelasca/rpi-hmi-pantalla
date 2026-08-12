@@ -98,7 +98,7 @@ class DisplayApp:
         self.backend_connected: bool = False
         self.ws_connected: bool = False
         self._last_sync: float = 0.0
-        self._sync_interval: float = 0.5  # 500ms entre polls REST
+        self._sync_interval: float = 3.0  # Solo como fallback cuando WS cae
 
         # Screen
         self.screen = Screen(auto_detect=not mock, mock=mock)
@@ -264,7 +264,7 @@ class DisplayApp:
             with self._ws_lock:
                 self.ws_connected = True
             # Suscribirse a topicos
-            ws.send(json.dumps({"type": "subscribe", "topics": ["led", "button"]}))
+            ws.send(json.dumps({"type": "subscribe", "topics": ["led", "button"], "version": "1.0"}))
 
         def on_message(ws: WebSocketApp, message: str) -> None:
             try:
@@ -398,14 +398,17 @@ class DisplayApp:
                     self._button_press_frame = -1
                     dirty = True
 
-            # ── Sincronizacion periodica con backend ──
+            # ── Sincronizacion periodica con backend (solo si WS no conectado) ──
             now = time.time()
             if now - self._last_sync > self._sync_interval:
-                old_led = self.led_on
-                old_count = self.press_count
-                self._sync_state()
-                if old_led != self.led_on or old_count != self.press_count:
-                    dirty = True
+                with self._ws_lock:
+                    ws_ok = self.ws_connected
+                if not ws_ok:
+                    old_led = self.led_on
+                    old_count = self.press_count
+                    self._sync_state()
+                    if old_led != self.led_on or old_count != self.press_count:
+                        dirty = True
                 self._last_sync = now
 
             # ── Actualizar status bar ──

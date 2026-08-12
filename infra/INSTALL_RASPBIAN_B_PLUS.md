@@ -292,14 +292,14 @@ cat /proc/bus/input/devices | grep -i "xpt\|ads"
 cd /home/pi
 
 # Clonar el repositorio (si aún no está)
-git clone https://github.com/tu-usuario/Rpi_Pantalla_V1.git
-cd Rpi_Pantalla_V1
+git clone https://github.com/tu-usuario/rpi_hmi.git
+cd rpi_hmi
 
 # Crear entorno virtual Python
-python3 -m venv .venv
+python3 -m venv venv
 
 # Activar entorno virtual
-source .venv/bin/activate
+source venv/bin/activate
 
 # Actualizar pip
 python -m pip install -U pip
@@ -342,8 +342,8 @@ Conecta un LED al **Pin GPIO 17** (físicamente es el **pin 11 del cabezal GPIO*
 
 ```sh
 # En la Pi, con venv activado
-cd /home/pi/Rpi_Pantalla_V1
-source .venv/bin/activate
+cd /home/pi/rpi_hmi
+source venv/bin/activate
 
 # Ejecuta el test
 python3 diagnostics/gpio/blink_test.py led1 --times 5
@@ -378,7 +378,7 @@ Descarga el archivo `report.html` por SCP para visualizar en tu PC:
 **Desde tu PC:**
 ```powershell
 # Windows PowerShell
-scp pi@192.168.1.X:/home/pi/Rpi_Pantalla_V1/diagnostics/report.html ./report_pi.html
+scp pi@192.168.1.X:/home/pi/rpi_hmi/diagnostics/report.html ./report_pi.html
 ```
 
 Abre `report_pi.html` en tu navegador. Verás:
@@ -395,21 +395,21 @@ Abre `report_pi.html` en tu navegador. Verás:
 **Crea el servicio systemd:**
 
 ```sh
-sudo nano /etc/systemd/system/hmi-backend.service
+sudo nano /etc/systemd/system/rpi-hmi-backend.service
 ```
 
 **Contenido:**
 
 ```ini
 [Unit]
-Description=Raspberry HMI Backend Service
+Description=Raspberry Pi HMI Backend Service
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/Rpi_Pantalla_V1
-ExecStart=/home/pi/Rpi_Pantalla_V1/.venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/home/pi/rpi_hmi
+ExecStart=/home/pi/rpi_hmi/venv/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 
@@ -423,11 +423,12 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable hmi-backend.service
-sudo systemctl start hmi-backend.service
+sudo systemctl enable rpi-hmi-backend.service rpi-hmi-display.service
+sudo systemctl start rpi-hmi-backend.service rpi-hmi-display.service
 
 # Verifica estado
-sudo systemctl status hmi-backend.service
+sudo systemctl status rpi-hmi-backend.service
+sudo systemctl status rpi-hmi-display.service
 ```
 
 **Verifica que funciona:**

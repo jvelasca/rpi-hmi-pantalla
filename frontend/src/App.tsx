@@ -16,7 +16,7 @@ export function App() {
   const [led, setLed] = createSignal<LedState>({
     state: false,
     label: "APAGADO",
-    gpio_pin: 17,
+    gpio_pin: 0, // Se sincroniza con backend
   });
   const [button, setButton] = createSignal<ButtonState>({
     pressed: false,

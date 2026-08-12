@@ -50,6 +50,7 @@ DEPLOY_DIRECTORIES = [
     "display",
     "config/systemd",
     "scripts",
+    "frontend/dist",
 ]
 
 # Archivos raiz individuales que deben copiarse
@@ -333,7 +334,8 @@ class DeployService:
         logger.info("Desplegando proyecto desde %s -> %s", project_root, self.remote_root)
 
         # Desplegar directorios completos (solo .py, .yaml, .json, .toml, .txt, .sh)
-        allowed_extensions = {".py", ".yaml", ".yml", ".json", ".toml", ".txt", ".sh", ".service"}
+        allowed_extensions = {".py", ".yaml", ".yml", ".json", ".toml", ".txt", ".sh", ".service",
+                              ".js", ".css", ".html", ".svg", ".ico", ".woff2"}
 
         for dir_rel in DEPLOY_DIRECTORIES:
             local_dir = Path(project_root) / dir_rel
