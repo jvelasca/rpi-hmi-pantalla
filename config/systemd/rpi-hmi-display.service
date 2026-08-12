@@ -1,6 +1,6 @@
 [Unit]
 Description=RPi HMI Display (Pygame DRM/KMS)
-Documentation=https://github.com/user/rpi_hmi
+Documentation=https://github.com/jvelasca/rpi-hmi-pantalla
 After=network-online.target rpi-hmi-backend.service
 Wants=network-online.target rpi-hmi-backend.service
 Requires=rpi-hmi-backend.service

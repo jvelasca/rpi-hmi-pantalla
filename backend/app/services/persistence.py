@@ -38,6 +38,8 @@ class Persistence:
         _conn: Conexion aiosqlite (None si no inicializada).
     """
 
+    MAX_EVENT_LOG_ROWS = 10000
+
     def __init__(self, db_path: str) -> None:
         self.db_path: str = db_path
         self._conn: aiosqlite.Connection | None = None
@@ -183,6 +185,24 @@ class Persistence:
             (datetime.now(timezone.utc).isoformat(), event_type, payload),
         )
         await self._conn.commit()
+        await self._rotate_event_log()
+
+    async def _rotate_event_log(self) -> None:
+        """Elimina eventos antiguos si se excede MAX_EVENT_LOG_ROWS."""
+        if not self._conn:
+            return
+        cursor = await self._conn.execute("SELECT COUNT(*) FROM event_log")
+        row = await cursor.fetchone()
+        if row and row[0] > self.MAX_EVENT_LOG_ROWS:
+            excess = row[0] - self.MAX_EVENT_LOG_ROWS + 1000  # Borrar en bloques
+            await self._conn.execute(
+                "DELETE FROM event_log WHERE id IN ("
+                "SELECT id FROM event_log ORDER BY id ASC LIMIT ?"
+                ")",
+                (excess,),
+            )
+            await self._conn.commit()
+            logger.info("Rotacion event_log: %d filas eliminadas", excess)
 
     async def get_recent_events(self, limit: int = 50) -> list[dict[str, str | None]]:
         """Recupera los eventos mas recientes.

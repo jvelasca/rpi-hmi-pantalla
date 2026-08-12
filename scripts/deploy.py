@@ -72,6 +72,16 @@ def step(msg: str) -> None:
     print(f"\n{'='*55}\n  {msg}\n{'='*55}")
 
 
+def _check_deploy_steps(steps, label="Deploy"):
+    """Verifica que todos los pasos de deploy fueron exitosos."""
+    failed = [s for s in steps if not s.success]
+    if failed:
+        print(f"\n[ERROR] {label}: {len(failed)} archivo(s) no se copiaron:")
+        for f in failed:
+            print(f"  - {f.step}: {f.message}")
+        sys.exit(1)
+
+
 # ── Health check helpers ──────────────────────────────────────
 
 
@@ -145,32 +155,21 @@ def deploy_scripts(ssh: ParamikoSSHDriver) -> None:
 
 
 def install_display_deps(ssh: ParamikoSSHDriver) -> None:
-    """Install missing Python packages for display in venv."""
-    needed = []
-    for mod in ["pygame", "evdev", "requests", "websocket"]:
-        result = ssh.execute(f"{VENV_PY} -c 'import {mod}' 2>&1", timeout=10)
-        if not result.ok:
-            needed.append(mod)
+    """Install display dependencies from requirements file."""
+    req_path = f"{PI_BASE}/display/requirements.txt"
+    # Check if requirements file exists
+    result = ssh.execute(f"test -f {req_path} && echo 'FOUND' || echo 'MISSING'", timeout=10)
+    if "MISSING" in result.stdout:
+        print(f"  [WARN] {req_path} not found on Pi. Deploy display files first.")
+        return
 
-    if needed:
-        print(f"  Installing: {', '.join(needed)}")
-        result = ssh.execute(
-            f"source {PI_BASE}/venv/bin/activate && pip install {' '.join(needed)} 2>&1 | tail -3",
-            timeout=300,
-        )
-        print(f"  pip exit={result.exit_code}")
-    else:
-        print("  All deps already installed")
-
-    verify_cmd = (
-        f"{VENV_PY} -c 'import pygame,evdev,requests,websocket; "
-        "print(f\"pygame={pygame.version.ver}, evdev OK, "
-        "req={requests.__version__}, ws={websocket.__version__}\")' 2>&1"
+    print(f"  Installing from {req_path}...")
+    result = ssh.execute(
+        f"{VENV_PY} -m pip install -r {req_path} 2>&1 | tail -5",
+        timeout=300,
     )
-    result = ssh.execute(verify_cmd, timeout=15)
-    print(f"  [verify] {result.stdout}")
-    if result.stderr:
-        print(f"  [stderr] {result.stderr[:100]}")
+    print(f"  pip exit={result.exit_code}")
+    print(f"  {result.stdout.strip()}")
 
 
 def verify(ssh: ParamikoSSHDriver) -> None:
@@ -414,8 +413,11 @@ def main() -> None:
             return
 
         if args.install_service:
+            step("SETUP ENVIRONMENT")
+            deploy_svc.setup_environment()
             step("DEPLOY BACKEND")
-            deploy_svc.deploy_app(project_root=str(ROOT))
+            app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
+            _check_deploy_steps(app_steps, "Deploy Backend")
             step("DEPLOY DISPLAY FILES")
             deploy_display_files(ssh)
             deploy_scripts(ssh)
@@ -436,8 +438,11 @@ def main() -> None:
             return
 
         if args.hmi:
+            step("SETUP ENVIRONMENT")
+            deploy_svc.setup_environment()
             step("DEPLOY BACKEND")
-            deploy_svc.deploy_app(project_root=str(ROOT))
+            app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
+            _check_deploy_steps(app_steps, "Deploy Backend")
             step("DEPLOY DISPLAY FILES")
             deploy_display_files(ssh)
             deploy_scripts(ssh)
@@ -449,8 +454,11 @@ def main() -> None:
             return
 
         # Default: deploy + verify
+        step("SETUP ENVIRONMENT")
+        deploy_svc.setup_environment()
         step("DEPLOY FILES (Backend)")
-        deploy_svc.deploy_app(project_root=str(ROOT))
+        app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
+        _check_deploy_steps(app_steps, "Deploy Backend")
         step("DEPLOY FILES (Display)")
         deploy_display_files(ssh)
         deploy_scripts(ssh)

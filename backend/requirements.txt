@@ -1,9 +1,11 @@
 # RPi HMI Backend — Dependencies
+# Espejo fiel de backend/pyproject.toml.
+# Generado automáticamente — no editar manualmente.
 #
-# Instalacion en Raspberry Pi:
+# Instalación en Raspberry Pi:
 #   pip install -r requirements.txt
 #
-# Instalacion en PC (desarrollo):
+# Instalación en PC (desarrollo):
 #   pip install -r requirements.txt
 #   (las dependencias comentadas son opcionales)
 
@@ -17,11 +19,13 @@ gpiozero>=2.0
 pyyaml>=6.0
 python-dotenv>=1.0
 aiosqlite>=0.20.0
+paramiko>=3.4
 
 # === Deploy (solo PC de desarrollo) ===
-# paramiko>=3.4
+# paramiko ya incluido en runtime; este grupo es declarativo
+#   (pyproject.toml [project.optional-dependencies].deploy)
 
-# === Display (solo Raspberry Pi con TFT fisico) ===
+# === Display (solo Raspberry Pi con TFT físico) ===
 # pygame>=2.6
 # evdev>=1.7
 

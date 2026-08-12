@@ -109,6 +109,11 @@ class StateManager:
     def _load_led_pin() -> int:
         """Carga el pin del LED desde devices.yaml usando ruta absoluta.
 
+        Prioridad de seleccion:
+        1. Dispositivo con role: "led" en sus kwargs (ej. kwargs: {role: led})
+        2. Dispositivo indicado por led_device_id en la configuracion
+        3. Primer digital_output como fallback (comportamiento actual)
+
         Usa Path(__file__) para resolver la ruta del proyecto, evitando
         dependencias del current working directory.
 
@@ -126,11 +131,43 @@ class StateManager:
             devices_path = project_root / "backend" / "config" / "devices.yaml"
 
             devices = load_devices(str(devices_path))
+
+            # 1. Buscar dispositivo con role: "led" en kwargs
+            for dev_id, dev in devices.items():
+                if dev.kwargs.get("role") == "led" and dev.pin:
+                    pin = dev.pin.bcm
+                    logger.info(
+                        "Pin LED cargado desde %s: %s (role=led) -> GPIO %d",
+                        devices_path, dev_id, pin,
+                    )
+                    return pin
+
+            # 2. Buscar dispositivo por led_device_id
+            led_device_id = None
+            for dev_id, dev in devices.items():
+                if dev.kwargs.get("led_device_id"):
+                    led_device_id = dev.kwargs["led_device_id"]
+                    break
+            if led_device_id and led_device_id in devices:
+                dev = devices[led_device_id]
+                if dev.pin:
+                    pin = dev.pin.bcm
+                    logger.info(
+                        "Pin LED cargado desde %s: %s (led_device_id) -> GPIO %d",
+                        devices_path, led_device_id, pin,
+                    )
+                    return pin
+                logger.warning(
+                    "led_device_id=%s encontrado pero sin pin configurado en %s",
+                    led_device_id, devices_path,
+                )
+
+            # 3. Fallback: primer digital_output
             for dev_id, dev in devices.items():
                 if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:
                     pin = dev.pin.bcm
                     logger.info(
-                        "Pin LED cargado desde %s: %s -> GPIO %d",
+                        "Pin LED cargado desde %s: %s (primer digital_output, fallback) -> GPIO %d",
                         devices_path, dev_id, pin,
                     )
                     return pin
@@ -175,26 +212,28 @@ class StateManager:
             self._sequence += 1
             self._led_state = LedState(state=state, label=label, gpio_pin=self._led_state.gpio_pin)
             seq = self._sequence
+            new_state = self._led_state
+
         # Notificar a la HAL para actualizar GPIO fisico
         if self._updater_callback:
             try:
-                self._updater_callback("led", self._led_state)
+                self._updater_callback("led", new_state)
             except Exception:
                 logger.exception("Error en callback GPIO para LED")
 
         # Persistir
-        self._persist_led(state)
+        self._persist_led(new_state.state)
 
         # Broadcast async con sequence
         msg = ServerMessage(
             type="led_changed",
-            data=self._led_state.model_dump(),
+            data=new_state.model_dump(),
             sequence=seq,
         )
         self._schedule_broadcast(msg)
-        self._log_event("led_" + ("on" if state else "off"), {"gpio_pin": self._led_state.gpio_pin})
-        logger.info("LED -> %s (seq=%d)", label, seq)
-        return self._led_state
+        self._log_event("led_" + ("on" if new_state.state else "off"), {"gpio_pin": new_state.gpio_pin})
+        logger.info("LED -> %s (seq=%d)", new_state.label, seq)
+        return new_state
 
     def toggle_led(self) -> LedState:
         """Alterna el estado del LED.
@@ -218,14 +257,16 @@ class StateManager:
                 press_count=count,
             )
             seq = self._sequence
-        # Persistir
-        self._persist_button(count)
+            new_state = self._button_state
 
-        msg = ServerMessage(type="button_pressed", data=self._button_state.model_dump(), sequence=seq)
+        # Persistir
+        self._persist_button(new_state.press_count)
+
+        msg = ServerMessage(type="button_pressed", data=new_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
-        self._log_event("button_pressed", {"count": count})
-        logger.info("Boton presionado (count=%d, seq=%d)", count, seq)
-        return self._button_state
+        self._log_event("button_pressed", {"count": new_state.press_count})
+        logger.info("Boton presionado (count=%d, seq=%d)", new_state.press_count, seq)
+        return new_state
 
     def release_button(self) -> ButtonState:
         """Libera el boton.
@@ -240,10 +281,12 @@ class StateManager:
                 press_count=self._button_state.press_count,
             )
             seq = self._sequence
-        msg = ServerMessage(type="button_released", data=self._button_state.model_dump(), sequence=seq)
+            new_state = self._button_state
+
+        msg = ServerMessage(type="button_released", data=new_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
         logger.info("Boton liberado (seq=%d)", seq)
-        return self._button_state
+        return new_state
 
     def set_display(self, connected: bool, resolution: str = "480x320", driver: str = "ili9486") -> None:
         """Actualiza la informacion del display fisico.
@@ -261,9 +304,11 @@ class StateManager:
                 driver=driver,
             )
             seq = self._sequence
-        msg = ServerMessage(type="display_changed", data=self._display_info.model_dump(), sequence=seq)
+            new_state = self._display_info
+
+        msg = ServerMessage(type="display_changed", data=new_state.model_dump(), sequence=seq)
         self._schedule_broadcast(msg)
-        logger.info("Display: connected=%s, %s, %s", connected, resolution, driver)
+        logger.info("Display: connected=%s, %s, %s (seq=%d)", connected, resolution, driver, seq)
 
     # ── Consulta ───────────────────────────────────────────────
 
@@ -387,6 +432,30 @@ class StateManager:
             )
         except RuntimeError:
             logger.debug("Event log omitido (sin event loop)")
+
+    # ── Drain de tareas de persistencia ────────────────────────
+
+    async def flush_pending_tasks(self) -> None:
+        """Espera a que todas las tareas de persistencia pendientes terminen.
+
+        Debe llamarse durante el shutdown para garantizar que los datos
+        se escriben en SQLite antes de cerrar la conexion.
+        """
+        import asyncio as _asyncio
+
+        if not self._persistence:
+            return
+
+        # Recoger todas las tareas pendientes del event loop
+        tasks = [t for t in _asyncio.all_tasks()
+                 if t is not _asyncio.current_task()]
+
+        if tasks:
+            logger.info("Drenando %d tareas de persistencia pendientes...", len(tasks))
+            try:
+                await _asyncio.gather(*tasks, return_exceptions=True)
+            except Exception as exc:
+                logger.warning("Error durante drain de tareas: %s", exc)
 
     # ── Interno ────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 [Unit]
 Description=RPi HMI Backend (FastAPI)
-Documentation=https://github.com/user/rpi_hmi
+Documentation=https://github.com/jvelasca/rpi-hmi-pantalla
 After=network-online.target
 Wants=network-online.target
 

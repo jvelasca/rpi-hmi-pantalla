@@ -114,3 +114,82 @@ jobs:
           name: frontend-dist
           path: frontend/dist/
           retention-days: 7
+
+  release-smoke:
+    name: Release Smoke Test
+    runs-on: ubuntu-latest
+    needs: [test, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Verify required files exist
+        run: |
+          echo "=== Checking required files ==="
+          for f in \
+            VERSION \
+            backend/app/main.py \
+            backend/config/devices.yaml \
+            display/app.py \
+            frontend/dist/index.html \
+            config/systemd/rpi-hmi-backend.service \
+            config/systemd/rpi-hmi-display.service
+          do
+            if [ -f "$f" ]; then
+              echo "  [OK] $f"
+            else
+              echo "  [FAIL] $f MISSING"
+              exit 1
+            fi
+          done
+
+      - name: Verify forbidden files do NOT exist
+        run: |
+          echo "=== Checking forbidden files ==="
+          # __pycache__ directories
+          if find . -type d -name '__pycache__' | grep -q .; then
+            echo "  [FAIL] __pycache__ directories found"
+            find . -type d -name '__pycache__'
+            exit 1
+          fi
+          echo "  [OK] No __pycache__ directories"
+
+          # .pyc files
+          if find . -name '*.pyc' | grep -q .; then
+            echo "  [FAIL] .pyc files found"
+            find . -name '*.pyc'
+            exit 1
+          fi
+          echo "  [OK] No .pyc files"
+
+          # .env files
+          if find . -name '.env' -not -name '.env.example' | grep -q .; then
+            echo "  [FAIL] .env files found"
+            find . -name '.env' -not -name '.env.example'
+            exit 1
+          fi
+          echo "  [OK] No .env files"
+
+          # frontend/Untitled
+          if [ -d "frontend/Untitled" ] || [ -f "frontend/Untitled" ]; then
+            echo "  [FAIL] frontend/Untitled found"
+            exit 1
+          fi
+          echo "  [OK] No frontend/Untitled"
+
+      - name: Validate VERSION is valid semver
+        run: |
+          echo "=== Validating VERSION ==="
+          VERSION=$(cat VERSION)
+          echo "  VERSION = $VERSION"
+          if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "  [OK] Valid semver: $VERSION"
+          else
+            echo "  [FAIL] Invalid semver: $VERSION"
+            exit 1
+          fi

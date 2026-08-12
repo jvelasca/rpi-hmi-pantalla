@@ -134,6 +134,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Apagando servicios...")
+
+    # Drain pending persistence tasks before closing DB
+    try:
+        from backend.app.services.state_manager import state_manager
+        await state_manager.flush_pending_tasks()
+    except Exception as exc:
+        logger.warning("Error draining persistence tasks: %s", exc)
+
     try:
         gpio_service.cleanup()
     except Exception as exc:

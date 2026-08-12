@@ -10,8 +10,8 @@
 Plataforma HMI (Human-Machine Interface) para Raspberry Pi con pantalla táctil 3.5",
 botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 
-**Panel web:** [http://192.168.88.211:8000](http://192.168.88.211:8000)  
-**API docs:** [http://192.168.88.211:8000/docs](http://192.168.88.211:8000/docs)
+**Panel web:** [http://&lt;RASPBERRY_IP&gt;:8000](http://&lt;RASPBERRY_IP&gt;:8000)  
+**API docs:** [http://&lt;RASPBERRY_IP&gt;:8000/docs](http://&lt;RASPBERRY_IP&gt;:8000/docs)
 
 ---
 
@@ -22,7 +22,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 | **Placa** | Raspberry Pi Model B+ Rev 1.2 (BCM2835, ARMv6, 512MB RAM) |
 | **Pantalla** | 3.5" SPI TFT 480×320 ILI9486 + táctil XPT2046 |
 | **LED** | GPIO 17 (pin físico 11) con resistencia 220Ω |
-| **Red** | Ethernet — IP estática `192.168.88.211` |
+| **Red** | Ethernet — IP estática `<RASPBERRY_IP>` |
 | **OS** | Raspberry Pi OS Bookworm Lite 32-bit, kernel 6.12 |
 
 ---
@@ -31,7 +31,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Raspberry Pi 192.168.88.211                   │
+│                    Raspberry Pi &lt;RASPBERRY_IP&gt;                   │
 │                                                                  │
 │  ┌──────────────────────┐  ┌──────────────────────────────────┐ │
 │  │  TFT 3.5" ILI9486    │  │  FastAPI Backend :8000           │ │
@@ -51,7 +51,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 └─────────────────────────────────────────────────────────────────┘
 
          Navegador (LAN)              VS Code (PC)
-    http://192.168.88.211:8000    Python display/app.py --mock
+    http://&lt;RASPBERRY_IP&gt;:8000    Python display/app.py --mock
 ```
 
 ### Componentes
@@ -69,7 +69,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 
 ## API REST
 
-Todos los endpoints disponibles en `http://192.168.88.211:8000`:
+Todos los endpoints disponibles en `http://&lt;RASPBERRY_IP&gt;:8000`:
 
 ### LED
 
@@ -92,13 +92,15 @@ Todos los endpoints disponibles en `http://192.168.88.211:8000`:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | `GET` | `/api/status` | Estado completo (LED + botón + WS clients) |
-| `GET` | `/health` | Health check completo |\n| `GET` | `/health/live` | Liveness probe (siempre 200) |\n| `GET` | `/health/ready` | Readiness probe (200 si BD OK) |
+| `GET` | `/health` | Health check completo |
+| `GET` | `/health/live` | Liveness probe (siempre 200) |
+| `GET` | `/health/ready` | Readiness probe (200 si BD OK) |
 
 ### WebSocket
 
 | Protocolo | Dirección | Descripción |
 |-----------|-----------|-------------|
-| `WS` | `ws://192.168.88.211:8000/ws` | Canal bidireccional JSON |
+| `WS` | `ws://<RASPBERRY_IP>:8000/ws` | Canal bidireccional JSON |
 
 Mensajes **Servidor → Cliente:**
 ```json
@@ -117,7 +119,7 @@ Los servicios systemd arrancan automáticamente al encender la Pi:
 
 ```bash
 # Verificar que todo corre
-ssh pi@192.168.88.211
+ssh pi@&lt;RASPBERRY_IP&gt;
 systemctl status rpi-hmi-backend rpi-hmi-display
 ```
 
@@ -130,7 +132,7 @@ cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Display (mock mode, necesita pygame)
 pip install pygame
-python display/app.py --mock --api-url http://192.168.88.211:8000
+python display/app.py --mock --api-url http://&lt;RASPBERRY_IP&gt;:8000
 
 # Frontend (dev server)
 cd frontend && npm install && npm run dev
@@ -164,7 +166,7 @@ rpi-hmi-pantalla/
 │   │   ├── models/              # Pydantic v2: LedState, ButtonState, etc.
 │   │   ├── services/            # StateManager, GPIOService (real/mock)
 │   │   └── static/              # Frontend compilado (SolidJS)
-│   ├── tests/                   # 77 tests (pytest)
+│   ├── tests/                   # ~180+ tests (pytest)
 │   └── requirements.txt
 │
 ├── display/                     # Pygame DRM/KMS Display App
@@ -174,7 +176,7 @@ rpi-hmi-pantalla/
 │   │   ├── touch.py             # evdev ADS7846 (rotate=270)
 │   │   ├── widgets.py           # LedIndicator, ButtonWidget, Header, StatusBar
 │   │   └── theme.py             # 480x320 layout, colores
-│   ├── tests/                   # 26 tests
+│   ├── tests/                   # ~180+ tests
 │   └── requirements.txt
 │
 ├── frontend/                    # SolidJS + TypeScript + Vite

@@ -28,14 +28,11 @@ BTN_TOUCH = 330
 RAW_MAX = 4096
 
 
-def _find_touch_device(preferred: str = "/dev/input/event0") -> str | None:
+def _find_touch_device() -> str | None:
     """Encuentra el dispositivo táctil ADS7846/XPT2046 en /dev/input/.
 
-    Busca por nombre de dispositivo en sysfs, luego cae en el
-    dispositivo preferido si existe.
-
-    Args:
-        preferred: Dispositivo preferido si no se encuentra por nombre.
+    Busca por nombre de dispositivo en sysfs. Si no encuentra ninguno,
+    devuelve None (sin fallback a event0).
 
     Returns:
         Ruta al dispositivo o None si no se encuentra.
@@ -56,9 +53,6 @@ def _find_touch_device(preferred: str = "/dev/input/event0") -> str | None:
         except OSError:
             pass
 
-    # Fallback
-    if Path(preferred).exists():
-        return preferred
     logger.warning("No se encontro dispositivo tactil. Touch deshabilitado.")
     return None
 
