@@ -165,7 +165,7 @@ rpi-hmi-pantalla/
 │   │   ├── api/ws.py            # WebSocket: /ws con subscripciones
 │   │   ├── models/              # Pydantic v2: LedState, ButtonState, etc.
 │   │   ├── services/            # StateManager, GPIOService (real/mock)
-│   │   └── static/              # Frontend compilado (SolidJS)
+│   │   └── (frontend servido desde frontend/dist/) 
 │   ├── tests/                   # ~222 tests (pytest)
 │   └── requirements.txt
 │

@@ -202,7 +202,8 @@ if settings.enable_admin_api:
 # Si el frontend no esta compilado (modo desarrollo/sin npm build),
 # se registra un endpoint JSON informativo en su lugar.
 
-dist_dir = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+# parents[2]: main.py -> app -> backend -> rpi_hmi (raiz del proyecto)
+dist_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 if dist_dir.exists() and (dist_dir / "index.html").exists():
     app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="frontend")

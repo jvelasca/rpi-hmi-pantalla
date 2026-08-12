@@ -1,4 +1,4 @@
-"""
+﻿"""
 backend.app.services.deploy_service
 ====================================
 
@@ -333,6 +333,13 @@ class DeployService:
 
         steps: List[DeployStatus] = []
         logger.info("Desplegando proyecto desde %s -> %s", project_root, self.remote_root)
+
+        # Limpiar frontend/dist remoto antes de copiar para evitar
+        # que assets antiguos de builds anteriores queden residuales
+        self.ssh.execute(
+            f"rm -rf {self.remote_root}/frontend/dist && mkdir -p {self.remote_root}/frontend/dist",
+            timeout=10,
+        )
 
         # Desplegar directorios completos (solo .py, .yaml, .json, .toml, .txt, .sh)
         allowed_extensions = {".py", ".yaml", ".yml", ".json", ".toml", ".txt", ".sh", ".service",
