@@ -166,7 +166,7 @@ rpi-hmi-pantalla/
 │   │   ├── models/              # Pydantic v2: LedState, ButtonState, etc.
 │   │   ├── services/            # StateManager, GPIOService (real/mock)
 │   │   └── static/              # Frontend compilado (SolidJS)
-│   ├── tests/                   # ~180+ tests (pytest)
+│   ├── tests/                   # ~149 tests (pytest)
 │   └── requirements.txt
 │
 ├── display/                     # Pygame DRM/KMS Display App
@@ -176,7 +176,7 @@ rpi-hmi-pantalla/
 │   │   ├── touch.py             # evdev ADS7846 (rotate=270)
 │   │   ├── widgets.py           # LedIndicator, ButtonWidget, Header, StatusBar
 │   │   └── theme.py             # 480x320 layout, colores
-│   ├── tests/                   # ~180+ tests
+│   ├── tests/                   # ~31 tests
 │   └── requirements.txt
 │
 ├── frontend/                    # SolidJS + TypeScript + Vite
@@ -210,10 +210,10 @@ rpi-hmi-pantalla/
 pytest backend/tests/ display/tests/
 
 # Backend
-pytest backend/tests/ -v         # ~180+ tests
+pytest backend/tests/ -v         # ~149 tests
 
 # Display (mock mode, sin GPU)
-pytest display/tests/ -v         # ~180+ tests
+pytest display/tests/ -v         # ~31 tests
 ```
 
 ---

@@ -82,6 +82,63 @@ def _check_deploy_steps(steps, label="Deploy"):
         sys.exit(1)
 
 
+def _build_frontend(root: Path) -> None:
+    """Compila el frontend (npm run build) si dist/index.html no existe.
+
+    No transfiere archivos — eso lo hace DeployService.deploy_app().
+    """
+    frontend_dir = root / "frontend"
+    dist_index = frontend_dir / "dist" / "index.html"
+
+    if dist_index.exists():
+        print("  Frontend ya compilado (dist/index.html existe)")
+        return
+
+    print("  Compilando frontend con npm run build...")
+    try:
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(frontend_dir),
+            check=True,
+        )
+        print("  Frontend compilado OK")
+    except subprocess.CalledProcessError:
+        print("[ERROR] Fallo la compilacion del frontend (npm run build)")
+        sys.exit(1)
+
+
+def _ensure_scripts_executable(ssh: ParamikoSSHDriver) -> list:
+    """Aplica chmod +x a los .sh en PI_BASE/scripts/ (ya desplegados por DeployService).
+
+    Returns:
+        Lista de errores (vacia si todo OK).
+    """
+    errors = []
+    result = ssh.execute(
+        f"find {PI_BASE}/scripts -name '*.sh' -type f 2>/dev/null",
+        timeout=10,
+    )
+    if not result.ok:
+        errors.append(f"find failed: {result.stderr.strip()}")
+        return errors
+
+    sh_files = [f.strip() for f in result.stdout.split("\n") if f.strip()]
+    for sh_file in sh_files:
+        try:
+            chmod_result = ssh.execute(f"chmod +x {sh_file}", timeout=10)
+            if chmod_result.ok:
+                print(f"  OK  chmod +x {sh_file}")
+            else:
+                errors.append(f"{sh_file}: {chmod_result.stderr.strip()}")
+        except Exception as exc:
+            errors.append(f"{sh_file}: {exc}")
+
+    if not errors:
+        print(f"  Scripts executables: {len(sh_files)} .sh files")
+
+    return errors
+
+
 # ── Health check helpers ──────────────────────────────────────
 
 
@@ -99,59 +156,6 @@ def check_backend_ready(ssh: ParamikoSSHDriver) -> bool:
 
 
 # ── Display-specific operations ───────────────────────────────
-
-
-def deploy_display_files(ssh: ParamikoSSHDriver) -> int:
-    """Sync display/ files to Pi via SFTP using SSHDriver (solo changed)."""
-    DISPLAY_DIR = ROOT / "display"
-    count = 0
-    for py_file in sorted(DISPLAY_DIR.rglob("*")):
-        if "__pycache__" in py_file.parts:
-            continue
-        if py_file.suffix == ".pyc":
-            continue
-        if py_file.is_dir():
-            continue
-        rel = str(py_file.relative_to(ROOT)).replace("\\", "/")
-        remote = f"{PI_BASE}/{rel}"
-        try:
-            parent = str(Path(remote).parent)
-            ssh.execute(f"mkdir -p {parent}", timeout=10)
-
-            local_time = py_file.stat().st_mtime
-            result = ssh.execute(
-                f"stat -c %Y {remote} 2>/dev/null || echo '0'",
-                timeout=10,
-            )
-            remote_time = float(result.stdout.strip() or "0")
-            if local_time <= remote_time:
-                continue
-
-            ssh.transfer_file(str(py_file), remote)
-            size = py_file.stat().st_size
-            print(f"  OK  {rel} ({size}B)")
-            count += 1
-        except Exception as exc:
-            print(f"  ERR {rel}: {exc}")
-    print(f"  Total: {count} files synced")
-    return count
-
-
-def deploy_scripts(ssh: ParamikoSSHDriver) -> None:
-    """Sync scripts/ to Pi (start_hmi.sh, etc.)."""
-    SCRIPTS_DIR = ROOT / "scripts"
-    ssh.execute(f"mkdir -p {PI_BASE}/scripts", timeout=10)
-    for script_file in SCRIPTS_DIR.glob("*"):
-        if script_file.name.endswith(".pyc") or script_file.name == "__pycache__":
-            continue
-        rel = str(script_file.relative_to(ROOT)).replace("\\", "/")
-        remote = f"{PI_BASE}/{rel}"
-        ssh.transfer_file(str(script_file), remote)
-        if script_file.suffix == ".sh":
-            ssh.execute(f"chmod +x {remote}", timeout=10)
-            print(f"  OK  {rel} (chmod +x)")
-        else:
-            print(f"  OK  {rel} ({script_file.stat().st_size}B)")
 
 
 def install_display_deps(ssh: ParamikoSSHDriver) -> None:
@@ -323,74 +327,6 @@ def run_hmi(ssh: ParamikoSSHDriver) -> None:
         print("\n  Stopped by user")
 
 
-def install_services(ssh: ParamikoSSHDriver) -> None:
-    """Install systemd services on Pi (backend + display)."""
-    CONFIG_DIR = ROOT / "config"
-
-    ssh.execute(f"mkdir -p {PI_BASE}/config/systemd", timeout=10)
-    for svc_file in (CONFIG_DIR / "systemd").glob("*.service"):
-        rel = str(svc_file.relative_to(ROOT)).replace("\\", "/")
-        remote = f"{PI_BASE}/{rel}"
-        ssh.transfer_file(str(svc_file), remote)
-        print(f"  Uploaded {svc_file.name}")
-
-        target = f"/etc/systemd/system/{svc_file.name}"
-        ssh.execute(f"sudo cp {remote} {target}", timeout=10)
-        print(f"  Installed {target}")
-
-    ssh.execute("sudo systemctl daemon-reload", timeout=10)
-    print("  systemd daemon-reload done")
-
-    ssh.execute(
-        "sudo systemctl enable rpi-hmi-backend.service rpi-hmi-display.service",
-        timeout=10,
-    )
-    print("  Services enabled")
-
-    ssh.execute("sudo systemctl disable lightdm 2>&1 || true", timeout=10)
-    print("  lightdm disabled")
-
-    print("\n  [DONE] Services installed. Reboot to start HMI on TFT:")
-    print(f"    ssh {USER}@{HOST} sudo reboot")
-
-
-def _deploy_frontend_static(ssh: ParamikoSSHDriver, root: Path) -> None:
-    """Compila el frontend (npm run build) y copia dist/ a la Pi.
-
-    Si dist/index.html no existe, ejecuta npm run build localmente.
-    Luego copia todos los archivos de frontend/dist/ a
-    {PI_BASE}/backend/app/static/ via SFTP.
-    """
-    frontend_dir = root / "frontend"
-    dist_dir = frontend_dir / "dist"
-
-    if not (dist_dir / "index.html").exists():
-        print("  Compilando frontend con npm run build...")
-        subprocess.run(
-            ["npm", "run", "build"],
-            cwd=str(frontend_dir),
-            check=True,
-        )
-
-    remote_static = f"{PI_BASE}/backend/app/static"
-    ssh.execute(f"mkdir -p {remote_static}", timeout=10)
-
-    count = 0
-    for local_file in sorted(dist_dir.rglob("*")):
-        if local_file.is_dir():
-            continue
-        rel = str(local_file.relative_to(dist_dir)).replace("\\", "/")
-        remote = f"{remote_static}/{rel}"
-        # Asegurar directorio remoto padre
-        remote_dir = str(Path(remote).parent)
-        ssh.execute(f"mkdir -p {remote_dir}", timeout=10)
-        ssh.transfer_file(str(local_file), remote)
-        size = local_file.stat().st_size
-        print(f"  OK  frontend/dist/{rel} ({size}B)")
-        count += 1
-    print(f"  Total frontend: {count} files synced")
-
-
 def main() -> None:
     p = argparse.ArgumentParser(description="RPi HMI deploy script")
     p.add_argument("--run", action="store_true",
@@ -412,63 +348,52 @@ def main() -> None:
             verify(ssh)
             return
 
-        if args.install_service:
-            step("SETUP ENVIRONMENT")
-            deploy_svc.setup_environment()
-            step("DEPLOY BACKEND")
-            app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
-            _check_deploy_steps(app_steps, "Deploy Backend")
-            step("DEPLOY DISPLAY FILES")
-            deploy_display_files(ssh)
-            deploy_scripts(ssh)
-            _deploy_frontend_static(ssh, ROOT)
-            step("INSTALL DEPS")
-            install_display_deps(ssh)
-            step("INSTALL SYSTEMD SERVICES")
-            install_services(ssh)
-            step("RESTART BACKEND")
-            deploy_svc.restart_backend()
-            for i in range(30):
-                if check_backend_ready(ssh):
-                    print(f"  Backend ready after {i+1}s")
-                    break
-                time.sleep(1)
-            else:
-                print("  [WARN] Backend not ready after 30s")
-            return
+        # ── Unified deploy flow (all paths share steps 1-7) ──
 
-        if args.hmi:
-            step("SETUP ENVIRONMENT")
-            deploy_svc.setup_environment()
-            step("DEPLOY BACKEND")
-            app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
-            _check_deploy_steps(app_steps, "Deploy Backend")
-            step("DEPLOY DISPLAY FILES")
-            deploy_display_files(ssh)
-            deploy_scripts(ssh)
-            _deploy_frontend_static(ssh, ROOT)
-            step("INSTALL DEPS")
-            install_display_deps(ssh)
-            deploy_svc.restart_backend()
-            run_hmi(ssh)
-            return
-
-        # Default: deploy + verify
+        # 1. Setup environment
         step("SETUP ENVIRONMENT")
         deploy_svc.setup_environment()
-        step("DEPLOY FILES (Backend)")
-        app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
-        _check_deploy_steps(app_steps, "Deploy Backend")
-        step("DEPLOY FILES (Display)")
-        deploy_display_files(ssh)
-        deploy_scripts(ssh)
-        _deploy_frontend_static(ssh, ROOT)
 
+        # 2. Build frontend locally (must run before deploy_app which transfers frontend/dist/)
+        step("BUILD FRONTEND")
+        _build_frontend(ROOT)
+
+        # 3. Deploy ALL files (backend, display, scripts, frontend/dist, config)
+        step("DEPLOY FILES")
+        app_steps = deploy_svc.deploy_app(project_root=str(ROOT))
+        _check_deploy_steps(app_steps, "Deploy")
+
+        # 4. Ensure scripts are executable (chmod +x only, no re-transfer)
+        step("ENSURE SCRIPTS EXECUTABLE")
+        script_errors = _ensure_scripts_executable(ssh)
+        if script_errors:
+            print(f"\n[ERROR] Script chmod errors:")
+            for e in script_errors:
+                print(f"  - {e}")
+            sys.exit(1)
+
+        # 5. Install display dependencies
         step("INSTALL DEPS")
         install_display_deps(ssh)
 
+        # 6. Restart backend
         step("RESTART BACKEND")
         deploy_svc.restart_backend()
+
+        # ── Path-specific post-processing ──
+
+        if args.install_service:
+            step("INSTALL SYSTEMD SERVICES")
+            deploy_svc.install_services()
+            print("\n  [DONE] Services installed. Reboot to start HMI on TFT:")
+            print(f"    ssh {USER}@{HOST} sudo reboot")
+            return
+
+        if args.hmi:
+            run_hmi(ssh)
+            return
+
+        # Default: verify + optional run
         # Wait for /health/ready (30 intentos, 1s cada uno)
         for i in range(30):
             if check_backend_ready(ssh):
