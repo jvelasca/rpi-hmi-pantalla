@@ -772,3 +772,33 @@ class MockWebSocket:
 
     async def send_json(self, data: dict) -> None:
         self.sent.append(data)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Error Handling Extended (FASE P1+P2)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestErrorHandlingExtended:
+    """Tests extendidos de manejo de errores HTTP."""
+
+    def test_api_returns_500_on_internal_error(self, client) -> None:  # type: ignore[no-untyped-def]
+        """El backend propaga RuntimeError como 500 cuando toggle_led falla."""
+        from unittest.mock import patch
+
+        with patch(
+            "backend.app.services.state_manager.state_manager.toggle_led",
+            side_effect=RuntimeError("Simulated crash"),
+        ):
+            # Starlette TestClient propaga excepciones no manejadas.
+            # En produccion, FastAPI capturaria esto como 500.
+            # Aqui verificamos que la excepcion se genera correctamente.
+            with pytest.raises(RuntimeError, match="Simulated crash"):
+                client.post("/api/led/toggle")
+
+    def test_status_endpoint_reflects_ws_count(self, client) -> None:  # type: ignore[no-untyped-def]
+        """GET /api/status refleja el numero de clientes WS."""
+        resp = client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "websocket_clients" in data

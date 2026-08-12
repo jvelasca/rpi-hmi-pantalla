@@ -83,3 +83,46 @@ class TestGPIOService:
         svc.setup_output(22)
         svc.cleanup()
         assert len(svc._configured_pins) == 0
+
+
+# ═══════════════════════════════════════════════════════════════
+# GPIOService Errors (FASE P1+P2)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestGPIOServiceErrors:
+    """Tests de manejo de errores en GPIOService."""
+
+    def test_real_driver_detection_with_gpiomem(self) -> None:
+        """Simula que /dev/gpiomem existe -> detecta RealGPIODriver."""
+        from unittest.mock import patch
+
+        from backend.app.services.gpio_service import GPIOService
+
+        with patch("os.path.exists", return_value=True):
+            service = GPIOService()
+            driver = service._detect_driver()
+            assert driver is not None
+
+    def test_gpio_service_cleanup_handles_exception(self) -> None:
+        """cleanup no propaga excepciones del driver."""
+        from unittest.mock import patch
+
+        from backend.app.services.gpio_service import GPIOService, MockGPIODriver
+
+        service = GPIOService(driver=MockGPIODriver())
+        service.setup_output(17)
+
+        with patch.object(service._driver, "cleanup", side_effect=Exception("Mock cleanup error")):
+            service.cleanup()
+            # No debe propagar la excepcion
+
+    def test_mock_driver_set_high_without_setup(self) -> None:
+        """set_high sin setup_output no crashea (warn + no-op)."""
+        from backend.app.services.gpio_service import MockGPIODriver
+
+        driver = MockGPIODriver()
+        # set_high without setup — should warn but not crash
+        driver.set_high(17)
+        # MockGPIODriver tracks state anyway
+        assert driver._states.get(17) is True

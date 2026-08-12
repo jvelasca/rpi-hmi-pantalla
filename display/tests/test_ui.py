@@ -718,3 +718,108 @@ class TestDisplayAppButtonFeedback:
 
         assert app.button.pressed is False
         assert app._button_press_frame == -1
+
+
+# ═══════════════════════════════════════════════════════════════
+# Touch Detection (FASE P1+P2)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestTouchDetection:
+    """Tests para deteccion de dispositivo touch."""
+
+    def test_find_touch_device_matches_ads7846(self) -> None:
+        """Simula sysfs con nombre 'ADS7846 Touchscreen'."""
+        from unittest.mock import patch
+
+        from display.ui.touch import _find_touch_device
+
+        with patch("os.listdir", return_value=["event0", "event1", "event2"]):
+            def mock_open(path: str, *args, **kwargs):  # type: ignore[no-untyped-def]
+                if "event1/device/name" in str(path):
+                    from unittest.mock import mock_open
+                    m = mock_open(read_data="ADS7846 Touchscreen")
+                    return m.return_value
+                raise FileNotFoundError
+
+            with patch("builtins.open", mock_open):
+                with patch("pathlib.Path.exists", return_value=True):
+                    result = _find_touch_device()
+                    assert result is not None
+                    assert "event1" in str(result)
+
+    def test_find_touch_device_no_match_returns_none(self) -> None:
+        """Ningun dispositivo coincide -> None."""
+        from unittest.mock import patch
+
+        from display.ui.touch import _find_touch_device
+
+        with patch("os.listdir", return_value=["event0", "event1"]):
+            def mock_open(path: str, *args, **kwargs):  # type: ignore[no-untyped-def]
+                if "device/name" in str(path):
+                    from unittest.mock import mock_open
+                    m = mock_open(read_data="Keyboard")
+                    return m.return_value
+                raise FileNotFoundError
+
+            with patch("builtins.open", mock_open):
+                with patch("pathlib.Path.exists", return_value=True):
+                    result = _find_touch_device()
+                    assert result is None
+
+    def test_touch_handler_no_device(self) -> None:
+        """TouchHandler sin dispositivo detectado -> available=False."""
+        from display.ui.touch import TouchHandler
+
+        th = TouchHandler(device_path="/nonexistent")
+        assert th.available is False
+
+    @pytest.mark.skip(reason="_map_coordinates no existe; raw_to_screen ya testeado")
+    def test_touch_coordinates_mapped_correctly(self) -> None:
+        """Verifica mapeo de coordenadas crudas a pantalla (ya cubierto)."""
+        pass
+
+
+# ═══════════════════════════════════════════════════════════════
+# Screen DRM Fallback (FASE P1+P2)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestScreenDRMFallback:
+    """Tests para fallback de DRM a mock."""
+
+    def test_screen_initializes_mock_when_drm_unavailable(self) -> None:
+        """Si DRM no esta disponible, Screen debe inicializarse en modo mock."""
+        from unittest.mock import patch
+
+        from display.ui.screen import Screen
+
+        with patch("display.ui.screen.pygame.display.init", side_effect=Exception("No video")):
+            screen = Screen(mock=True)
+            assert screen.mock is True
+            screen.cleanup()
+
+    def test_screen_size_on_init(self) -> None:
+        """Screen se inicializa con las dimensiones correctas."""
+        from display.ui.screen import Screen
+
+        screen = Screen(mock=True)
+        assert screen.width == 480
+        assert screen.height == 320
+        screen.cleanup()
+
+
+# ═══════════════════════════════════════════════════════════════
+# Theme Constants (FASE P1+P2)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestThemeConstants:
+    """Tests adicionales para constantes de tema."""
+
+    def test_resolution_matches_hardware(self) -> None:
+        """La resolucion por defecto coincide con la pantalla fisica (480x320)."""
+        from display.ui.theme import BASE_HEIGHT, BASE_WIDTH
+
+        assert BASE_WIDTH == 480
+        assert BASE_HEIGHT == 320

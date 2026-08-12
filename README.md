@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141-green?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SolidJS](https://img.shields.io/badge/SolidJS-1.9-blue?logo=solid)](https://www.solidjs.com/)
-[![Tests](https://img.shields.io/badge/tests-~180%2B%20tests-green)]()
+[![Tests](https://img.shields.io/badge/tests-~277%20tests-green)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/jvelasca/rpi-hmi-pantalla/blob/main/LICENSE)
 
 Plataforma HMI (Human-Machine Interface) para Raspberry Pi con pantalla táctil 3.5",
@@ -166,7 +166,7 @@ rpi-hmi-pantalla/
 │   │   ├── models/              # Pydantic v2: LedState, ButtonState, etc.
 │   │   ├── services/            # StateManager, GPIOService (real/mock)
 │   │   └── static/              # Frontend compilado (SolidJS)
-│   ├── tests/                   # ~149 tests (pytest)
+│   ├── tests/                   # ~222 tests (pytest)
 │   └── requirements.txt
 │
 ├── display/                     # Pygame DRM/KMS Display App
@@ -176,7 +176,7 @@ rpi-hmi-pantalla/
 │   │   ├── touch.py             # evdev ADS7846 (rotate=270)
 │   │   ├── widgets.py           # LedIndicator, ButtonWidget, Header, StatusBar
 │   │   └── theme.py             # 480x320 layout, colores
-│   ├── tests/                   # ~31 tests
+│   ├── tests/                   # ~55 tests
 │   └── requirements.txt
 │
 ├── frontend/                    # SolidJS + TypeScript + Vite
@@ -206,15 +206,46 @@ rpi-hmi-pantalla/
 ## Tests
 
 ```bash
-# Todos los tests
+# Todos los tests (~277 total)
 pytest backend/tests/ display/tests/
 
-# Backend
-pytest backend/tests/ -v         # ~149 tests
+# Backend (~222 tests)
+pytest backend/tests/ -v
 
-# Display (mock mode, sin GPU)
-pytest display/tests/ -v         # ~31 tests
+# Display — mock mode, sin GPU (~55 tests)
+pytest display/tests/ -v
 ```
+
+### Cobertura por área
+
+| Área | Tests | Archivos |
+|------|-------|----------|
+| **Lifespan & Config** | 24 | `test_main_lifespan.py`, `test_config.py` |
+| **WebSocket endpoint** | 11 | `test_ws_endpoint.py` |
+| **Modelos Pydantic** | 16 | `test_models.py` |
+| **StateManager** | 32 | `test_state_manager.py` (concurrencia, persistencia, singletons) |
+| **Persistencia SQLite** | 19 | `test_persistence.py` (rotación, edge cases) |
+| **GPIO** | 11 | `test_gpio_service.py` (mock, errores, detección) |
+| **SSH Manager** | 25 | `test_ssh_manager.py` |
+| **Deploy Service** | 18 | `test_deploy_service.py` (errores, parciales) |
+| **REST API** | 14 | `test_hmi.py` |
+| **Integración** | 52 | `test_integration.py` (REST+WS+admin+errores) |
+| **Display App** | 17 | `test_display_app.py` (CLI, WS sync, lifecycle) |
+| **Display UI** | 38 | `test_ui.py` (widgets, touch, screen, theme) |
+| **Total** | **277** | **13 archivos** |
+
+Alcanza:
+- ✅ Inicio/apagado del backend (lifespan)
+- ✅ Concurrencia del StateManager (múltiples hilos)
+- ✅ Endpoint WebSocket (protocolo, suscripción, broadcast, desconexión)
+- ✅ Persistencia SQLite (rotación event_log, drenado shutdown, edge cases)
+- ✅ Validación de modelos Pydantic (DeviceConfig, ClientMessage, ServerMessage)
+- ✅ CLI de la app display (`--mock`, `--api-url`, `--debug`, `--fps`)
+- ✅ Sincronización de estado display ↔ backend
+- ✅ Detección de dispositivo touch (sin fallback a event0)
+- ✅ Deploy con manejo de errores (archivos faltantes, backend caído)
+- ✅ Integración completa REST ↔ WebSocket ↔ Admin API
+- ✅ Seguridad (CORS, API key, 401/404/500)
 
 ---
 

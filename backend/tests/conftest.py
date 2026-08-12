@@ -1,5 +1,13 @@
 """Fixtures compartidas para todos los tests del backend."""
 
+import os
+
+# Forzar enable_admin_api=True en tests para que los routers /admin/*
+# se incluyan. Debe ejecutarse ANTES de importar backend.app.main.
+# NOTA: No seteamos ADMIN_API_KEY aqui — el fixture set_api_key en
+# test_integration.py se encarga de mutar settings.admin_api_key.
+os.environ["ENABLE_ADMIN_API"] = "true"
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from fastapi.testclient import TestClient

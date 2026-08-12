@@ -72,7 +72,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                                 f"Esperada: {SUPPORTED_VERSION}"
                             ),
                         },
-                    ).model_dump()
+                    ).model_dump(mode="json")
                 )
                 logger.warning(
                     "Version WS no soportada: %s (esperada %s)",
@@ -97,8 +97,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     await websocket.send_json(
                         ServerMessage(
                             type="status_update",
-                            data=status.model_dump(),
-                        ).model_dump()
+                            data=status.model_dump(mode="json"),
+                        ).model_dump(mode="json")
                     )
 
                 case "subscribe":
@@ -115,7 +115,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                                 "code": "UNKNOWN_TYPE",
                                 "message": f"Tipo de mensaje desconocido: {msg.type}",
                             },
-                        ).model_dump()
+                        ).model_dump(mode="json")
                     )
 
     except WebSocketDisconnect:
@@ -130,7 +130,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "code": "INTERNAL_ERROR",
                         "message": str(exc),
                     },
-                ).model_dump()
+                ).model_dump(mode="json")
             )
         except Exception:
             pass

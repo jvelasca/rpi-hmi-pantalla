@@ -227,7 +227,7 @@ class StateManager:
         # Broadcast async con sequence
         msg = ServerMessage(
             type="led_changed",
-            data=new_state.model_dump(),
+            data=new_state.model_dump(mode="json"),
             sequence=seq,
         )
         self._schedule_broadcast(msg)
@@ -262,7 +262,7 @@ class StateManager:
         # Persistir
         self._persist_button(new_state.press_count)
 
-        msg = ServerMessage(type="button_pressed", data=new_state.model_dump(), sequence=seq)
+        msg = ServerMessage(type="button_pressed", data=new_state.model_dump(mode="json"), sequence=seq)
         self._schedule_broadcast(msg)
         self._log_event("button_pressed", {"count": new_state.press_count})
         logger.info("Boton presionado (count=%d, seq=%d)", new_state.press_count, seq)
@@ -283,7 +283,7 @@ class StateManager:
             seq = self._sequence
             new_state = self._button_state
 
-        msg = ServerMessage(type="button_released", data=new_state.model_dump(), sequence=seq)
+        msg = ServerMessage(type="button_released", data=new_state.model_dump(mode="json"), sequence=seq)
         self._schedule_broadcast(msg)
         logger.info("Boton liberado (seq=%d)", seq)
         return new_state
@@ -306,7 +306,7 @@ class StateManager:
             seq = self._sequence
             new_state = self._display_info
 
-        msg = ServerMessage(type="display_changed", data=new_state.model_dump(), sequence=seq)
+        msg = ServerMessage(type="display_changed", data=new_state.model_dump(mode="json"), sequence=seq)
         self._schedule_broadcast(msg)
         logger.info("Display: connected=%s, %s, %s (seq=%d)", connected, resolution, driver, seq)
 
@@ -351,7 +351,7 @@ class StateManager:
         # Enviar estado actual inmediatamente
         status = self.get_status()
         await websocket.send_json(
-            ServerMessage(type="status_update", data=status.model_dump()).model_dump()
+            ServerMessage(type="status_update", data=status.model_dump(mode="json")).model_dump(mode="json")
         )
         logger.debug("Cliente suscrito a %s", [t.value for t in topics])
 
@@ -479,7 +479,7 @@ class StateManager:
             message: ServerMessage a enviar.
         """
         topic = message.type.split("_")[0]  # "led_changed" -> "led"
-        payload = message.model_dump()
+        payload = message.model_dump(mode="json")
 
         subscribers: set[Any] = set()
         with self._lock:

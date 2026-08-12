@@ -137,7 +137,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Drain pending persistence tasks before closing DB
     try:
-        from backend.app.services.state_manager import state_manager
         await state_manager.flush_pending_tasks()
     except Exception as exc:
         logger.warning("Error draining persistence tasks: %s", exc)
