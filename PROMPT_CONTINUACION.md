@@ -16,7 +16,7 @@ RASPBERRY PI — DATOS DE CONEXIÓN:
 SERVICIOS CORRIENDO EN LA PI:
 1. pi_hmi_server.py (PID ~8192): HTTP REST API en puerto 8000 + WebSocket en puerto 8001
    - Sin dependencias externas (stdlib puro)
-   - Sirve backend/app/static/index.html como frontend HTML
+   - Sirve frontend SolidJS compilado (frontend/dist/) via FastAPI StaticFiles
    - Endpoints: /api/led, /api/button, /api/status, /health
 2. fb_ui.py (PID ~21877): UI directa sobre framebuffer /dev/fb0
    - Auto-detecta resolución y formato de píxel
@@ -42,7 +42,7 @@ ARCHIVOS CLAVE CREADOS/MODIFICADOS:
 - pi_hmi_server.py (NUEVO — servidor standalone para Pi)
 - fb_ui.py (NUEVO — UI framebuffer con auto-detección)
 - backend/app/api/hmi.py (NUEVO — router FastAPI HMI)
-- backend/app/static/index.html (NUEVO — frontend HTML 480x320)
+- frontend/dist/ (NUEVO — frontend SolidJS compilado con Vite, servido por FastAPI)
 - backend/app/main.py (MODIFICADO — routers + static)
 - backend/app/services/ssh_manager.py (MODIFICADO — soporte clave SSH)
 - backend/app/api/ssh.py (MODIFICADO — key_path en connect)

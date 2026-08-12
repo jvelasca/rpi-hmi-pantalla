@@ -215,23 +215,17 @@ echo ""
 echo -e "${YELLOW}━━━ FASE 10: Backend FastAPI ━━━${NC}"
 info "Iniciando servidor FastAPI en segundo plano (puerto 8000)..."
 cd "$PROJECT_DIR"
-sudo systemctl start rpi-hmi-backend.service 2>/dev/null || \
-    nohup python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 > /tmp/hmi_backend.log 2>&1 &
-BACKEND_PID=$!
-echo $BACKEND_PID > /tmp/hmi_backend.pid
+sudo systemctl start rpi-hmi-backend.service 2>/dev/null && \
+    echo "SYSTEMCTL_OK" || echo "SYSTEMCTL_FAIL"
 sleep 2
 
-if [ -n "$BACKEND_PID" ] && kill -0 $BACKEND_PID 2>/dev/null; then
-    ok "Backend iniciado (PID: $BACKEND_PID)"
-    ok "Accede desde tu PC a: http://$(hostname -I | awk '{print $1}'):8000/health"
-    info "Logs: tail -f /tmp/hmi_backend.log"
-    info "Para detener: kill \$(cat /tmp/hmi_backend.pid)"
-elif systemctl is-active --quiet rpi-hmi-backend.service; then
+if systemctl is-active --quiet rpi-hmi-backend.service; then
     ok "Backend iniciado via systemctl"
     ok "Accede desde tu PC a: http://$(hostname -I | awk '{print $1}'):8000/health"
     info "Logs: sudo journalctl -u rpi-hmi-backend.service -f"
 else
-    err "El backend no se inició. Revisa: cat /tmp/hmi_backend.log"
+    err "El backend no se inició. Revisa: sudo journalctl -u rpi-hmi-backend.service"
+    err "Asegurate de haber ejecutado --install-service primero."
 fi
 
 # ── Resumen ────────────────────────────────────────────────────────────

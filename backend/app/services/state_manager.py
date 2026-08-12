@@ -241,15 +241,42 @@ class StateManager:
     def toggle_led(self) -> LedState:
         """Alterna el estado del LED de forma atomica.
 
-        La lectura y escritura ocurren dentro del mismo lock
-        para evitar carreras read-modify-write.
+        Realiza la lectura, inversion, incremento de secuencia y escritura
+        dentro del mismo lock para evitar carreras read-modify-write entre
+        multiples hilos/corutinas.
 
         Returns:
             Nuevo LedState tras el toggle.
         """
         with self._lock:
             new_state_val = not self._led_state.state
-        return self.set_led(new_state_val)
+            label = "ENCENDIDO" if new_state_val else "APAGADO"
+            gpio_pin = self._led_state.gpio_pin
+            self._sequence += 1
+            self._led_state = LedState(state=new_state_val, label=label, gpio_pin=gpio_pin)
+            seq = self._sequence
+            new_state = self._led_state
+
+        # Notificar a la HAL para actualizar GPIO fisico
+        if self._updater_callback:
+            try:
+                self._updater_callback("led", new_state)
+            except Exception:
+                logger.exception("Error en callback GPIO para LED")
+
+        # Persistir
+        self._persist_led(new_state.state)
+
+        # Broadcast async con sequence
+        msg = ServerMessage(
+            type="led_changed",
+            data=new_state.model_dump(mode="json"),
+            sequence=seq,
+        )
+        self._schedule_broadcast(msg)
+        self._log_event("led_" + ("on" if new_state.state else "off"), {"gpio_pin": new_state.gpio_pin})
+        logger.info("LED -> %s (seq=%d)", new_state.label, seq)
+        return new_state
 
     def press_button(self) -> ButtonState:
         """Registra una pulsacion del boton.

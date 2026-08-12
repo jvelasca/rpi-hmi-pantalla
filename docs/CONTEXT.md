@@ -22,7 +22,7 @@
 | Backend | CORRIENDO (systemd) | FastAPI en :8000. `rpi-hmi-backend.service` enabled. Auto-start al boot. |
 | Display App Pygame | CORRIENDO (systemd) | `rpi-hmi-display.service` enabled. DRM/KMS 480x320 en TFT. Auto-start al boot. |
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
-| Frontend SolidJS | CORRIENDO | http://192.168.88.211:8000/. Servido por FastAPI desde static/. |
+| Frontend SolidJS | CORRIENDO | http://192.168.88.211:8000/. Servido por FastAPI desde frontend/dist/. |
 | Docs | OK | Swagger en http://192.168.88.211:8000/docs |
 | Tests | 103/103 pass | 77 backend + 26 display = 103 tests total |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
@@ -112,7 +112,7 @@ websocket-client>=1.8,<2.0
 
 ## Fase 3: COMPLETADA — Frontend SolidJS + TypeScript + Vite
 
-Frontend web servido directamente por el backend FastAPI desde `backend/app/static/`.
+Frontend web servido directamente por el backend FastAPI desde `frontend/dist/` (compilado con `npm run build`).
 
 ### Estructura
 ```
