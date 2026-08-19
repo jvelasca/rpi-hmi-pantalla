@@ -33,10 +33,16 @@ from display.ui.theme import (
     BTN_PRESSED_TEXT,
     BUTTON_BG,
     BUTTON_TEXT,
+    CALIB_BG,
+    CALIB_TEXT,
+    CONFIG_BTN_BG,
+    CONFIG_BTN_HOVER,
+    CONFIG_BTN_ICON,
     FOOTER_BG,
     FOOTER_TEXT,
     FONT_BOLD,
     FONT_FAMILY,
+    FONT_SIZE_BIG,
     FONT_SIZE_COUNTER,
     FONT_SIZE_HEADING,
     FONT_SIZE_NORMAL,
@@ -51,9 +57,43 @@ from display.ui.theme import (
     LED_ON_GLOW,
     LED_ON_HIGHLIGHT,
     LED_ON_MID,
+    LED2_ON_CORE,
+    LED2_ON_GLOW,
+    LED2_ON_HIGHLIGHT,
+    LED2_ON_MID,
+    NETWORK_ACCENT,
+    NETWORK_ACTIVE,
+    NETWORK_BG,
+    NETWORK_DIM,
+    NETWORK_FIELD_BG,
+    NETWORK_FIELD_BORDER,
+    NETWORK_STEP_BG,
+    NETWORK_TEXT,
+    OPTION_BG,
+    OPTION_HOVER,
+    OPTION_ICON_BACK,
+    OPTION_ICON_MONITOR,
+    OPTION_ICON_NETWORK,
+    OPTION_ICON_TOUCH,
+    OVERLAY_BG,
+    OVERLAY_BORDER,
+    OVERLAY_TITLE,
     PANEL_BG,
     PANEL_BORDER,
     SUCCESS,
+    TARGET_ACTIVE,
+    TARGET_CENTER,
+    TARGET_RING,
+    TARGET_TOUCHED,
+    TEST_BAR_B,
+    TEST_BAR_BK,
+    TEST_BAR_C,
+    TEST_BAR_G,
+    TEST_BAR_M,
+    TEST_BAR_R,
+    TEST_BAR_W,
+    TEST_BAR_Y,
+    TEST_GRID_COLOR,
     TEXT_DIM,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -69,21 +109,44 @@ logger = logging.getLogger("rpi_hmi.display.widgets")
 FontType = object  # pygame.freetype.Font | pygame.font.Font
 _font_cache: dict[tuple[str, int], FontType] = {}
 
+# Rutas directas a los TTF de DejaVu (evita SysFont, que ejecuta fc-list
+# y puede agotar el timeout en Raspberry Pi -> fuente bitmap borrosa).
+_FONT_FILES: dict[str, list[str]] = {
+    "DejaVuSans": [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ],
+    "DejaVuSans-Bold": [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    ],
+}
+
 
 def _get_font(name: str, size: int) -> FontType:
     """Obtiene una fuente del cache o la crea.
 
-    Usa pygame.freetype si esta disponible, o pygame.font como fallback.
-    Si ningun modulo de fuentes esta disponible, devuelve un objeto dummy.
+    Prefiere cargar el TTF directamente por ruta (nitido), evita
+    pygame.freetype.SysFont porque ejecuta fc-list y puede agotar el
+    timeout en Raspberry Pi, cayendo a una fuente bitmap de baja calidad.
     """
     key = (name, size)
     if key not in _font_cache:
         if _HAS_FREETYPE:
+            # 1) Ruta directa al TTF (recomendado)
+            for path in _FONT_FILES.get(name, []):
+                try:
+                    _font_cache[key] = pygame.freetype.Font(path, size)
+                    return _font_cache[key]
+                except Exception:
+                    pass
+            # 2) SysFont (ejecuta fc-list, puede fallar en Pi)
             try:
                 _font_cache[key] = pygame.freetype.SysFont(name, size)
                 return _font_cache[key]
             except Exception:
                 pass
+            # 3) Fuente por defecto de pygame (bitmap)
             try:
                 _font_cache[key] = pygame.freetype.Font(None, size)
                 return _font_cache[key]
@@ -92,11 +155,14 @@ def _get_font(name: str, size: int) -> FontType:
         else:
             if not pygame.font.get_init():
                 pygame.font.init()
-            try:
-                _font_cache[key] = pygame.font.SysFont(name, size)
-                return _font_cache[key]
-            except Exception:
-                pass
+            # Cargar TTF directamente por ruta (nitido), evita SysFont/match_font
+            for path in _FONT_FILES.get(name, []):
+                try:
+                    _font_cache[key] = pygame.font.Font(path, size)
+                    return _font_cache[key]
+                except Exception:
+                    pass
+            # Fallback: fuente por defecto de pygame (mejor que bitmap)
             try:
                 _font_cache[key] = pygame.font.Font(None, size)
                 return _font_cache[key]
@@ -375,6 +441,7 @@ class ButtonWidget(Widget):
         self.press_count: int = 0
         self.label = label
         self._on_press: callable | None = None
+        self._on_release: callable | None = None
 
         padding = 10
         title_h = 20
@@ -385,8 +452,15 @@ class ButtonWidget(Widget):
         self._btn_radius = min(w, h - title_h) // 4 + 5
         self._counter_y = self._btn_center_y + self._btn_radius + 12
 
+        # LED 2 (verde) — indica estado del boton PULSAR
+        self._led2_center = (x + w - 20, y + title_h // 2 + padding)
+        self._led2_radius = 8
+
     def set_on_press(self, callback: callable) -> None:
         self._on_press = callback
+
+    def set_on_release(self, callback: callable) -> None:
+        self._on_release = callback
 
     def draw(self, surface: pygame.Surface) -> None:
         if not self.visible:
@@ -400,8 +474,23 @@ class ButtonWidget(Widget):
         title_x = self.rect.x + (self.rect.width - title_rect.width) // 2
         _render_text(surface, title_font, self.label, TEXT_SECONDARY, title_x, self._title_rect.y)
 
+        self._draw_led2(surface)
         self._draw_button(surface)
         self._draw_counter(surface)
+
+    def _draw_led2(self, surface: pygame.Surface) -> None:
+        """Dibuja el LED 2 (verde) que refleja el estado del boton."""
+        cx, cy = self._led2_center
+        r = self._led2_radius
+        if self.pressed:
+            pygame.draw.circle(surface, LED2_ON_GLOW, (cx, cy), r + 4)
+            pygame.draw.circle(surface, LED2_ON_MID, (cx, cy), r + 1)
+            pygame.draw.circle(surface, LED2_ON_CORE, (cx, cy), r)
+            pygame.draw.circle(surface, LED2_ON_HIGHLIGHT, (cx - r // 3, cy - r // 3), r // 4)
+        else:
+            pygame.draw.circle(surface, LED_OFF_BG, (cx, cy), r)
+            pygame.draw.circle(surface, LED_OFF_MID, (cx, cy), r - 2)
+            pygame.draw.circle(surface, LED_OFF_HIGHLIGHT, (cx - r // 3, cy - r // 3), r // 4)
 
     def _draw_button(self, surface: pygame.Surface) -> None:
         cx, cy = self._btn_center_x, self._btn_center_y
@@ -452,5 +541,632 @@ class ButtonWidget(Widget):
         if self.hit_test(screen_x, screen_y):
             if self._on_press:
                 self._on_press()
+            return True
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# ConfigButton — Botón flotante con icono engranaje (V1.1)
+# ═══════════════════════════════════════════════════════════════
+
+
+class ConfigButton(Widget):
+    """Botón flotante pequeño con icono de engranaje, esquina inferior derecha."""
+
+    def __init__(self, parent_w: int, parent_h: int, size: int = 40, margin: int = 10) -> None:
+        x = parent_w - size - margin
+        y = parent_h - size - margin
+        super().__init__(x, y, size, size)
+        self._on_click: callable | None = None
+
+    def set_on_click(self, callback: callable) -> None:
+        self._on_click = callback
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+        cx = self.rect.centerx
+        cy = self.rect.centery
+        r = self.rect.width // 2 - 2
+
+        # Circle background
+        pygame.draw.circle(surface, CONFIG_BTN_BG, (cx, cy), r)
+        pygame.draw.circle(surface, TEXT_DIM, (cx, cy), r, 2)
+
+        # Gear icon: center dot + 4 spokes (simple)
+        dot_r = 3
+        pygame.draw.circle(surface, CONFIG_BTN_ICON, (cx, cy), dot_r)
+        import math
+        for i in range(6):
+            angle = i * math.pi / 3
+            spoke_start = dot_r + 3
+            spoke_end = r - 5
+            x1 = cx + int(spoke_start * math.cos(angle))
+            y1 = cy + int(spoke_start * math.sin(angle))
+            x2 = cx + int(spoke_end * math.cos(angle))
+            y2 = cy + int(spoke_end * math.sin(angle))
+            pygame.draw.line(surface, CONFIG_BTN_ICON, (x1, y1), (x2, y2), 2)
+
+        # Outer ring segments
+        for i in range(6):
+            angle = i * math.pi / 3
+            sx = cx + int((r - 2) * math.cos(angle))
+            sy = cy + int((r - 2) * math.sin(angle))
+            pygame.draw.circle(surface, CONFIG_BTN_ICON, (sx, sy), 2)
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        if self.hit_test(screen_x, screen_y):
+            if self._on_click:
+                self._on_click()
+            return True
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# ConfigOverlay — Pantalla de configuración (3 opciones) (V1.1)
+# ═══════════════════════════════════════════════════════════════
+
+_ICON_MONITOR = "□"    # monitor
+_ICON_TOUCH = "◎"      # touch target
+_ICON_NETWORK = "⇄"    # network
+_ICON_BACK = "←"       # back arrow
+
+
+class ConfigOverlay(Widget):
+    """Overlay de pantalla completa con 4 botones de opción."""
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self._on_screen_test: callable | None = None
+        self._on_touch_calib: callable | None = None
+        self._on_network: callable | None = None
+        self._on_back: callable | None = None
+
+        btn_h = 46
+        gap = 10
+        btn_w = w - 60
+        n = 4
+        start_y = (h - (btn_h + gap) * n) // 2 + 10
+        self._btn_screen = pygame.Rect((w - btn_w) // 2, start_y, btn_w, btn_h)
+        self._btn_calib = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap), btn_w, btn_h)
+        self._btn_network = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 2, btn_w, btn_h)
+        self._btn_back = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 3, btn_w, btn_h)
+
+    def set_callbacks(self, screen_test: callable, touch_calib: callable, network: callable, back: callable) -> None:
+        self._on_screen_test = screen_test
+        self._on_touch_calib = touch_calib
+        self._on_network = network
+        self._on_back = back
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+        # Full screen background
+        pygame.draw.rect(surface, OVERLAY_BG, self.rect)
+
+        # Title
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        title_text = "CONFIGURACION"
+        title_rect = _get_text_rect(title_font, title_text)
+        title_x = (self.rect.width - title_rect.width) // 2
+        title_y = 22
+        _render_text(surface, title_font, title_text, OVERLAY_TITLE, title_x, title_y)
+
+        # Draw 4 option buttons
+        self._draw_option(surface, self._btn_screen, "Prueba de Pantalla", _ICON_MONITOR, OPTION_ICON_MONITOR)
+        self._draw_option(surface, self._btn_calib, "Calibracion Tactil", _ICON_TOUCH, OPTION_ICON_TOUCH)
+        self._draw_option(surface, self._btn_network, "Configurar IP", _ICON_NETWORK, OPTION_ICON_NETWORK)
+        self._draw_option(surface, self._btn_back, "Volver", _ICON_BACK, OPTION_ICON_BACK)
+
+    def _draw_option(self, surface: pygame.Surface, rect: pygame.Rect,
+                     label: str, icon_char: str, icon_color: tuple) -> None:
+        pygame.draw.rect(surface, OPTION_BG, rect)
+        pygame.draw.rect(surface, OVERLAY_BORDER, rect, 2)
+
+        icon_font = _get_font(FONT_BOLD, FONT_SIZE_BIG)
+        icon_rect = _get_text_rect(icon_font, icon_char)
+        icon_x = rect.x + 20
+        icon_y = rect.y + (rect.height - icon_rect.height) // 2
+        _render_text(surface, icon_font, icon_char, icon_color, icon_x, icon_y)
+
+        label_font = _get_font(FONT_FAMILY, FONT_SIZE_HEADING)
+        label_rect = _get_text_rect(label_font, label)
+        label_x = rect.x + 60
+        label_y = rect.y + (rect.height - label_rect.height) // 2
+        _render_text(surface, label_font, label, TEXT_PRIMARY, label_x, label_y)
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        if self._btn_screen.collidepoint(screen_x, screen_y):
+            if self._on_screen_test:
+                self._on_screen_test()
+            return True
+        if self._btn_calib.collidepoint(screen_x, screen_y):
+            if self._on_touch_calib:
+                self._on_touch_calib()
+            return True
+        if self._btn_network.collidepoint(screen_x, screen_y):
+            if self._on_network:
+                self._on_network()
+            return True
+        if self._btn_back.collidepoint(screen_x, screen_y):
+            if self._on_back:
+                self._on_back()
+            return True
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# ScreenTestView — Patrones de prueba de pantalla (V1.1)
+# ═══════════════════════════════════════════════════════════════
+
+_SCREEN_PATTERNS = ["Barras", "Colores", "Grid", "Degradado", "Salir"]
+
+
+class ScreenTestView(Widget):
+    """Vista de prueba de pantalla con patrones conmutables."""
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self._pattern_idx: int = 0
+        self._on_exit: callable | None = None
+
+        # Pattern area (top) and button bar (bottom)
+        self._pattern_area = pygame.Rect(0, 0, w, h - 44)
+        btn_w = w // len(_SCREEN_PATTERNS)
+        self._btn_rects: list[pygame.Rect] = []
+        for i in range(len(_SCREEN_PATTERNS)):
+            self._btn_rects.append(pygame.Rect(i * btn_w, h - 44, btn_w, 44))
+
+    def set_on_exit(self, callback: callable) -> None:
+        self._on_exit = callback
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+
+        # Draw current pattern
+        area = self._pattern_area
+        if self._pattern_idx == 0:
+            self._draw_color_bars(surface, area)
+        elif self._pattern_idx == 1:
+            self._draw_solid_colors(surface, area)
+        elif self._pattern_idx == 2:
+            self._draw_grid(surface, area)
+        elif self._pattern_idx == 3:
+            self._draw_gradient(surface, area)
+
+        # Draw button bar
+        bar_y = self.rect.y + self.rect.height - 44
+        pygame.draw.rect(surface, HEADER_BG, (0, bar_y, self.rect.width, 44))
+
+        font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+        for i, (label, btn) in enumerate(zip(_SCREEN_PATTERNS, self._btn_rects)):
+            bg = BUTTON_BG if i != self._pattern_idx else CONFIG_BTN_HOVER
+            pygame.draw.rect(surface, bg, btn)
+            pygame.draw.rect(surface, TEXT_DIM, btn, 1)
+            text_rect = _get_text_rect(font, label)
+            tx = btn.x + (btn.width - text_rect.width) // 2
+            ty = btn.y + (btn.height - text_rect.height) // 2
+            _render_text(surface, font, label, BUTTON_TEXT, tx, ty)
+
+    def _draw_color_bars(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        colors = [TEST_BAR_W, TEST_BAR_Y, TEST_BAR_C, TEST_BAR_G, TEST_BAR_M, TEST_BAR_R, TEST_BAR_B, TEST_BAR_BK]
+        bar_w = area.width // len(colors)
+        for i, color in enumerate(colors):
+            pygame.draw.rect(surface, color, (area.x + i * bar_w, area.y, bar_w, area.height))
+
+    def _draw_solid_colors(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        colors = [
+            ((255, 255, 255), "BLANCO"),
+            ((255, 0, 0), "ROJO"),
+            ((0, 255, 0), "VERDE"),
+            ((0, 0, 255), "AZUL"),
+            ((0, 0, 0), "NEGRO"),
+        ]
+        cell_w = area.width // len(colors)
+        font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+        for i, (color, label) in enumerate(colors):
+            rect = pygame.Rect(area.x + i * cell_w, area.y, cell_w, area.height)
+            pygame.draw.rect(surface, color, rect)
+            # Text in contrasting color
+            text_color = (0, 0, 0) if color[0] + color[1] + color[2] > 380 else (255, 255, 255)
+            tr = _get_text_rect(font, label)
+            tx = rect.centerx - tr.width // 2
+            ty = rect.centery - tr.height // 2
+            _render_text(surface, font, label, text_color, tx, ty)
+
+    def _draw_grid(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        from random import seed, randint
+        seed(42)
+        cell = 20
+        for row in range(0, area.height, cell):
+            for col in range(0, area.width, cell):
+                color = (randint(20, 240), randint(20, 240), randint(20, 240))
+                pygame.draw.rect(surface, color, (area.x + col, area.y + row, cell, cell))
+
+    def _draw_gradient(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        for x in range(area.width):
+            ratio = x / area.width
+            r = int(255 * (1 - ratio))
+            g = int(50 + 150 * ratio)
+            b = int(255 * ratio)
+            pygame.draw.line(surface, (r, g, b),
+                             (area.x + x, area.y),
+                             (area.x + x, area.y + area.height - 1))
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        for i, btn in enumerate(self._btn_rects):
+            if btn.collidepoint(screen_x, screen_y):
+                if i == 4:  # Salir
+                    if self._on_exit:
+                        self._on_exit()
+                else:
+                    self._pattern_idx = i
+                return True
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# TouchCalibrationView — Asistente de calibración táctil (V1.1)
+# ═══════════════════════════════════════════════════════════════
+
+_CALIB_POINT_NAMES = ["Sup.Izq", "Sup.Der", "Centro", "Inf.Izq", "Inf.Der"]
+
+
+class TouchCalibrationView(Widget):
+    """Asistente de calibración: pide tocar 5 cruces y calcula el mapeo.
+
+    En modo calibración cada toque captura la coordenada RAW del
+    dispositivo (no aplica el mapeo actual, que puede estar mal). Con
+    5 puntos se resuelve la transformación afín por mínimos cuadrados.
+    """
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self._current: int = 0
+        self._done: bool = False
+        self._coeffs: tuple | None = None
+        self._offsets: list[tuple] = []
+        self._raw_points: list[tuple[int, int, int, int]] = []
+
+        # Puntos de calibración (coordenadas de pantalla)
+        self._points: list[tuple[int, int]] = [
+            (int(w * 0.08), int(h * 0.15)),
+            (int(w * 0.92), int(h * 0.15)),
+            (int(w * 0.50), int(h * 0.50)),
+            (int(w * 0.08), int(h * 0.85)),
+            (int(w * 0.92), int(h * 0.85)),
+        ]
+
+    def register_tap(self, raw_x: int, raw_y: int) -> None:
+        """Registra un toque (coordenadas RAW) y avanza al siguiente punto."""
+        if self._done:
+            return
+        sx, sy = self._points[self._current]
+        logger.info(
+            "Calib tap %d/5: raw=(%d,%d) -> target=(%d,%d)",
+            self._current + 1, raw_x, raw_y, sx, sy,
+        )
+        self._raw_points.append((raw_x, raw_y, sx, sy))
+        self._current += 1
+        if self._current >= len(self._points):
+            self._finish()
+
+    def _finish(self) -> None:
+        try:
+            from display.ui.touch import solve_affine
+            self._coeffs = solve_affine(self._raw_points)
+            a, b, c, d, e, f = self._coeffs
+            self._offsets = []
+            for rx, ry, sx, sy in self._raw_points:
+                cx = a * rx + b * ry + c
+                cy = d * rx + e * ry + f
+                self._offsets.append((sx, sy, round(cx - sx), round(cy - sy)))
+            self._done = True
+        except ValueError:
+            self._done = True
+            self._coeffs = None
+
+    @property
+    def is_done(self) -> bool:
+        return self._done
+
+    @property
+    def coefficients(self) -> tuple | None:
+        return self._coeffs
+
+    @property
+    def raw_points(self) -> list[tuple[int, int, int, int]]:
+        return list(self._raw_points)
+
+    def reset(self) -> None:
+        self._current = 0
+        self._done = False
+        self._coeffs = None
+        self._offsets = []
+        self._raw_points = []
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+        pygame.draw.rect(surface, CALIB_BG, self.rect)
+        if self._done:
+            self._draw_results(surface)
+        else:
+            self._draw_target(surface)
+
+    def _draw_target(self, surface: pygame.Surface) -> None:
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        title_text = "CALIBRACION TACTIL"
+        title_r = _get_text_rect(title_font, title_text)
+        _render_text(surface, title_font, title_text, TARGET_ACTIVE,
+                     (self.rect.width - title_r.width) // 2, 12)
+
+        sub_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        sub_text = f"Toca la cruz iluminada  ({self._current + 1}/5)"
+        sub_r = _get_text_rect(sub_font, sub_text)
+        _render_text(surface, sub_font, sub_text, CALIB_TEXT,
+                     (self.rect.width - sub_r.width) // 2, 34)
+
+        # Cruz actual (grande y visible)
+        tx, ty = self._points[self._current]
+        ring_r = 18
+        pygame.draw.circle(surface, TARGET_RING, (tx, ty), ring_r, 4)
+        pygame.draw.circle(surface, TARGET_CENTER, (tx, ty), 4)
+        pygame.draw.line(surface, TARGET_RING, (tx - ring_r - 12, ty), (tx - ring_r, ty), 3)
+        pygame.draw.line(surface, TARGET_RING, (tx + ring_r, ty), (tx + ring_r + 12, ty), 3)
+        pygame.draw.line(surface, TARGET_RING, (tx, ty - ring_r - 12), (tx, ty - ring_r), 3)
+        pygame.draw.line(surface, TARGET_RING, (tx, ty + ring_r), (tx, ty + ring_r + 12), 3)
+
+        # Marcar puntos ya completados
+        for i in range(self._current):
+            px, py = self._points[i]
+            pygame.draw.circle(surface, TARGET_TOUCHED, (px, py), 7, 2)
+
+    def _draw_results(self, surface: pygame.Surface) -> None:
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        if self._coeffs:
+            title_text = "Calibracion correcta"
+            title_color = SUCCESS
+        else:
+            title_text = "Error de calibracion"
+            title_color = TARGET_RING
+        title_r = _get_text_rect(title_font, title_text)
+        _render_text(surface, title_font, title_text, title_color,
+                     (self.rect.width - title_r.width) // 2, 14)
+
+        row_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        header_y = 44
+        col_x = [20, 130, 240, 340]
+        headers = ["Punto", "Target", "Offset X", "Offset Y"]
+        for i, (h, x) in enumerate(zip(headers, col_x)):
+            _render_text(surface, row_font, h, TEXT_SECONDARY, x, header_y)
+
+        for j, off in enumerate(self._offsets):
+            y = header_y + 18 + j * 18
+            _render_text(surface, row_font, _CALIB_POINT_NAMES[j], CALIB_TEXT, col_x[0], y)
+            _render_text(surface, row_font, f"({off[0]},{off[1]})", TEXT_SECONDARY, col_x[1], y)
+            ox_color = WARNING if abs(off[2]) > 10 else SUCCESS
+            oy_color = WARNING if abs(off[3]) > 10 else SUCCESS
+            _render_text(surface, row_font, f"{off[2]:+d}", ox_color, col_x[2], y)
+            _render_text(surface, row_font, f"{off[3]:+d}", oy_color, col_x[3], y)
+
+        hint_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        hint_text = "Volviendo al panel principal..."
+        hint_r = _get_text_rect(hint_font, hint_text)
+        _render_text(surface, hint_font, hint_text, TEXT_SECONDARY,
+                     (self.rect.width - hint_r.width) // 2, self.rect.height - 36)
+
+
+# ═══════════════════════════════════════════════════════════════
+# NetworkConfigView — Configuracion de IP (estatica/DHCP) (V1.1)
+# ═══════════════════════════════════════════════════════════════
+
+
+class NetworkConfigView(Widget):
+    """Vista de configuracion de IP apta para pantalla tactil.
+
+    Permite elegir entre DHCP (automatico) e IP estatica, editando los
+    4 octetos de la IP con flechas +/-. La puerta de enlace y el DNS se
+    derivan automaticamente (subnet .1). Para edicion avanzada (gateway
+    y DNS personalizados) usar el panel web.
+    """
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self.mode: str = "dhcp"
+        self.octets: list[int] = [192, 168, 88, 200]
+        self.prefix: int = 24
+        self._info_lines: list[str] = []
+        self._result: str = ""
+        self._result_error: bool = False
+        self._on_apply: callable | None = None
+        self._on_back: callable | None = None
+
+        # ── Hit regions ──
+        self._btn_dhcp = pygame.Rect(16, 78, 214, 32)
+        self._btn_static = pygame.Rect(250, 78, 214, 32)
+
+        self._oct_up: list[pygame.Rect] = []
+        self._oct_val: list[pygame.Rect] = []
+        self._oct_down: list[pygame.Rect] = []
+        for i in range(4):
+            x = 20 + i * 120
+            self._oct_up.append(pygame.Rect(x, 118, 100, 22))
+            self._oct_val.append(pygame.Rect(x, 140, 100, 26))
+            self._oct_down.append(pygame.Rect(x, 166, 100, 22))
+
+        self._apply_rect = pygame.Rect(20, 250, 440, 36)
+        self._back_rect = pygame.Rect(20, 290, 440, 26)
+
+    def set_on_apply(self, callback: callable) -> None:
+        self._on_apply = callback
+
+    def set_on_back(self, callback: callable) -> None:
+        self._on_back = callback
+
+    def set_status(self, net: dict) -> None:
+        """Rellena el formulario con el estado de red actual (dict JSON)."""
+        ip = net.get("ip_address") or ""
+        if ip and "." in ip:
+            parts = ip.split(".")
+            if len(parts) == 4:
+                try:
+                    self.octets = [int(p) for p in parts]
+                except ValueError:
+                    pass
+        self.mode = "static" if net.get("mode") == "static" else "dhcp"
+        self.prefix = net.get("prefix") or 24
+        self._info_lines = [
+            f"Interfaz: {net.get('interface') or '-'}",
+            f"IP actual: {ip or '-'}",
+            f"Modo: {'ESTATICA' if self.mode == 'static' else 'DHCP'}",
+        ]
+
+    def set_result(self, message: str, error: bool = False) -> None:
+        self._result = message
+        self._result_error = error
+
+    @property
+    def gateway(self) -> str:
+        return f"{self.octets[0]}.{self.octets[1]}.{self.octets[2]}.1"
+
+    def _payload(self) -> dict:
+        ip = ".".join(str(o) for o in self.octets)
+        return {
+            "mode": self.mode,
+            "ip_address": ip,
+            "prefix": self.prefix,
+            "gateway": self.gateway,
+            "dns": self.gateway,
+        }
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+        pygame.draw.rect(surface, NETWORK_BG, self.rect)
+
+        # Titulo
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        title_text = "CONFIGURAR IP"
+        title_r = _get_text_rect(title_font, title_text)
+        _render_text(surface, title_font, title_text, NETWORK_ACCENT,
+                     (self.rect.width - title_r.width) // 2, 8)
+
+        # Info actual
+        info_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        for i, line in enumerate(self._info_lines):
+            _render_text(surface, info_font, line, NETWORK_DIM, 20, 34 + i * 15)
+
+        # Selector de modo
+        self._draw_mode_btn(surface, self._btn_dhcp, "DHCP (auto)", self.mode == "dhcp")
+        self._draw_mode_btn(surface, self._btn_static, "IP ESTATICA", self.mode == "static")
+
+        if self.mode == "static":
+            self._draw_octets(surface)
+            derived_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+            derived = f"Gateway: {self.gateway}   Mascara: /{self.prefix}"
+            derived_r = _get_text_rect(derived_font, derived)
+            _render_text(surface, derived_font, derived, NETWORK_DIM,
+                         (self.rect.width - derived_r.width) // 2, 196)
+
+        # Resultado
+        if self._result:
+            res_font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+            res_color = ERROR if self._result_error else SUCCESS
+            res_r = _get_text_rect(res_font, self._result)
+            _render_text(surface, res_font, self._result, res_color,
+                         (self.rect.width - res_r.width) // 2, 218)
+
+        # Aplicar
+        pygame.draw.rect(surface, NETWORK_ACCENT, self._apply_rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, self._apply_rect, 2)
+        apply_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        apply_text = "APLICAR"
+        apply_r = _get_text_rect(apply_font, apply_text)
+        _render_text(surface, apply_font, apply_text, (255, 255, 255),
+                     self._apply_rect.x + (self._apply_rect.width - apply_r.width) // 2,
+                     self._apply_rect.y + (self._apply_rect.height - apply_r.height) // 2)
+
+        # Volver
+        pygame.draw.rect(surface, OPTION_BG, self._back_rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, self._back_rect, 1)
+        back_font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+        back_text = "VOLVER"
+        back_r = _get_text_rect(back_font, back_text)
+        _render_text(surface, back_font, back_text, TEXT_SECONDARY,
+                     self._back_rect.x + (self._back_rect.width - back_r.width) // 2,
+                     self._back_rect.y + (self._back_rect.height - back_r.height) // 2)
+
+    def _draw_mode_btn(self, surface: pygame.Surface, rect: pygame.Rect,
+                       label: str, active: bool) -> None:
+        bg = NETWORK_ACTIVE if active else NETWORK_FIELD_BG
+        border = NETWORK_ACTIVE if active else NETWORK_FIELD_BORDER
+        pygame.draw.rect(surface, bg, rect)
+        pygame.draw.rect(surface, border, rect, 2)
+        font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+        text_r = _get_text_rect(font, label)
+        _render_text(surface, font, label, (255, 255, 255) if active else NETWORK_TEXT,
+                     rect.x + (rect.width - text_r.width) // 2,
+                     rect.y + (rect.height - text_r.height) // 2)
+
+    def _draw_octets(self, surface: pygame.Surface) -> None:
+        for i in range(4):
+            up = self._oct_up[i]
+            val = self._oct_val[i]
+            down = self._oct_down[i]
+
+            # Flecha arriba
+            pygame.draw.rect(surface, NETWORK_STEP_BG, up)
+            pygame.draw.rect(surface, NETWORK_FIELD_BORDER, up, 1)
+            self._draw_arrow(surface, up, up=True)
+
+            # Valor
+            pygame.draw.rect(surface, NETWORK_FIELD_BG, val)
+            pygame.draw.rect(surface, NETWORK_FIELD_BORDER, val, 1)
+            val_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+            val_text = str(self.octets[i])
+            val_r = _get_text_rect(val_font, val_text)
+            _render_text(surface, val_font, val_text, NETWORK_TEXT,
+                         val.x + (val.width - val_r.width) // 2,
+                         val.y + (val.height - val_r.height) // 2)
+
+            # Flecha abajo
+            pygame.draw.rect(surface, NETWORK_STEP_BG, down)
+            pygame.draw.rect(surface, NETWORK_FIELD_BORDER, down, 1)
+            self._draw_arrow(surface, down, up=False)
+
+    def _draw_arrow(self, surface: pygame.Surface, rect: pygame.Rect, up: bool) -> None:
+        cx = rect.centerx
+        if up:
+            y1 = rect.y + rect.height - 5
+            y2 = rect.y + 5
+        else:
+            y1 = rect.y + 5
+            y2 = rect.y + rect.height - 5
+        pygame.draw.polygon(surface, NETWORK_TEXT, [(cx - 5, y1), (cx + 5, y1), (cx, y2)])
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        if self._btn_dhcp.collidepoint(screen_x, screen_y):
+            self.mode = "dhcp"
+            return True
+        if self._btn_static.collidepoint(screen_x, screen_y):
+            self.mode = "static"
+            return True
+        if self.mode == "static":
+            for i in range(4):
+                if self._oct_up[i].collidepoint(screen_x, screen_y):
+                    self.octets[i] = min(255, self.octets[i] + 1)
+                    return True
+                if self._oct_down[i].collidepoint(screen_x, screen_y):
+                    self.octets[i] = max(0, self.octets[i] - 1)
+                    return True
+        if self._apply_rect.collidepoint(screen_x, screen_y):
+            if self._on_apply:
+                self._on_apply(self._payload())
+            return True
+        if self._back_rect.collidepoint(screen_x, screen_y):
+            if self._on_back:
+                self._on_back()
             return True
         return False

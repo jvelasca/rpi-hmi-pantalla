@@ -24,6 +24,11 @@ from backend.app.models.device import (
     DeviceType,
     PinMapping,
 )
+from backend.app.models.network import (
+    NetworkResult,
+    NetworkStatus,
+    StaticIpRequest,
+)
 
 __all__ = [
     "ButtonState",
@@ -33,8 +38,11 @@ __all__ = [
     "DisplayInfo",
     "ErrorDetail",
     "LedState",
+    "NetworkResult",
+    "NetworkStatus",
     "PinMapping",
     "ServerMessage",
+    "StaticIpRequest",
     "SubscriptionTopic",
     "SystemStatus",
 ]

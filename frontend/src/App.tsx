@@ -13,9 +13,10 @@ import { ConfigPanel } from "@/components/ConfigPanel";
 import { ConfigScreen } from "@/components/ConfigScreen";
 import { ScreenTest } from "@/components/ScreenTest";
 import { TouchCalibration } from "@/components/TouchCalibration";
+import { NetworkConfig } from "@/components/NetworkConfig";
 import type { LedState, ButtonState, ServerMessage } from "@/types/api";
 
-type View = "main" | "config" | "screenTest" | "touchCalibration";
+type View = "main" | "config" | "screenTest" | "touchCalibration" | "network";
 
 export function App() {
   // ── Estado ──────────────────────────────────────────
@@ -90,6 +91,15 @@ export function App() {
     if (result) setButton(result);
   }
 
+  async function releaseButton() {
+    if (ws.connected()) {
+      ws.send({ type: "release_button", version: "1.0" });
+      return;
+    }
+    const result = await api.releaseButton();
+    if (result) setButton(result);
+  }
+
   // ── Render ──────────────────────────────────────────
   return (
     <div class="min-h-screen flex flex-col bg-[#141428]">
@@ -101,13 +111,17 @@ export function App() {
         <TouchCalibration onBack={() => setView("config")} />
       </Show>
 
+      <Show when={view() === "network"}>
+        <NetworkConfig onBack={() => setView("config")} />
+      </Show>
+
       <Show when={view() === "main" || view() === "config"}>
         <Header connected={ws.connected()} wsClients={wsClients()} />
 
         <main class="flex-1 flex items-center justify-center p-6">
           <div class="flex flex-wrap gap-6 justify-center items-start">
             <LedPanel led={led()} onToggle={toggleLed} />
-            <ButtonPanel button={button()} onPress={pressButton} />
+            <ButtonPanel button={button()} onPress={pressButton} onRelease={releaseButton} />
           </div>
         </main>
 
@@ -121,6 +135,7 @@ export function App() {
           <ConfigScreen
             onScreenTest={() => setView("screenTest")}
             onTouchCalibration={() => setView("touchCalibration")}
+            onNetwork={() => setView("network")}
             onBack={() => setView("main")}
           />
         </Show>

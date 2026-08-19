@@ -37,6 +37,12 @@ LED_OFF_BG = (60, 60, 60)         # gris apagado
 LED_OFF_MID = (80, 80, 80)
 LED_OFF_HIGHLIGHT = (120, 120, 120)
 
+# LED 2 (boton PULSAR, verde)
+LED2_ON_GLOW = (0, 40, 20)
+LED2_ON_MID = (0, 120, 60)
+LED2_ON_CORE = (0, 255, 100)
+LED2_ON_HIGHLIGHT = (140, 255, 190)
+
 # Botón
 BUTTON_BG = (15, 52, 96)           # #0f3460
 BUTTON_HOVER = (25, 75, 140)       # #194b8c
@@ -71,6 +77,51 @@ LED_PANEL_W: int = 180
 # Panel derecho (Botón) — ~38% del ancho
 BTN_PANEL_W: int = 180
 
+# ── Config button ────────────────────────────────────────────
+CONFIG_BTN_BG = (15, 52, 96)        # #0f3460 — igual que BUTTON_BG
+CONFIG_BTN_HOVER = (25, 75, 140)    # #194b8c
+CONFIG_BTN_ICON = (200, 200, 220)   # #c8c8dc
+
+# ── Config overlay ──────────────────────────────────────────
+OVERLAY_BG = (10, 10, 30)           # #0a0a1e — casi negro
+OVERLAY_BORDER = (50, 50, 100)      # #323264
+OVERLAY_TITLE = (233, 69, 96)       # #e94560 — rojo coral
+OPTION_BG = (20, 40, 80)            # #142850
+OPTION_HOVER = (30, 60, 120)        # #1e3c78
+OPTION_ICON_MONITOR = (0, 200, 255) # cyan
+OPTION_ICON_TOUCH = (255, 180, 0)   # naranja
+OPTION_ICON_NETWORK = (255, 184, 74)  # ambar
+OPTION_ICON_BACK = (160, 160, 180)  # gris claro
+
+# ── Screen test ─────────────────────────────────────────────
+TEST_BAR_R = (255, 0, 0)
+TEST_BAR_G = (0, 255, 0)
+TEST_BAR_B = (0, 0, 255)
+TEST_BAR_Y = (255, 255, 0)
+TEST_BAR_C = (0, 255, 255)
+TEST_BAR_M = (255, 0, 255)
+TEST_BAR_W = (255, 255, 255)
+TEST_BAR_BK = (0, 0, 0)
+TEST_GRID_COLOR = (60, 60, 80)
+
+# ── Touch calibration ───────────────────────────────────────
+TARGET_RING = (255, 60, 60)          # rojo
+TARGET_CENTER = (255, 255, 255)      # blanco
+TARGET_TOUCHED = (0, 255, 100)       # verde
+TARGET_ACTIVE = (255, 200, 0)        # amarillo
+CALIB_BG = (15, 15, 35)              # #0f0f23
+CALIB_TEXT = (220, 220, 240)         # #dcdcf0
+
+# ── Network config ─────────────────────────────────────────
+NETWORK_BG = (15, 15, 35)            # #0f0f23
+NETWORK_TEXT = (220, 220, 240)       # #dcdcf0
+NETWORK_FIELD_BG = (20, 40, 80)      # #142850
+NETWORK_FIELD_BORDER = (50, 50, 100) # #323264
+NETWORK_ACTIVE = (74, 158, 255)      # #4a9eff
+NETWORK_ACCENT = (233, 69, 96)       # #e94560
+NETWORK_DIM = (100, 100, 120)        # #646478
+NETWORK_STEP_BG = (25, 75, 140)      # #194b8c
+
 # ── Fuentes ───────────────────────────────────────────────────
 # Pygame freetype usa paths o nombres de sistema.
 # En Raspberry Pi Bookworm: DejaVu Sans está disponible.
@@ -81,3 +132,4 @@ FONT_SIZE_HEADING: int = 14
 FONT_SIZE_NORMAL: int = 12
 FONT_SIZE_SMALL: int = 10
 FONT_SIZE_COUNTER: int = 28
+FONT_SIZE_BIG: int = 20

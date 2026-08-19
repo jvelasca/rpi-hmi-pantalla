@@ -4,7 +4,7 @@
  */
 
 import { createSignal } from "solid-js";
-import type { ButtonState, LedState, SystemStatus } from "@/types/api";
+import type { ButtonState, LedState, NetworkResult, NetworkStatus, SystemStatus } from "@/types/api";
 
 const BASE = "/api";
 
@@ -27,11 +27,16 @@ export function useApi() {
   }
 
   async function post<T>(endpoint: string): Promise<T | null> {
+    return postJson<T>(endpoint);
+  }
+
+  async function postJson<T>(endpoint: string, body?: unknown): Promise<T | null> {
     try {
       const res = await fetch(`${BASE}${endpoint}`, {
         method: "POST",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(3000),
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       setError(null);
@@ -49,6 +54,30 @@ export function useApi() {
   const ledOff = () => post<LedState>("/led/off");
   const getButton = () => get<ButtonState>("/button");
   const pressButton = () => post<ButtonState>("/button/press");
+  const releaseButton = () => post<ButtonState>("/button/release");
 
-  return { error, getStatus, getLed, toggleLed, ledOn, ledOff, getButton, pressButton };
+  const getNetwork = () => get<NetworkStatus>("/network");
+  const applyStatic = (ip: string, prefix: number, gateway: string, dns: string | null) =>
+    postJson<NetworkResult>("/network/static", {
+      ip_address: ip,
+      prefix,
+      gateway,
+      dns,
+    });
+  const applyDhcp = () => post<NetworkResult>("/network/dhcp");
+
+  return {
+    error,
+    getStatus,
+    getLed,
+    toggleLed,
+    ledOn,
+    ledOff,
+    getButton,
+    pressButton,
+    releaseButton,
+    getNetwork,
+    applyStatic,
+    applyDhcp,
+  };
 }

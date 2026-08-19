@@ -8,11 +8,16 @@
 #   - name: nombre descriptivo legible
 #   - pin: mapeo de pines (bcm + name) - None si no usa GPIO directo
 #   - kwargs: parametros adicionales especificos del dispositivo
+#
+# NOTA (V1.1): Los LEDs son VIRTUALES (solo visual, en pantalla y web).
+# No se mapean a GPIO fisico para evitar conflicto con el pin de
+# interrupcion del panel tactil (GPIO 17 = TP_IRQ/pendown).
 
 devices:
   - id: led1
     type: digital_output
     name: "LED 1"
-    pin:
-      bcm: 17
-      name: "LED_ROJO"
+    pin: null
+    kwargs:
+      virtual: true
+      role: led

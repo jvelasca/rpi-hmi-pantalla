@@ -13,9 +13,9 @@ interface LedPanelProps {
 export function LedPanel(props: LedPanelProps) {
   return (
     <div class="bg-[#1e1e3c] rounded-lg border border-[#323264] p-5 flex flex-col items-center gap-4 min-w-[200px]">
-      <h2 class="text-[#a0a0b4] text-sm font-medium">LED 1</h2>
+      <h2 class="text-[#a0a0b4] text-sm font-medium">BOTON ON/OFF</h2>
 
-      {/* LED visual */}
+      {/* LED 1 (rojo) */}
       <div
         class="relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-200"
         classList={{

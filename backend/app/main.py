@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api import hmi_router, ws_router, health_router, admin_ssh_router, admin_deploy_router
+from backend.app.api import hmi_router, ws_router, health_router, network_router, admin_ssh_router, admin_deploy_router
 from backend.app.config import settings
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         def _update_led(device: str, led_state: object) -> None:
             from backend.app.models.hmi import LedState
 
-            if isinstance(led_state, LedState):
+            if isinstance(led_state, LedState) and led_state.gpio_pin > 0:
                 gpio_service.set_state(led_state.gpio_pin, led_state.state)
 
         state_manager.set_updater(_update_led)
@@ -181,6 +181,7 @@ app.add_middleware(
 # Routers HMI (sin autenticacion, acceso LAN)
 app.include_router(hmi_router)
 app.include_router(ws_router)
+app.include_router(network_router)
 
 # Health check (publico)
 app.include_router(health_router)

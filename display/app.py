@@ -63,9 +63,22 @@ from display.ui.theme import (  # noqa: E402
     MARGIN,
 )
 from display.ui.touch import TouchHandler  # noqa: E402
-from display.ui.widgets import ButtonWidget, HeaderWidget, LedIndicator, StatusBar  # noqa: E402
+from display.ui.widgets import (  # noqa: E402
+    ButtonWidget,
+    ConfigButton,
+    ConfigOverlay,
+    HeaderWidget,
+    LedIndicator,
+    NetworkConfigView,
+    ScreenTestView,
+    StatusBar,
+    TouchCalibrationView,
+)
 
 logger = logging.getLogger("rpi_hmi.display")
+
+# Referencia global a la instancia activa para shutdown graceful por señales
+_app_instance: "DisplayApp | None" = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -100,7 +113,15 @@ class DisplayApp:
         self._last_sync: float = 0.0
         self._sync_interval: float = 3.0  # Solo como fallback cuando WS cae
 
-        # Screen
+        # V1.1: sistema de vistas
+        # "main" | "config" | "screen_test" | "touch_calib" | "network"
+        self.view: str = "main"
+
+        # Control de redibujado (event-driven) y calibración
+        self._redraw: bool = False
+        self._calib_done_time: float | None = None
+
+        # Screen (se inicializa después de saber mock)
         self.screen = Screen(auto_detect=not mock, mock=mock)
 
         # Touch
@@ -129,10 +150,6 @@ class DisplayApp:
         self._ws_lock = threading.Lock()
         self._ws_dirty: bool = False  # WS thread signals new data available
 
-        # Button press feedback (non-blocking)
-        self._button_press_frame: int = -1
-        self._button_press_duration: int = 2  # frames
-
     # ── Layout ──────────────────────────────────────────────────
 
     def _create_widgets(self) -> None:
@@ -148,7 +165,7 @@ class DisplayApp:
         margin = int(MARGIN * sy)
 
         # Header
-        self.header = HeaderWidget(0, 0, w, header_h)
+        self.header = HeaderWidget(0, 0, w, header_h, version="v1.1")
 
         # Content area
         content_y = header_h + margin
@@ -167,15 +184,35 @@ class DisplayApp:
         # Footer
         self.status_bar = StatusBar(0, h - footer_h, w, footer_h)
 
+        # V1.1: Config button (flotante, esquina inferior derecha)
+        self.config_btn = ConfigButton(w, h)
+
+        # V1.1: Pantallas de configuración
+        self.config_overlay = ConfigOverlay(w, h)
+        self.screen_test_view = ScreenTestView(w, h)
+        self.touch_calib_view = TouchCalibrationView(w, h)
+        self.network_view = NetworkConfigView(w, h)
+
         # Conectar callbacks
         self.led.set_on_toggle(self._on_toggle_led)
         self.button.set_on_press(self._on_press_button)
+        self.button.set_on_release(self._on_release_button)
+        self.config_btn.set_on_click(self._show_config)
+        self.config_overlay.set_callbacks(
+            self._show_screen_test,
+            self._show_touch_calib,
+            self._show_network,
+            self._show_main,
+        )
+        self.screen_test_view.set_on_exit(self._show_config)
+        self.network_view.set_on_apply(self._apply_network)
+        self.network_view.set_on_back(self._show_config)
 
-        # Lista de widgets interactivos (orden de hit-test)
-        self._interactive_widgets = [self.button, self.led]
+        # Lista de widgets interactivos (orden de hit-test) — vista principal
+        self._interactive_widgets = [self.button, self.led, self.config_btn]
 
-        # Lista de todos los widgets a dibujar
-        self._all_widgets = [self.header, self.led, self.button, self.status_bar]
+        # Lista de todos los widgets a dibujar — vista principal
+        self._all_widgets = [self.header, self.led, self.button, self.status_bar, self.config_btn]
 
     # ── Callbacks de widgets ────────────────────────────────────
 
@@ -187,13 +224,95 @@ class DisplayApp:
         self._sync_state()
 
     def _on_press_button(self) -> None:
-        """Callback: el usuario tocó el botón principal."""
+        """Callback: el usuario tocó el botón principal (down)."""
         logger.debug("Button press solicitado")
         self.button.pressed = True
-        self._button_press_frame = 0
-
         self._api_post("/api/button/press")
         self._sync_state()
+        self._redraw = True
+
+    def _on_release_button(self) -> None:
+        """Callback: el usuario soltó el botón principal (up)."""
+        logger.debug("Button release solicitado")
+        self.button.pressed = False
+        self._api_post("/api/button/release")
+        self._redraw = True
+
+    # V1.1: Callbacks de cambio de vista
+
+    def _show_config(self) -> None:
+        """Muestra el menú de configuración."""
+        self.view = "config"
+        self._redraw = True
+
+    def _show_main(self) -> None:
+        """Vuelve a la vista principal."""
+        self.view = "main"
+        self._redraw = True
+
+    def _show_screen_test(self) -> None:
+        """Muestra la prueba de pantalla."""
+        self.view = "screen_test"
+        self._redraw = True
+
+    def _show_touch_calib(self) -> None:
+        """Muestra la calibración táctil."""
+        self.touch_calib_view.reset()
+        self._calib_done_time = None
+        self.view = "touch_calib"
+        self._redraw = True
+
+    def _show_network(self) -> None:
+        """Muestra la configuración de red y carga el estado actual."""
+        self.network_view.set_result("")
+        self.view = "network"
+        self._redraw = True
+        self._fetch_network()
+
+    def _fetch_network(self) -> None:
+        """Carga el estado de red actual desde el backend."""
+        data = self._api_get("/api/network")
+        if data is not None:
+            self.network_view.set_status(data)
+            self._redraw = True
+
+    def _apply_network(self, payload: dict) -> None:
+        """Aplica la configuración de red (estática o DHCP)."""
+        mode = payload.get("mode")
+        if mode == "static":
+            result = self._api_post_json(
+                "/api/network/static",
+                {
+                    "ip_address": payload["ip_address"],
+                    "prefix": payload["prefix"],
+                    "gateway": payload["gateway"],
+                    "dns": payload["dns"],
+                },
+            )
+        else:
+            result = self._api_post("/api/network/dhcp")
+
+        if result is not None:
+            ok = result.get("success", False)
+            msg = result.get("message", "")
+            self.network_view.set_result(msg, error=not ok)
+        else:
+            self.network_view.set_result("No se pudo aplicar la configuracion", error=True)
+        self._redraw = True
+
+    def _register_calib_tap(self, raw_x: int, raw_y: int) -> None:
+        """Registra un toque de calibración usando coordenadas RAW."""
+        self.touch_calib_view.register_tap(raw_x, raw_y)
+        if self.touch_calib_view.is_done:
+            coeffs = self.touch_calib_view.coefficients
+            if coeffs and self.touch:
+                self.touch.set_calibration_from_points(self.touch_calib_view.raw_points)
+                logger.info("Calibración táctil aplicada: %s", coeffs)
+                self._calib_done_time = time.time()
+            else:
+                logger.warning("Calibración fallida — reintentando")
+                self.touch_calib_view.reset()
+        self._redraw = True
 
     # ── Comunicacion con backend ────────────────────────────────
 
@@ -217,6 +336,22 @@ class DisplayApp:
             return resp.json()
         except requests.RequestException:
             self.backend_connected = False
+            return None
+
+    def _api_post_json(self, endpoint: str, payload: dict) -> dict | None:
+        """POST sincrono con body JSON al backend REST."""
+        try:
+            resp = requests.post(
+                f"{self.api_url}{endpoint}",
+                json=payload,
+                timeout=5,
+            )
+            resp.raise_for_status()
+            self.backend_connected = True
+            return resp.json()
+        except requests.RequestException as exc:
+            self.backend_connected = False
+            logger.warning("POST %s fallo: %s", endpoint, exc)
             return None
 
     def _sync_state(self) -> None:
@@ -315,11 +450,21 @@ class DisplayApp:
     # ── Renderizado ─────────────────────────────────────────────
 
     def _render(self) -> None:
-        """Renderiza todos los widgets en la pantalla."""
+        """Renderiza todos los widgets según la vista actual."""
         surface = self.screen.get_surface()
         self.screen.clear()
-        for widget in self._all_widgets:
-            widget.draw(surface)
+
+        if self.view == "main":
+            for widget in self._all_widgets:
+                widget.draw(surface)
+        elif self.view == "config":
+            self.config_overlay.draw(surface)
+        elif self.view == "screen_test":
+            self.screen_test_view.draw(surface)
+        elif self.view == "touch_calib":
+            self.touch_calib_view.draw(surface)
+        elif self.view == "network":
+            self.network_view.draw(surface)
 
     # ── Bucle principal ─────────────────────────────────────────
 
@@ -349,6 +494,11 @@ class DisplayApp:
         self._sync_state()
         self._last_sync = time.time()
 
+        # Auto-iniciar calibración táctil si no hay calibración guardada
+        if self.touch and self.touch.available and not self.touch.has_calibration:
+            self.view = "touch_calib"
+            logger.info("Sin calibración táctil — iniciando asistente de calibración")
+
         # Primer render
         self._render()
         self.screen.flip()
@@ -363,7 +513,7 @@ class DisplayApp:
         logger.info("  Touch: %s", self.touch.device_path if self.touch and self.touch.available else "no")
         logger.info("  ESC para salir")
 
-        frame_count = 0
+        self._last_second = -1
 
         while self.running:
             self.screen.tick(self.fps)
@@ -377,7 +527,8 @@ class DisplayApp:
                 # En modo mock, clic del mouse simula touch
                 if self.screen.mock and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self._dispatch_touch(event.pos[0], event.pos[1])
-                    dirty = True
+                if self.screen.mock and event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    self._handle_touch_up(event.pos[0], event.pos[1])
 
             if not self.running:
                 break
@@ -386,17 +537,14 @@ class DisplayApp:
             if self.touch and self.touch.available:
                 self.touch.poll()
 
+            # Consumir flag de redibujado establecido por callbacks
+            if self._redraw:
+                dirty = True
+                self._redraw = False
+
             # ── Aplicar estado recibido via WebSocket ──
             if self._apply_ws_state():
                 dirty = True
-
-            # ── Liberar boton tras feedback visual ──
-            if self._button_press_frame >= 0:
-                self._button_press_frame += 1
-                if self._button_press_frame >= self._button_press_duration:
-                    self.button.pressed = False
-                    self._button_press_frame = -1
-                    dirty = True
 
             # ── Sincronizacion periodica con backend (solo si WS no conectado) ──
             now = time.time()
@@ -411,37 +559,63 @@ class DisplayApp:
                         dirty = True
                 self._last_sync = now
 
-            # ── Actualizar status bar ──
-            self.status_bar.time_str = time.strftime("%H:%M:%S")
-            self.status_bar.backend_connected = self.backend_connected
-            with self._ws_lock:
-                self.status_bar.ws_connected = self.ws_connected
-            self.status_bar.fps = self.screen.get_fps()
+            # ── Actualizar status bar (solo en vista principal) ──
+            if self.view == "main":
+                self.status_bar.time_str = time.strftime("%H:%M:%S")
+                self.status_bar.backend_connected = self.backend_connected
+                with self._ws_lock:
+                    self.status_bar.ws_connected = self.ws_connected
+                self.status_bar.fps = self.screen.get_fps()
+                # Redibujar 1x por segundo para actualizar el reloj
+                if int(now) != self._last_second:
+                    self._last_second = int(now)
+                    dirty = True
 
-            # ── Renderizar ──
-            if dirty or frame_count % 5 == 0:  # Redibujar al menos cada 5 frames
+            # ── Auto-volver tras calibración ──
+            if self.view == "touch_calib" and self.touch_calib_view.is_done:
+                if self._calib_done_time and now - self._calib_done_time > 2.5:
+                    self._show_main()
+
+            # ── Renderizar solo cuando hay cambios ──
+            if dirty:
                 self._render()
                 self.screen.flip()
-
-            frame_count += 1
 
         self.cleanup()
         return 0
 
     def _dispatch_touch(self, screen_x: int, screen_y: int) -> None:
-        """Despacha un evento tactil al primer widget que lo acepte."""
-        for widget in self._interactive_widgets:
-            if widget.hit_test(screen_x, screen_y):
-                widget.on_touch(screen_x, screen_y)
-                break
+        """Despacha un evento táctil según la vista actual."""
+        logger.debug("Touch dispatch: view=%s screen=(%d,%d)", self.view, screen_x, screen_y)
+        if self.view == "main":
+            for widget in self._interactive_widgets:
+                if widget.hit_test(screen_x, screen_y):
+                    widget.on_touch(screen_x, screen_y)
+                    break
+        elif self.view == "config":
+            self.config_overlay.on_touch(screen_x, screen_y)
+        elif self.view == "screen_test":
+            self.screen_test_view.on_touch(screen_x, screen_y)
+        elif self.view == "network":
+            self.network_view.on_touch(screen_x, screen_y)
+        elif self.view == "touch_calib":
+            # Solo se alcanza en modo mock (mouse): simula raw con pantalla
+            self._register_calib_tap(screen_x, screen_y)
+        self._redraw = True
 
     def _handle_touch_down(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch down desde el driver evdev."""
+        if self.view == "touch_calib":
+            # Modo calibración: capturar coordenadas RAW (no aplicar mapeo)
+            self._register_calib_tap(self.touch.x, self.touch.y)
+            return
         self._dispatch_touch(screen_x, screen_y)
 
     def _handle_touch_up(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch up desde el driver evdev."""
-        pass  # Los widgets manejan solo touch-down por simplicidad
+        # Liberar el boton PULSAR si estaba presionado en la vista principal
+        if self.view == "main" and self.button.pressed:
+            self._on_release_button()
 
     def _handle_touch_move(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch move desde el driver evdev."""
@@ -505,7 +679,8 @@ def _configure_logging(debug: bool = False) -> None:
 def _signal_handler(signum: int, frame: object) -> None:
     """Manejador de señales para shutdown graceful."""
     logger.info("Señal %s recibida, cerrando...", signum)
-    # La app se cierra en el siguiente tick del bucle
+    if _app_instance is not None:
+        _app_instance.running = False
 
 
 def main() -> int:
@@ -592,6 +767,9 @@ Ejemplos:
         no_touch=args.no_touch,
         fps=args.fps,
     )
+
+    global _app_instance
+    _app_instance = app
 
     try:
         return app.run()

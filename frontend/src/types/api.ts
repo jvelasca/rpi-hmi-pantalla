@@ -34,6 +34,24 @@ export interface SystemStatus {
   timestamp: string; // ISO 8601
 }
 
+/** Estado de la red (GET /api/network) */
+export interface NetworkStatus {
+  interface: string; // "eth0"
+  connection_name: string; // "Wired connection 1"
+  mode: "dhcp" | "static";
+  ip_address: string | null;
+  prefix: number | null; // 0-32
+  gateway: string | null;
+  dns: string | null;
+}
+
+/** Resultado de aplicar configuracion de red */
+export interface NetworkResult {
+  success: boolean;
+  message: string;
+  status: NetworkStatus | null;
+}
+
 // ── WebSocket messages ──────────────────────────────
 
 export type WsTopic = "led" | "button" | "display" | "system";
