@@ -57,6 +57,9 @@ htmlcov/
 /tmp/
 *.tar.gz
 
+# ── Scripts de diagnostico/deploy desechables (raiz) ──
+/_*.py
+
 # ── PowerShell temp scripts ──
 scripts/*_diagnostic.ps1
 scripts/*_check.ps1

@@ -30,7 +30,7 @@ import time
 from typing import Any
 
 from backend.app.models.events import ServerMessage, SubscriptionTopic
-from backend.app.models.hmi import ButtonState, DisplayInfo, LedState, SystemStatus
+from backend.app.models.hmi import ButtonState, DisplayInfo, DisplaySettings, LedState, SystemStatus
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,9 @@ class StateManager:
         self._led_state: LedState = LedState(state=False, label="APAGADO", gpio_pin=pin)
         self._button_state: ButtonState = ButtonState(pressed=False, press_count=0)
         self._display_info: DisplayInfo | None = None
+        self._display_settings: DisplaySettings = DisplaySettings(
+            font_family="dejavu", text_size="medium"
+        )
         self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
         self._broadcast_queues: dict[str, asyncio.Queue] = {}  # topic -> queue for serialized broadcasts
@@ -98,6 +101,17 @@ class StateManager:
                     pressed=False,
                     press_count=count,
                 )
+
+                # Restaurar ajustes visuales del display (fuente / tamano)
+                try:
+                    ds = await self._persistence.get_display_settings()
+                    self._display_settings = DisplaySettings(
+                        font_family=ds.get("font_family", "dejavu"),
+                        text_size=ds.get("text_size", "medium"),
+                    )
+                except Exception:
+                    logger.debug("Sin ajustes de display guardados, usando defaults")
+
             logger.info(
                 "Estado restaurado de BD: led=%s, button_count=%d, pin=%d",
                 led_on, count, pin,
@@ -345,6 +359,79 @@ class StateManager:
         self._schedule_broadcast(msg)
         logger.info("Display: connected=%s, %s, %s (seq=%d)", connected, resolution, driver, seq)
 
+    # ── Display Settings (fuente / tamano) ─────────────────────
+
+    @property
+    def display_settings(self) -> DisplaySettings:
+        """Ajustes visuales actuales del display (thread-safe)."""
+        with self._lock:
+            return self._display_settings.model_copy(deep=True)
+
+    def get_display_settings(self) -> DisplaySettings:
+        """Devuelve los ajustes visuales del display (thread-safe)."""
+        return self.display_settings
+
+    def set_display_settings(self, font_family: str, text_size: str) -> DisplaySettings:
+        """Actualiza y persiste los ajustes visuales del display.
+
+        Args:
+            font_family: 'dejavu' | 'liberation'.
+            text_size: 'small' | 'medium' | 'large'.
+
+        Returns:
+            Nuevo DisplaySettings.
+        """
+        with self._lock:
+            self._sequence += 1
+            self._display_settings = DisplaySettings(
+                font_family=font_family,
+                text_size=text_size,
+            )
+            seq = self._sequence
+            new_state = self._display_settings
+
+        # Persistir
+        self._persist_display_settings(font_family, text_size)
+
+        # Broadcast a los suscriptores del topico "display"
+        msg = ServerMessage(
+            type="display_settings_changed",
+            data=new_state.model_dump(mode="json"),
+            sequence=seq,
+        )
+        self._schedule_broadcast(msg)
+        self._log_event(
+            "display_settings_changed",
+            {"font_family": font_family, "text_size": text_size},
+        )
+        logger.info(
+            "Display settings -> fuente=%s tamano=%s (seq=%d)",
+            font_family, text_size, seq,
+        )
+        return new_state
+
+    # ── Comandos de vista al display ────────────────────────────
+
+    def send_display_command(self, action: str) -> None:
+        """Envia un comando de cambio de vista al display fisico.
+
+        Args:
+            action: 'screen_test' | 'touch_calib' | 'network' | 'font' |
+                    'config' | 'main'.
+        """
+        with self._lock:
+            self._sequence += 1
+            seq = self._sequence
+
+        msg = ServerMessage(
+            type="display_command",
+            data={"action": action},
+            sequence=seq,
+        )
+        self._schedule_broadcast(msg)
+        self._log_event("display_command", {"action": action})
+        logger.info("Comando display enviado: %s (seq=%d)", action, seq)
+
     # ── Consulta ───────────────────────────────────────────────
 
     def get_status(self) -> SystemStatus:
@@ -450,6 +537,14 @@ class StateManager:
         if not self._persistence:
             return
         self._schedule_persist(self._persistence.save_button_count(count))
+
+    def _persist_display_settings(self, font_family: str, text_size: str) -> None:
+        """Persiste los ajustes visuales del display en SQLite (en background)."""
+        if not self._persistence:
+            return
+        self._schedule_persist(
+            self._persistence.save_display_settings(font_family, text_size)
+        )
 
     # ── Event Log ──────────────────────────────────────────────
 

@@ -21,7 +21,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from backend.app.models.hmi import ButtonState, LedState, SystemStatus
+from backend.app.models.hmi import ButtonState, DisplayCommand, DisplaySettings, LedState, SystemStatus
 from backend.app.services.state_manager import state_manager
 
 logger = logging.getLogger(__name__)
@@ -132,3 +132,37 @@ async def get_display_info() -> dict:
     if display is None:
         raise HTTPException(status_code=404, detail="Display no detectado")
     return display.model_dump()
+
+
+# ── Display Settings (fuente / tamano de texto) ────────────────
+
+
+@router.get("/settings/display", response_model=DisplaySettings)
+async def get_display_settings() -> DisplaySettings:
+    """Ajustes visuales actuales del display fisico (fuente y tamano)."""
+    return state_manager.get_display_settings()
+
+
+@router.post("/settings/display", response_model=DisplaySettings)
+async def set_display_settings(request: DisplaySettings) -> DisplaySettings:
+    """Actualiza los ajustes visuales del display fisico.
+
+    Se persiste en SQLite y se propaga al display fisico por WebSocket.
+    """
+    return state_manager.set_display_settings(
+        request.font_family, request.text_size
+    )
+
+
+# ── Comando de vista al display ────────────────────────────────
+
+
+@router.post("/display/command")
+async def display_command(request: DisplayCommand) -> dict:
+    """Envia un comando de cambio de vista al display fisico.
+
+    Permite que el panel web controle la vista mostrada en la pantalla
+    de la Pi (ej. prueba de pantalla, calibracion tactil...).
+    """
+    state_manager.send_display_command(request.action)
+    return {"success": True, "action": request.action}

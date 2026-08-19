@@ -7,6 +7,7 @@ interface ConfigScreenProps {
   onScreenTest: () => void;
   onTouchCalibration: () => void;
   onNetwork: () => void;
+  onFont: () => void;
   onBack: () => void;
 }
 
@@ -124,6 +125,41 @@ export function ConfigScreen(props: ConfigScreenProps) {
               </div>
               <div class="text-gray-500 text-xs mt-0.5">
                 Cambiar IP estatica o DHCP
+              </div>
+            </div>
+          </button>
+
+          {/* Texto y Fuente */}
+          <button
+            onClick={props.onFont}
+            class="flex items-center gap-4 px-6 py-4 rounded-xl
+                   bg-[#1a1a3e] hover:bg-[#2a2a5e] active:bg-[#e94560]/20
+                   border border-[#2a2a5e] hover:border-[#e94560]/50
+                   transition-all duration-200
+                   focus:outline-none focus:ring-2 focus:ring-[#e94560]/50
+                   group"
+          >
+            {/* Icono fuente */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-7 h-7 text-[#be82ff] group-hover:text-[#d3a4ff] transition-colors shrink-0"
+            >
+              <polyline points="4 7 4 4 20 4 20 7" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+              <polyline points="9 20 12 17 15 20" />
+            </svg>
+            <div class="text-left">
+              <div class="text-gray-200 text-sm font-semibold group-hover:text-white transition-colors">
+                Texto y Fuente
+              </div>
+              <div class="text-gray-500 text-xs mt-0.5">
+                Elegir fuente y tamano de texto
               </div>
             </div>
           </button>

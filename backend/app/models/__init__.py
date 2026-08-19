@@ -9,7 +9,9 @@ y deben mantenerse sincronizados manualmente (o via generacion automatica en CI)
 
 from backend.app.models.hmi import (
     ButtonState,
+    DisplayCommand,
     DisplayInfo,
+    DisplaySettings,
     LedState,
     SystemStatus,
 )
@@ -35,7 +37,9 @@ __all__ = [
     "ClientMessage",
     "DeviceConfig",
     "DeviceType",
+    "DisplayCommand",
     "DisplayInfo",
+    "DisplaySettings",
     "ErrorDetail",
     "LedState",
     "NetworkResult",

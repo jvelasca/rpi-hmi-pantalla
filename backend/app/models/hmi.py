@@ -10,7 +10,7 @@ Tipos TypeScript equivalentes: frontend/src/types/api.ts
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -70,6 +70,40 @@ class DisplayInfo(BaseModel):
         Field(pattern=r"^\d+x\d+$", description="Resolucion WxH", examples=["480x320"]),
     ]
     driver: Annotated[str, Field(description="Driver kernel (ili9486, piscreen)", examples=["ili9486"])]
+
+
+# ── Display Settings (fuente y tamano de texto) ────────────────
+
+
+class DisplaySettings(BaseModel):
+    """Ajustes visuales del display fisico (fuente y tamano de texto).
+
+    Valores acotados a opciones compatibles con una pantalla pequena
+    (480x320). Las familias corresponden a fuentes presentes en
+    Raspberry Pi OS (DejaVu Sans / Liberation Sans).
+
+    Attributes:
+        font_family: Familia tipografica ('dejavu' | 'liberation').
+        text_size: Escala del texto ('small' | 'medium' | 'large').
+    """
+
+    font_family: Annotated[
+        Literal["dejavu", "liberation"],
+        Field(default="dejavu", description="Familia tipografica"),
+    ]
+    text_size: Annotated[
+        Literal["small", "medium", "large"],
+        Field(default="medium", description="Escala del texto"),
+    ]
+
+
+class DisplayCommand(BaseModel):
+    """Comando de cambio de vista enviado al display fisico."""
+
+    action: Annotated[
+        Literal["screen_test", "touch_calib", "network", "font", "config", "main"],
+        Field(description="Vista a mostrar en el display fisico"),
+    ]
 
 
 # ── System Status ──────────────────────────────────────────────

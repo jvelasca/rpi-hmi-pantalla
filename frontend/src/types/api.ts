@@ -52,6 +52,21 @@ export interface NetworkResult {
   status: NetworkStatus | null;
 }
 
+/** Ajustes visuales del display fisico (fuente y tamano de texto) */
+export interface DisplaySettings {
+  font_family: "dejavu" | "liberation";
+  text_size: "small" | "medium" | "large";
+}
+
+/** Accion de cambio de vista enviada al display fisico */
+export type DisplayAction =
+  | "screen_test"
+  | "touch_calib"
+  | "network"
+  | "font"
+  | "config"
+  | "main";
+
 // ── WebSocket messages ──────────────────────────────
 
 export type WsTopic = "led" | "button" | "display" | "system";
@@ -61,6 +76,7 @@ export type ClientMessage =
   | { type: "press_button"; version: string }
   | { type: "release_button"; version: string }
   | { type: "get_status"; version: string }
+  | { type: "display_command"; action: string; version: string }
   | { type: "subscribe"; topics: WsTopic[]; version: string };
 
 export type ServerMessage =
@@ -69,4 +85,6 @@ export type ServerMessage =
   | { type: "button_pressed"; data: ButtonState; timestamp: string; version: string; sequence?: number }
   | { type: "button_released"; data: ButtonState; timestamp: string; version: string; sequence?: number }
   | { type: "display_changed"; data: DisplayInfo; timestamp: string; version: string; sequence?: number }
+  | { type: "display_command"; data: { action: string }; timestamp: string; version: string; sequence?: number }
+  | { type: "display_settings_changed"; data: DisplaySettings; timestamp: string; version: string; sequence?: number }
   | { type: "error"; data: { code: string; message: string }; timestamp: string; version: string };

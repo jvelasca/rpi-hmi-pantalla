@@ -81,12 +81,22 @@ class Persistence:
                 payload TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS display_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                font_family TEXT NOT NULL DEFAULT 'dejavu',
+                text_size TEXT NOT NULL DEFAULT 'medium',
+                updated_at TEXT NOT NULL
+            );
+
             -- Insertar filas iniciales si no existen
             INSERT OR IGNORE INTO led_state (id, state, updated_at)
                 VALUES (1, 0, datetime('now'));
 
             INSERT OR IGNORE INTO button_state (id, press_count, updated_at)
                 VALUES (1, 0, datetime('now'));
+
+            INSERT OR IGNORE INTO display_settings (id, font_family, text_size, updated_at)
+                VALUES (1, 'dejavu', 'medium', datetime('now'));
         """)
 
         await self._conn.commit()
@@ -166,6 +176,39 @@ class Persistence:
         await self._conn.execute(
             "UPDATE button_state SET press_count = ?, updated_at = ? WHERE id = 1",
             (count, datetime.now(timezone.utc).isoformat()),
+        )
+        await self._conn.commit()
+
+    # ── Display Settings ────────────────────────────────────────
+
+    async def get_display_settings(self) -> dict[str, str]:
+        """Recupera los ajustes visuales del display desde la BD.
+
+        Returns:
+            Dict con font_family y text_size (defaults si no hay fila).
+        """
+        if not self._conn:
+            return {"font_family": "dejavu", "text_size": "medium"}
+        cursor = await self._conn.execute(
+            "SELECT font_family, text_size FROM display_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return {"font_family": "dejavu", "text_size": "medium"}
+        return {"font_family": str(row[0]), "text_size": str(row[1])}
+
+    async def save_display_settings(self, font_family: str, text_size: str) -> None:
+        """Guarda los ajustes visuales del display en la BD.
+
+        Args:
+            font_family: 'dejavu' | 'liberation'.
+            text_size: 'small' | 'medium' | 'large'.
+        """
+        if not self._conn:
+            return
+        await self._conn.execute(
+            "UPDATE display_settings SET font_family = ?, text_size = ?, updated_at = ? WHERE id = 1",
+            (font_family, text_size, datetime.now(timezone.utc).isoformat()),
         )
         await self._conn.commit()
 

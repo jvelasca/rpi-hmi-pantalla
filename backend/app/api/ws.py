@@ -13,6 +13,7 @@ Mensajes Cliente -> Servidor:
     {"version": "1.0", "type": "release_button"}
     {"version": "1.0", "type": "get_status"}
     {"version": "1.0", "type": "subscribe", "topics": ["led", "button", "display"]}
+    {"version": "1.0", "type": "display_command", "action": "screen_test"}
 
 Mensajes Servidor -> Cliente:
     {"version": "1.0", "type": "status_update", "data": {...}, "sequence": 0, "timestamp": "..."}
@@ -100,6 +101,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                             data=status.model_dump(mode="json"),
                         ).model_dump(mode="json")
                     )
+
+                case "display_command":
+                    action = msg.action or ""
+                    state_manager.send_display_command(action)
 
                 case "subscribe":
                     await state_manager.subscribe(

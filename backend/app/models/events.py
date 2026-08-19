@@ -34,12 +34,14 @@ class EventType(StrEnum):
     RELEASE_BUTTON = "release_button"
     GET_STATUS = "get_status"
     SUBSCRIBE = "subscribe"
+    DISPLAY_COMMAND = "display_command"
     # Servidor -> Cliente
     STATUS_UPDATE = "status_update"
     LED_CHANGED = "led_changed"
     BUTTON_PRESSED = "button_pressed"
     BUTTON_RELEASED = "button_released"
     DISPLAY_CHANGED = "display_changed"
+    DISPLAY_SETTINGS_CHANGED = "display_settings_changed"
     ERROR = "error"
 
 
@@ -68,12 +70,17 @@ class ClientMessage(BaseModel):
             "release_button",
             "get_status",
             "subscribe",
+            "display_command",
         ],
         Field(description="Tipo de accion solicitada"),
     ]
     topics: Annotated[
         list[SubscriptionTopic] | None,
         Field(default=None, description="Topicos a suscribir (solo con 'subscribe')"),
+    ]
+    action: Annotated[
+        str | None,
+        Field(default=None, description="Accion de vista (solo con 'display_command')"),
     ]
 
 
@@ -116,6 +123,8 @@ class ServerMessage(BaseModel):
             "button_pressed",
             "button_released",
             "display_changed",
+            "display_command",
+            "display_settings_changed",
             "error",
         ],
         Field(description="Tipo de evento"),

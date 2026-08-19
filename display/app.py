@@ -67,12 +67,14 @@ from display.ui.widgets import (  # noqa: E402
     ButtonWidget,
     ConfigButton,
     ConfigOverlay,
+    FontSettingsView,
     HeaderWidget,
     LedIndicator,
     NetworkConfigView,
     ScreenTestView,
     StatusBar,
     TouchCalibrationView,
+    apply_font_settings,
 )
 
 logger = logging.getLogger("rpi_hmi.display")
@@ -114,12 +116,16 @@ class DisplayApp:
         self._sync_interval: float = 3.0  # Solo como fallback cuando WS cae
 
         # V1.1: sistema de vistas
-        # "main" | "config" | "screen_test" | "touch_calib" | "network"
+        # "main" | "config" | "screen_test" | "touch_calib" | "network" | "font"
         self.view: str = "main"
 
         # Control de redibujado (event-driven) y calibración
         self._redraw: bool = False
         self._calib_done_time: float | None = None
+        self._calib_samples: list[tuple[int, int]] | None = None
+        self._pending_display_action: str | None = None
+        self._pending_font_family: str | None = None
+        self._pending_text_size: str | None = None
 
         # Screen (se inicializa después de saber mock)
         self.screen = Screen(auto_detect=not mock, mock=mock)
@@ -165,7 +171,7 @@ class DisplayApp:
         margin = int(MARGIN * sy)
 
         # Header
-        self.header = HeaderWidget(0, 0, w, header_h, version="v1.1")
+        self.header = HeaderWidget(0, 0, w, header_h, version="v1.2")
 
         # Content area
         content_y = header_h + margin
@@ -174,12 +180,12 @@ class DisplayApp:
         # Panel LED (izquierda)
         led_x = int(LED_PANEL_X * sx)
         led_w = int(LED_PANEL_W * sx)
-        self.led = LedIndicator(led_x, content_y, led_w, content_h)
+        self.led = LedIndicator(led_x, content_y, led_w, content_h, label="BOTON ON/OFF")
 
         # Panel Botón (derecha)
         btn_w = int(BTN_PANEL_W * sx)
         btn_x = w - btn_w - int(margin * sx)
-        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h)
+        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h, label="BOTON PULSAR")
 
         # Footer
         self.status_bar = StatusBar(0, h - footer_h, w, footer_h)
@@ -192,6 +198,7 @@ class DisplayApp:
         self.screen_test_view = ScreenTestView(w, h)
         self.touch_calib_view = TouchCalibrationView(w, h)
         self.network_view = NetworkConfigView(w, h)
+        self.font_view = FontSettingsView(w, h)
 
         # Conectar callbacks
         self.led.set_on_toggle(self._on_toggle_led)
@@ -202,11 +209,14 @@ class DisplayApp:
             self._show_screen_test,
             self._show_touch_calib,
             self._show_network,
+            self._show_font,
             self._show_main,
         )
         self.screen_test_view.set_on_exit(self._show_config)
         self.network_view.set_on_apply(self._apply_network)
         self.network_view.set_on_back(self._show_config)
+        self.font_view.set_on_change(self._apply_font_settings)
+        self.font_view.set_on_back(self._show_config)
 
         # Lista de widgets interactivos (orden de hit-test) — vista principal
         self._interactive_widgets = [self.button, self.led, self.config_btn]
@@ -259,6 +269,7 @@ class DisplayApp:
         """Muestra la calibración táctil."""
         self.touch_calib_view.reset()
         self._calib_done_time = None
+        self._calib_samples = None
         self.view = "touch_calib"
         self._redraw = True
 
@@ -298,6 +309,31 @@ class DisplayApp:
             self.network_view.set_result(msg, error=not ok)
         else:
             self.network_view.set_result("No se pudo aplicar la configuracion", error=True)
+        self._redraw = True
+
+    def _show_font(self) -> None:
+        """Muestra la configuracion de fuente y carga el estado actual."""
+        self.view = "font"
+        self._redraw = True
+        self._fetch_font_settings()
+
+    def _fetch_font_settings(self) -> None:
+        """Carga los ajustes de fuente desde el backend y sincroniza la vista."""
+        data = self._api_get("/api/settings/display")
+        if data is not None:
+            family = data.get("font_family", "dejavu")
+            size = data.get("text_size", "medium")
+            self.font_view.set_selection(family, size)
+            self._redraw = True
+
+    def _apply_font_settings(self, font_family: str, text_size: str) -> None:
+        """Aplica y persiste los ajustes de fuente (desde display o web)."""
+        apply_font_settings(font_family, text_size)
+        self.font_view.set_selection(font_family, text_size)
+        self._api_post_json(
+            "/api/settings/display",
+            {"font_family": font_family, "text_size": text_size},
+        )
         self._redraw = True
 
     def _register_calib_tap(self, raw_x: int, raw_y: int) -> None:
@@ -399,7 +435,7 @@ class DisplayApp:
             with self._ws_lock:
                 self.ws_connected = True
             # Suscribirse a topicos
-            ws.send(json.dumps({"type": "subscribe", "topics": ["led", "button"], "version": "1.0"}))
+            ws.send(json.dumps({"type": "subscribe", "topics": ["led", "button", "display"], "version": "1.0"}))
 
         def on_message(ws: WebSocketApp, message: str) -> None:
             try:
@@ -421,6 +457,11 @@ class DisplayApp:
                     self.led_on = led_d.get("state", self.led_on)
                     self.led_label = led_d.get("label", self.led_label)
                     self.press_count = btn_d.get("press_count", self.press_count)
+                elif msg_type == "display_command":
+                    self._pending_display_action = data.get("action", "")
+                elif msg_type == "display_settings_changed":
+                    self._pending_font_family = data.get("font_family", "")
+                    self._pending_text_size = data.get("text_size", "")
                 self._ws_dirty = True
 
         def on_error(ws: WebSocketApp, error: Exception) -> None:
@@ -465,6 +506,8 @@ class DisplayApp:
             self.touch_calib_view.draw(surface)
         elif self.view == "network":
             self.network_view.draw(surface)
+        elif self.view == "font":
+            self.font_view.draw(surface)
 
     # ── Bucle principal ─────────────────────────────────────────
 
@@ -493,6 +536,18 @@ class DisplayApp:
         # Sincronizar estado inicial
         self._sync_state()
         self._last_sync = time.time()
+
+        # Cargar y aplicar ajustes de fuente desde el backend
+        try:
+            data = self._api_get("/api/settings/display")
+            if data is not None:
+                family = data.get("font_family", "dejavu")
+                size = data.get("text_size", "medium")
+                apply_font_settings(family, size)
+                self.font_view.set_selection(family, size)
+                logger.info("Ajustes de fuente aplicados: %s / %s", family, size)
+        except Exception as exc:
+            logger.warning("No se pudieron cargar ajustes de fuente: %s", exc)
 
         # Auto-iniciar calibración táctil si no hay calibración guardada
         if self.touch and self.touch.available and not self.touch.has_calibration:
@@ -598,6 +653,8 @@ class DisplayApp:
             self.screen_test_view.on_touch(screen_x, screen_y)
         elif self.view == "network":
             self.network_view.on_touch(screen_x, screen_y)
+        elif self.view == "font":
+            self.font_view.on_touch(screen_x, screen_y)
         elif self.view == "touch_calib":
             # Solo se alcanza en modo mock (mouse): simula raw con pantalla
             self._register_calib_tap(screen_x, screen_y)
@@ -606,20 +663,36 @@ class DisplayApp:
     def _handle_touch_down(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch down desde el driver evdev."""
         if self.view == "touch_calib":
-            # Modo calibración: capturar coordenadas RAW (no aplicar mapeo)
-            self._register_calib_tap(self.touch.x, self.touch.y)
+            # Modo calibración: acumular muestras raw durante el toque
+            self._calib_samples = [(self.touch.x, self.touch.y)]
             return
         self._dispatch_touch(screen_x, screen_y)
 
     def _handle_touch_up(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch up desde el driver evdev."""
+        # En calibración: usar la mediana de las muestras raw (rechaza el
+        # primer valor no estabilizado del panel resistivo).
+        if self.view == "touch_calib" and self._calib_samples is not None:
+            samples = self._calib_samples
+            self._calib_samples = None
+            xs = sorted(x for x, _y in samples)
+            ys = sorted(y for _x, y in samples)
+            mx = xs[len(xs) // 2]
+            my = ys[len(ys) // 2]
+            logger.info(
+                "Calib samples=%d -> median raw=(%d,%d)", len(samples), mx, my,
+            )
+            self._register_calib_tap(mx, my)
+            return
         # Liberar el boton PULSAR si estaba presionado en la vista principal
         if self.view == "main" and self.button.pressed:
             self._on_release_button()
 
     def _handle_touch_move(self, screen_x: int, screen_y: int) -> None:
         """Manejador de touch move desde el driver evdev."""
-        pass  # No se usa arrastre en esta UI
+        # En calibración: acumular muestras raw para estabilizar el toque
+        if self.view == "touch_calib" and self._calib_samples is not None:
+            self._calib_samples.append((self.touch.x, self.touch.y))
 
     def _apply_ws_state(self) -> bool:
         """Aplica el estado recibido via WebSocket a los widgets.
@@ -635,6 +708,12 @@ class DisplayApp:
             led_on = self.led_on
             led_label = self.led_label
             press_count = self.press_count
+            pending_action = self._pending_display_action
+            self._pending_display_action = None
+            pending_family = self._pending_font_family
+            self._pending_font_family = None
+            pending_size = self._pending_text_size
+            self._pending_text_size = None
 
         # Fuera del lock: aplicar a widgets (solo hilo principal)
         if self.led.on != led_on or self.led.label != led_label:
@@ -644,7 +723,36 @@ class DisplayApp:
         if self.button.press_count != press_count:
             self.button.press_count = press_count
             changed = True
+
+        # Aplicar ajustes de fuente recibidos desde el backend/web
+        if pending_family and pending_size:
+            apply_font_settings(pending_family, pending_size)
+            self.font_view.set_selection(pending_family, pending_size)
+            changed = True
+
+        # Aplicar comando de cambio de vista desde el backend/web
+        if pending_action:
+            self._set_view_from_command(pending_action)
+            changed = True
+
         return changed
+
+    def _set_view_from_command(self, action: str) -> None:
+        """Cambia la vista segun el comando recibido del backend/web."""
+        mapping = {
+            "screen_test": self._show_screen_test,
+            "touch_calib": self._show_touch_calib,
+            "network": self._show_network,
+            "font": self._show_font,
+            "config": self._show_config,
+            "main": self._show_main,
+        }
+        handler = mapping.get(action)
+        if handler:
+            logger.info("Comando de vista: %s", action)
+            handler()
+        else:
+            logger.warning("Comando de vista desconocido: %s", action)
 
     # ── Limpieza ────────────────────────────────────────────────
 

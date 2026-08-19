@@ -91,6 +91,7 @@ OPTION_HOVER = (30, 60, 120)        # #1e3c78
 OPTION_ICON_MONITOR = (0, 200, 255) # cyan
 OPTION_ICON_TOUCH = (255, 180, 0)   # naranja
 OPTION_ICON_NETWORK = (255, 184, 74)  # ambar
+OPTION_ICON_FONT = (190, 130, 255)  # violeta
 OPTION_ICON_BACK = (160, 160, 180)  # gris claro
 
 # ── Screen test ─────────────────────────────────────────────
@@ -133,3 +134,75 @@ FONT_SIZE_NORMAL: int = 12
 FONT_SIZE_SMALL: int = 10
 FONT_SIZE_COUNTER: int = 28
 FONT_SIZE_BIG: int = 20
+
+# ── Fuentes configurables (pantalla pequeña 480x320) ──────────
+# Registro de familias soportadas con sus rutas TTF (regular y bold).
+# Ambas fuentes están presentes en Raspberry Pi OS (Bookworm).
+FONT_FAMILIES: dict[str, dict[str, str | list[str]]] = {
+    "dejavu": {
+        "label": "DejaVu Sans",
+        "regular": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        ],
+        "bold": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        ],
+    },
+    "liberation": {
+        "label": "Liberation Sans",
+        "regular": [
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ],
+        "bold": [
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ],
+    },
+}
+
+# Escalas de tamaño de texto compatibles con la pantalla pequeña.
+# Se aplican como factor sobre los tamaños base (FONT_SIZE_*).
+TEXT_SIZES: dict[str, float] = {
+    "small": 0.85,
+    "medium": 1.0,
+    "large": 1.2,
+}
+
+DEFAULT_FONT_FAMILY: str = "dejavu"
+DEFAULT_TEXT_SIZE: str = "medium"
+
+_current_font_family: str = DEFAULT_FONT_FAMILY
+_current_text_size: str = DEFAULT_TEXT_SIZE
+
+
+def set_font_settings(font_family: str, text_size: str) -> None:
+    """Actualiza la familia y escala de texto activas.
+
+    Args:
+        font_family: Clave de FONT_FAMILIES ('dejavu' | 'liberation').
+        text_size: Clave de TEXT_SIZES ('small' | 'medium' | 'large').
+    """
+    global _current_font_family, _current_text_size
+    _current_font_family = font_family if font_family in FONT_FAMILIES else DEFAULT_FONT_FAMILY
+    _current_text_size = text_size if text_size in TEXT_SIZES else DEFAULT_TEXT_SIZE
+
+
+def get_font_settings() -> dict[str, str]:
+    """Devuelve los ajustes de fuente activos."""
+    return {"font_family": _current_font_family, "text_size": _current_text_size}
+
+
+def get_font_scale() -> float:
+    """Devuelve el factor de escala de texto activo."""
+    return TEXT_SIZES.get(_current_text_size, 1.0)
+
+
+def get_font_paths(bold: bool) -> list[str]:
+    """Devuelve las rutas TTF para la familia activa (regular o bold)."""
+    key = "bold" if bold else "regular"
+    return list(FONT_FAMILIES[_current_font_family][key])  # type: ignore[arg-type]

@@ -14,9 +14,10 @@ import { ConfigScreen } from "@/components/ConfigScreen";
 import { ScreenTest } from "@/components/ScreenTest";
 import { TouchCalibration } from "@/components/TouchCalibration";
 import { NetworkConfig } from "@/components/NetworkConfig";
+import { FontSettings } from "@/components/FontSettings";
 import type { LedState, ButtonState, ServerMessage } from "@/types/api";
 
-type View = "main" | "config" | "screenTest" | "touchCalibration" | "network";
+type View = "main" | "config" | "screenTest" | "touchCalibration" | "network" | "font";
 
 export function App() {
   // ── Estado ──────────────────────────────────────────
@@ -100,6 +101,40 @@ export function App() {
     if (result) setButton(result);
   }
 
+  // ── Control del display fisico desde el panel web ──
+  function commandDisplay(action: string) {
+    if (ws.connected()) {
+      ws.send({ type: "display_command", action, version: "1.0" });
+    } else {
+      api.sendDisplayCommand(action);
+    }
+  }
+
+  function goScreenTest() {
+    setView("screenTest");
+    commandDisplay("screen_test");
+  }
+
+  function goTouchCalibration() {
+    setView("touchCalibration");
+    commandDisplay("touch_calib");
+  }
+
+  function goNetwork() {
+    setView("network");
+    commandDisplay("network");
+  }
+
+  function goFont() {
+    setView("font");
+    commandDisplay("font");
+  }
+
+  function goBackToMain() {
+    setView("main");
+    commandDisplay("main");
+  }
+
   // ── Render ──────────────────────────────────────────
   return (
     <div class="min-h-screen flex flex-col bg-[#141428]">
@@ -113,6 +148,10 @@ export function App() {
 
       <Show when={view() === "network"}>
         <NetworkConfig onBack={() => setView("config")} />
+      </Show>
+
+      <Show when={view() === "font"}>
+        <FontSettings onBack={() => setView("config")} />
       </Show>
 
       <Show when={view() === "main" || view() === "config"}>
@@ -133,10 +172,11 @@ export function App() {
         {/* Modal de configuracion */}
         <Show when={view() === "config"}>
           <ConfigScreen
-            onScreenTest={() => setView("screenTest")}
-            onTouchCalibration={() => setView("touchCalibration")}
-            onNetwork={() => setView("network")}
-            onBack={() => setView("main")}
+            onScreenTest={goScreenTest}
+            onTouchCalibration={goTouchCalibration}
+            onNetwork={goNetwork}
+            onFont={goFont}
+            onBack={goBackToMain}
           />
         </Show>
       </Show>

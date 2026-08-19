@@ -4,7 +4,14 @@
  */
 
 import { createSignal } from "solid-js";
-import type { ButtonState, LedState, NetworkResult, NetworkStatus, SystemStatus } from "@/types/api";
+import type {
+  ButtonState,
+  DisplaySettings,
+  LedState,
+  NetworkResult,
+  NetworkStatus,
+  SystemStatus,
+} from "@/types/api";
 
 const BASE = "/api";
 
@@ -66,6 +73,12 @@ export function useApi() {
     });
   const applyDhcp = () => post<NetworkResult>("/network/dhcp");
 
+  const getDisplaySettings = () => get<DisplaySettings>("/settings/display");
+  const setDisplaySettings = (font_family: string, text_size: string) =>
+    postJson<DisplaySettings>("/settings/display", { font_family, text_size });
+  const sendDisplayCommand = (action: string) =>
+    postJson<{ success: boolean; action: string }>("/display/command", { action });
+
   return {
     error,
     getStatus,
@@ -79,5 +92,8 @@ export function useApi() {
     getNetwork,
     applyStatic,
     applyDhcp,
+    getDisplaySettings,
+    setDisplaySettings,
+    sendDisplayCommand,
   };
 }

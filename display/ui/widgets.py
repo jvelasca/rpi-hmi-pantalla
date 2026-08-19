@@ -72,6 +72,7 @@ from display.ui.theme import (
     OPTION_BG,
     OPTION_HOVER,
     OPTION_ICON_BACK,
+    OPTION_ICON_FONT,
     OPTION_ICON_MONITOR,
     OPTION_ICON_NETWORK,
     OPTION_ICON_TOUCH,
@@ -98,6 +99,9 @@ from display.ui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
+    get_font_paths,
+    get_font_scale,
+    set_font_settings,
 )
 
 if TYPE_CHECKING:
@@ -107,20 +111,23 @@ logger = logging.getLogger("rpi_hmi.display.widgets")
 
 # ── Cache de fuentes ──────────────────────────────────────────
 FontType = object  # pygame.freetype.Font | pygame.font.Font
-_font_cache: dict[tuple[str, int], FontType] = {}
+_font_cache: dict[tuple[str, str, int], FontType] = {}
 
-# Rutas directas a los TTF de DejaVu (evita SysFont, que ejecuta fc-list
-# y puede agotar el timeout en Raspberry Pi -> fuente bitmap borrosa).
-_FONT_FILES: dict[str, list[str]] = {
-    "DejaVuSans": [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    ],
-    "DejaVuSans-Bold": [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
-    ],
-}
+
+def clear_font_cache() -> None:
+    """Vacia el cache de fuentes (llamar tras cambiar fuente/tamano)."""
+    _font_cache.clear()
+
+
+def apply_font_settings(font_family: str, text_size: str) -> None:
+    """Aplica nuevos ajustes de fuente y limpia el cache.
+
+    Args:
+        font_family: 'dejavu' | 'liberation'.
+        text_size: 'small' | 'medium' | 'large'.
+    """
+    set_font_settings(font_family, text_size)
+    clear_font_cache()
 
 
 def _get_font(name: str, size: int) -> FontType:
@@ -129,26 +136,32 @@ def _get_font(name: str, size: int) -> FontType:
     Prefiere cargar el TTF directamente por ruta (nitido), evita
     pygame.freetype.SysFont porque ejecuta fc-list y puede agotar el
     timeout en Raspberry Pi, cayendo a una fuente bitmap de baja calidad.
+
+    La familia y el tamano se resuelven en funcion de los ajustes activos
+    (configurables desde el panel de configuracion / web).
     """
-    key = (name, size)
+    bold = "bold" in name.lower()
+    scaled_size = max(6, int(round(size * get_font_scale())))
+    key = (name, "bold" if bold else "regular", scaled_size)
     if key not in _font_cache:
+        paths = get_font_paths(bold)
         if _HAS_FREETYPE:
             # 1) Ruta directa al TTF (recomendado)
-            for path in _FONT_FILES.get(name, []):
+            for path in paths:
                 try:
-                    _font_cache[key] = pygame.freetype.Font(path, size)
+                    _font_cache[key] = pygame.freetype.Font(path, scaled_size)
                     return _font_cache[key]
                 except Exception:
                     pass
             # 2) SysFont (ejecuta fc-list, puede fallar en Pi)
             try:
-                _font_cache[key] = pygame.freetype.SysFont(name, size)
+                _font_cache[key] = pygame.freetype.SysFont(name, scaled_size)
                 return _font_cache[key]
             except Exception:
                 pass
             # 3) Fuente por defecto de pygame (bitmap)
             try:
-                _font_cache[key] = pygame.freetype.Font(None, size)
+                _font_cache[key] = pygame.freetype.Font(None, scaled_size)
                 return _font_cache[key]
             except Exception:
                 pass
@@ -156,15 +169,15 @@ def _get_font(name: str, size: int) -> FontType:
             if not pygame.font.get_init():
                 pygame.font.init()
             # Cargar TTF directamente por ruta (nitido), evita SysFont/match_font
-            for path in _FONT_FILES.get(name, []):
+            for path in paths:
                 try:
-                    _font_cache[key] = pygame.font.Font(path, size)
+                    _font_cache[key] = pygame.font.Font(path, scaled_size)
                     return _font_cache[key]
                 except Exception:
                     pass
             # Fallback: fuente por defecto de pygame (mejor que bitmap)
             try:
-                _font_cache[key] = pygame.font.Font(None, size)
+                _font_cache[key] = pygame.font.Font(None, scaled_size)
                 return _font_cache[key]
             except Exception:
                 pass
@@ -603,39 +616,44 @@ class ConfigButton(Widget):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ConfigOverlay — Pantalla de configuración (3 opciones) (V1.1)
+# ConfigOverlay — Pantalla de configuración (5 opciones) (V1.3)
 # ═══════════════════════════════════════════════════════════════
 
 _ICON_MONITOR = "□"    # monitor
 _ICON_TOUCH = "◎"      # touch target
 _ICON_NETWORK = "⇄"    # network
+_ICON_FONT = "A"       # text/font
 _ICON_BACK = "←"       # back arrow
 
 
 class ConfigOverlay(Widget):
-    """Overlay de pantalla completa con 4 botones de opción."""
+    """Overlay de pantalla completa con 5 botones de opción."""
 
     def __init__(self, w: int, h: int) -> None:
         super().__init__(0, 0, w, h)
         self._on_screen_test: callable | None = None
         self._on_touch_calib: callable | None = None
         self._on_network: callable | None = None
+        self._on_font: callable | None = None
         self._on_back: callable | None = None
 
-        btn_h = 46
-        gap = 10
+        btn_h = 40
+        gap = 6
         btn_w = w - 60
-        n = 4
-        start_y = (h - (btn_h + gap) * n) // 2 + 10
+        n = 5
+        start_y = (h - (btn_h + gap) * n) // 2 + 16
         self._btn_screen = pygame.Rect((w - btn_w) // 2, start_y, btn_w, btn_h)
         self._btn_calib = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap), btn_w, btn_h)
         self._btn_network = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 2, btn_w, btn_h)
-        self._btn_back = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 3, btn_w, btn_h)
+        self._btn_font = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 3, btn_w, btn_h)
+        self._btn_back = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 4, btn_w, btn_h)
 
-    def set_callbacks(self, screen_test: callable, touch_calib: callable, network: callable, back: callable) -> None:
+    def set_callbacks(self, screen_test: callable, touch_calib: callable,
+                      network: callable, font: callable, back: callable) -> None:
         self._on_screen_test = screen_test
         self._on_touch_calib = touch_calib
         self._on_network = network
+        self._on_font = font
         self._on_back = back
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -649,13 +667,14 @@ class ConfigOverlay(Widget):
         title_text = "CONFIGURACION"
         title_rect = _get_text_rect(title_font, title_text)
         title_x = (self.rect.width - title_rect.width) // 2
-        title_y = 22
+        title_y = 8
         _render_text(surface, title_font, title_text, OVERLAY_TITLE, title_x, title_y)
 
-        # Draw 4 option buttons
+        # Draw 5 option buttons
         self._draw_option(surface, self._btn_screen, "Prueba de Pantalla", _ICON_MONITOR, OPTION_ICON_MONITOR)
         self._draw_option(surface, self._btn_calib, "Calibracion Tactil", _ICON_TOUCH, OPTION_ICON_TOUCH)
         self._draw_option(surface, self._btn_network, "Configurar IP", _ICON_NETWORK, OPTION_ICON_NETWORK)
+        self._draw_option(surface, self._btn_font, "Texto y Fuente", _ICON_FONT, OPTION_ICON_FONT)
         self._draw_option(surface, self._btn_back, "Volver", _ICON_BACK, OPTION_ICON_BACK)
 
     def _draw_option(self, surface: pygame.Surface, rect: pygame.Rect,
@@ -687,6 +706,10 @@ class ConfigOverlay(Widget):
         if self._btn_network.collidepoint(screen_x, screen_y):
             if self._on_network:
                 self._on_network()
+            return True
+        if self._btn_font.collidepoint(screen_x, screen_y):
+            if self._on_font:
+                self._on_font()
             return True
         if self._btn_back.collidepoint(screen_x, screen_y):
             if self._on_back:
@@ -853,6 +876,22 @@ class TouchCalibrationView(Widget):
             self._finish()
 
     def _finish(self) -> None:
+        # Validar que los puntos raw capturados no sean degenerados
+        rxs = [rx for rx, ry, sx, sy in self._raw_points]
+        rys = [ry for rx, ry, sx, sy in self._raw_points]
+        span_x = max(rxs) - min(rxs)
+        span_y = max(rys) - min(rys)
+        logger.info(
+            "Calib raw: X[%d..%d] (span %d), Y[%d..%d] (span %d)",
+            min(rxs), max(rxs), span_x, min(rys), max(rys), span_y,
+        )
+        if span_x < 300 or span_y < 300:
+            logger.warning(
+                "Calibracion degenerada (span raw x=%d y=%d) — reintentando",
+                span_x, span_y,
+            )
+            self.reset()
+            return
         try:
             from display.ui.touch import solve_affine
             self._coeffs = solve_affine(self._raw_points)
@@ -864,8 +903,8 @@ class TouchCalibrationView(Widget):
                 self._offsets.append((sx, sy, round(cx - sx), round(cy - sy)))
             self._done = True
         except ValueError:
-            self._done = True
-            self._coeffs = None
+            logger.warning("Calibracion singular — reintentando")
+            self.reset()
 
     @property
     def is_done(self) -> bool:
@@ -1165,6 +1204,122 @@ class NetworkConfigView(Widget):
             if self._on_apply:
                 self._on_apply(self._payload())
             return True
+        if self._back_rect.collidepoint(screen_x, screen_y):
+            if self._on_back:
+                self._on_back()
+            return True
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# FontSettingsView — Configuracion de fuente y tamano de texto (V1.3)
+# ═══════════════════════════════════════════════════════════════
+
+_FONT_LABELS = {"dejavu": "DejaVu Sans", "liberation": "Liberation Sans"}
+_SIZE_LABELS = {"small": "Pequeno", "medium": "Medio", "large": "Grande"}
+
+
+class FontSettingsView(Widget):
+    """Vista de seleccion de fuente y tamano apta para pantalla tactil.
+
+    Muestra dos familias (DejaVu Sans / Liberation Sans) y tres tamanos
+    (Pequeno / Medio / Grande). Al tocar una opcion se aplica al instante
+    y se notifica via callback para persistir en el backend.
+    """
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self.font_family: str = "dejavu"
+        self.text_size: str = "medium"
+        self._on_change: callable | None = None
+        self._on_back: callable | None = None
+
+        # ── Hit regions ──
+        self._font_btns = {
+            "dejavu": pygame.Rect(20, 64, 210, 44),
+            "liberation": pygame.Rect(250, 64, 210, 44),
+        }
+        self._size_btns = {
+            "small": pygame.Rect(20, 150, 140, 44),
+            "medium": pygame.Rect(170, 150, 140, 44),
+            "large": pygame.Rect(320, 150, 140, 44),
+        }
+        self._back_rect = pygame.Rect(20, 268, 440, 42)
+
+    def set_on_change(self, callback: callable) -> None:
+        self._on_change = callback
+
+    def set_on_back(self, callback: callable) -> None:
+        self._on_back = callback
+
+    def set_selection(self, font_family: str, text_size: str) -> None:
+        """Sincroniza la seleccion actual (llamado al abrir la vista)."""
+        if font_family in _FONT_LABELS:
+            self.font_family = font_family
+        if text_size in _SIZE_LABELS:
+            self.text_size = text_size
+
+    def draw(self, surface: pygame.Surface) -> None:
+        if not self.visible:
+            return
+        pygame.draw.rect(surface, NETWORK_BG, self.rect)
+
+        # Titulo
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        title_text = "TEXTO Y FUENTE"
+        title_r = _get_text_rect(title_font, title_text)
+        _render_text(surface, title_font, title_text, NETWORK_ACCENT,
+                     (self.rect.width - title_r.width) // 2, 8)
+
+        # Seccion Fuente
+        sec_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        _render_text(surface, sec_font, "FUENTE", TEXT_SECONDARY, 20, 44)
+
+        for key, rect in self._font_btns.items():
+            self._draw_choice(surface, rect, _FONT_LABELS[key], key == self.font_family)
+
+        # Seccion Tamano
+        _render_text(surface, sec_font, "TAMANO DEL TEXTO", TEXT_SECONDARY, 20, 130)
+
+        for key, rect in self._size_btns.items():
+            self._draw_choice(surface, rect, _SIZE_LABELS[key], key == self.text_size)
+
+        # Volver
+        pygame.draw.rect(surface, OPTION_BG, self._back_rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, self._back_rect, 1)
+        back_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        back_text = "VOLVER"
+        back_r = _get_text_rect(back_font, back_text)
+        _render_text(surface, back_font, back_text, TEXT_SECONDARY,
+                     self._back_rect.x + (self._back_rect.width - back_r.width) // 2,
+                     self._back_rect.y + (self._back_rect.height - back_r.height) // 2)
+
+    def _draw_choice(self, surface: pygame.Surface, rect: pygame.Rect,
+                     label: str, active: bool) -> None:
+        bg = NETWORK_ACTIVE if active else NETWORK_FIELD_BG
+        border = NETWORK_ACTIVE if active else NETWORK_FIELD_BORDER
+        pygame.draw.rect(surface, bg, rect)
+        pygame.draw.rect(surface, border, rect, 2)
+        font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        text_r = _get_text_rect(font, label)
+        color = (255, 255, 255) if active else NETWORK_TEXT
+        _render_text(surface, font, label, color,
+                     rect.x + (rect.width - text_r.width) // 2,
+                     rect.y + (rect.height - text_r.height) // 2)
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        for key, rect in self._font_btns.items():
+            if rect.collidepoint(screen_x, screen_y):
+                self.font_family = key
+                if self._on_change:
+                    self._on_change(self.font_family, self.text_size)
+                return True
+        for key, rect in self._size_btns.items():
+            if rect.collidepoint(screen_x, screen_y):
+                self.text_size = key
+                if self._on_change:
+                    self._on_change(self.font_family, self.text_size)
+                return True
         if self._back_rect.collidepoint(screen_x, screen_y):
             if self._on_back:
                 self._on_back()
