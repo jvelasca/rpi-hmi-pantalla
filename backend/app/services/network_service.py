@@ -18,6 +18,7 @@ Uso:
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import shutil
 import subprocess
@@ -33,6 +34,41 @@ __all__ = ["NetworkService", "network_service"]
 
 _NMCLI = "nmcli"
 _ACTIVATE_DELAY = 1.0  # segundos antes de re-activar la conexion
+
+
+def _validate_static(ip_address: str, prefix: int, gateway: str) -> str | None:
+    """Valida la coherencia de una configuracion de IP estatica.
+
+    Devuelve un mensaje de error legible o ``None`` si la configuracion
+    es coherente. No interactua con ``nmcli``.
+
+    Comprueba que:
+    - ``ip_address`` es una IPv4 valida perteneciente a la subred de ``prefix``.
+    - ``gateway`` es una IPv4 valida dentro de la misma subred.
+    - ``ip_address`` no coincide con la direccion de red ni de broadcast.
+    """
+    try:
+        network = ipaddress.ip_network(f"{ip_address}/{prefix}", strict=False)
+        ip_obj = ipaddress.ip_address(ip_address)
+        gateway_obj = ipaddress.ip_address(gateway)
+    except ValueError:
+        return "Direccion IP, prefijo o puerta de enlace invalidos"
+
+    if ip_obj.version != 4:
+        return "La direccion IP debe ser IPv4"
+    if gateway_obj.version != 4:
+        return "La puerta de enlace debe ser IPv4"
+
+    if ip_obj not in network:
+        return f"La IP {ip_address} no pertenece a la subred {network}"
+    if gateway_obj not in network:
+        return f"La puerta de enlace {gateway} no pertenece a la subred {network}"
+    if ip_obj == network.network_address:
+        return f"La IP {ip_address} coincide con la direccion de red de {network}"
+    if ip_obj == network.broadcast_address:
+        return f"La IP {ip_address} coincide con la direccion de broadcast de {network}"
+
+    return None
 
 
 class NetworkService:
@@ -190,6 +226,10 @@ class NetworkService:
         Returns:
             NetworkResult con el resultado de la operacion.
         """
+        error = _validate_static(ip_address, prefix, gateway)
+        if error is not None:
+            return NetworkResult(success=False, message=error, status=None)
+
         if not self.available:
             return NetworkResult(success=False, message="nmcli no disponible en este sistema", status=None)
 
