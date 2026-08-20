@@ -874,7 +874,7 @@ Ejemplos:
     signal.signal(signal.SIGTERM, lambda s, f: _signal_handler(s, f))
 
     logger.info("=" * 50)
-    logger.info("  RPi HMI — Display App Pygame DRM v0.1")
+    logger.info("  RPi HMI — Display App Pygame DRM v0.3.0")
     logger.info("=" * 50)
 
     # Verificar que el backend esta accesible

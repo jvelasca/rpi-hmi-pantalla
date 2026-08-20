@@ -5,7 +5,7 @@
 
 ## Estado general
 
-- **Fase actual:** 3 — Arquitectura (completada, gate G3 verde)
+- **Fase actual:** 4 — Docs/consistencia (F)
 - **Última actualización:** 2026-08-20
 - **Commit base (restauración):** `64b4812`
 - **Baseline puerta de calidad:** pytest = 16 FAIL / 261 PASS · mypy = 57 errores · vitest = 16 PASS
@@ -20,7 +20,7 @@
 | C | Display DRM hardening | 2 | ✅ completado | `handoffs/C.md` | — |
 | D | Frontend hardening | 2 | ✅ completado | `handoffs/D.md` | — |
 | E | Arquitectura (StateManager/persistencia/red/watchdog) | 3 | ✅ completado | `handoffs/E.md` | — |
-| F | Docs/consistencia | 4 | ⏳ pendiente | — | — |
+| F | Docs/consistencia | 4 | ✅ completado | `handoffs/F.md` | — |
 
 Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqueado
 
@@ -38,6 +38,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | 8 | `Screen.allow_mock_fallback` (default True); en modo real se cablea `=mock` para que DRM falle → exit 1. systemd ya cumplía `Restart=on-failure`+`RestartSec=5` (sin cambios) | C | 2026-08-20 |
 | 9 | Frontend: Zod v4 + `sequence: number\|null` obligatorio + `lastSequence` init `null` (evita resync espurio). `package-lock` versión raíz alineada 0.1.0→0.3.0. Falta `frontend/.env.example` (futuro) | D | 2026-08-20 |
 | 10 | Migraciones versionadas (`schema_version` + `_MIGRATIONS`); red via `asyncio.to_thread`; límites systemd (`MemoryMax=256M`, `CPUQuota=100%`, `TasksMax=256`, `LimitNOFILE=65536`, `UMask=0077`); `WebSocketHub` con lock compartido y `_sequence` como property read-only. Watchdog NO activado (requiere `sdnotify`) | E | 2026-08-20 |
+| 11 | `ruff` rojo: 206 errores (mayoría preexistentes; deuda de lint + reglas nuevas de `ruff>=0.8` sin pin). pytest/mypy/vitest/build ya verdes. Decidir: sanear deuda o pinar ruff | Global | 2026-08-20 |
 
 ## Goles (gates)
 
@@ -46,7 +47,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | G1 (post Fase 1) | `pytest backend/tests/ display/tests/` verde · `mypy app/ --strict` = 0 · `vitest` verde | ✅ |
 | G2 (post Fase 2) | G1 + `npm run build` verde | ✅ |
 | G3 (post Fase 3) | G2 + smoke de importación backend | ✅ |
-| G4 (final) | CI equivalente completo (pytest + ruff + mypy + vitest + build) | ⏳ |
+| G4 (final) | CI equivalente completo (pytest + ruff + mypy + vitest + build) | 🟡 ruff rojo (206, preexistente) |
 
 ## Pendientes cross-workstream (no perder)
 
@@ -60,6 +61,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - **Watchdog backend**: implementar `sdnotify` (READY=1/WATCHDOG=1) + `Type=notify`, y recién entonces añadir `WatchdogSec=` (E lo dejó documentado, NO activado).
 - **Tests de migraciones**: añadir test unitario dedicado a las migraciones SQLite (hoy validado por smoke manual de E).
 - **Validar límites systemd en la Pi real**: `systemd-analyze verify` + `systemctl daemon-reload`.
+- **`ruff` (206 errores)**: deuda de lint preexistente + `ruff>=0.8` sin pin en CI (reglas nuevas `UP017`/`UP045`/`UP006`). 126 auto-fixables (`--fix`), 80 manuales. `scripts/`: 25 errores (incluye 2 `F821` undefined-name a revisar). Refactor solo introdujo 1 (`deps.py` `Optional[str]`).
 
 ## Log de ejecución
 
@@ -73,3 +75,6 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - 2026-08-20 — Fase 3 lanzada: E (arquitectura, secuencial).
 - 2026-08-20 — E ✅ (migraciones versionadas + red no bloqueante + límites systemd + split StateManager→WebSocketHub).
 - 2026-08-20 — **Gate G3 verde** (verificado por hilo principal): pytest 278 passed / 4 skipped / 0 failed · mypy 0 (25 files) · smoke import ok.
+- 2026-08-20 — Fase 4 lanzada: F (docs/consistencia).
+- 2026-08-20 — F ✅ (docs/SECURITY.md + README unificado + .env.example + versiones 0.3.0).
+- 2026-08-20 — **Gate G4**: pytest 278/4/0 · mypy 0 (25 files) · vitest 16/16 · build OK · **ruff rojo (206 preexistentes)**.

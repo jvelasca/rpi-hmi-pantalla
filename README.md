@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141-green?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SolidJS](https://img.shields.io/badge/SolidJS-1.9-blue?logo=solid)](https://www.solidjs.com/)
-[![Tests](https://img.shields.io/badge/tests-~277%20tests-green)]()
+[![Tests](https://img.shields.io/badge/tests-278%20tests%20(4%20skipped)-green)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/jvelasca/rpi-hmi-pantalla/blob/main/LICENSE)
 
 Plataforma HMI (Human-Machine Interface) para Raspberry Pi con pantalla táctil 3.5",
@@ -68,7 +68,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 | **Touch** | evdev | Driver ADS7846/XPT2046 |
 | **Frontend Web** | SolidJS + TypeScript + Vite + Tailwind v4 | Panel de control < 11 KB gzip |
 | **Systemd** | 2 services | Auto-boot backend + display (lightdm disabled) |
-| **Tests** | Pytest | ~180+ tests |
+| **Tests** | Pytest | 278 tests (4 skipped) |
 
 ---
 
@@ -158,6 +158,24 @@ python scripts/deploy.py --verify
 
 ---
 
+## Configuración de desarrollo
+
+El frontend (Vite) resuelve la URL del backend mediante la variable de entorno
+`VITE_API_URL` (por defecto `http://localhost:8000`). En desarrollo, el proxy de
+Vite (`frontend/vite.config.ts`) reenvía `/api`, `/ws` y `/health` a esa URL.
+Copia `frontend/.env.example` a `frontend/.env` para sobrescribirla:
+
+```bash
+# frontend/.env
+VITE_API_URL=http://localhost:8000
+```
+
+Si el backend corre en la Raspberry Pi (no en localhost), apunta `VITE_API_URL`
+a la IP de la Pi (p. ej. `http://192.168.88.211:8000`). En producción el frontend
+se sirve desde el propio backend (mismo origen), por lo que no se necesita.
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -171,7 +189,7 @@ rpi-hmi-pantalla/
 │   │   ├── models/              # Pydantic v2: LedState, ButtonState, etc.
 │   │   ├── services/            # StateManager, GPIOService (real/mock)
 │   │   └── (frontend servido desde frontend/dist/) 
-│   ├── tests/                   # ~222 tests (pytest)
+│   ├── tests/                   # pytest
 │   └── requirements.txt
 │
 ├── display/                     # Pygame DRM/KMS Display App
@@ -181,7 +199,7 @@ rpi-hmi-pantalla/
 │   │   ├── touch.py             # evdev ADS7846 (rotate=270)
 │   │   ├── widgets.py           # LedIndicator, ButtonWidget, Header, StatusBar
 │   │   └── theme.py             # 480x320 layout, colores
-│   ├── tests/                   # ~55 tests
+│   ├── tests/                   # pytest
 │   └── requirements.txt
 │
 ├── frontend/                    # SolidJS + TypeScript + Vite
@@ -210,34 +228,21 @@ rpi-hmi-pantalla/
 
 ## Tests
 
+Estado verificado por CI (2026-08-20): **278 tests (4 skipped)**.
+
 ```bash
-# Todos los tests (~277 total)
+# Suite completa (backend + display)
 pytest backend/tests/ display/tests/
 
-# Backend (~222 tests)
-pytest backend/tests/ -v
+# Backend
+pytest backend/tests/ -q
 
-# Display — mock mode, sin GPU (~55 tests)
-pytest display/tests/ -v
+# Display — mock mode, sin GPU
+pytest display/tests/ -q
+
+# Frontend (Vitest) + build
+cd frontend && npm run test && npm run build
 ```
-
-### Cobertura por área
-
-| Área | Tests | Archivos |
-|------|-------|----------|
-| **Lifespan & Config** | 24 | `test_main_lifespan.py`, `test_config.py` |
-| **WebSocket endpoint** | 11 | `test_ws_endpoint.py` |
-| **Modelos Pydantic** | 16 | `test_models.py` |
-| **StateManager** | 32 | `test_state_manager.py` (concurrencia, persistencia, singletons) |
-| **Persistencia SQLite** | 19 | `test_persistence.py` (rotación, edge cases) |
-| **GPIO** | 11 | `test_gpio_service.py` (mock, errores, detección) |
-| **SSH Manager** | 25 | `test_ssh_manager.py` |
-| **Deploy Service** | 18 | `test_deploy_service.py` (errores, parciales) |
-| **REST API** | 14 | `test_hmi.py` |
-| **Integración** | 52 | `test_integration.py` (REST+WS+admin+errores) |
-| **Display App** | 17 | `test_display_app.py` (CLI, WS sync, lifecycle) |
-| **Display UI** | 38 | `test_ui.py` (widgets, touch, screen, theme) |
-| **Total** | **277** | **13 archivos** |
 
 Alcanza:
 - ✅ Inicio/apagado del backend (lifespan)
