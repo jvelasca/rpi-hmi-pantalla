@@ -32,11 +32,14 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from backend.app.services.deploy_service import DeployService  # noqa: E402
 from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
-HOST = os.getenv("RPI_HOST", "192.168.88.211")
+HOST = os.getenv("RPI_HOST", "")
 USER = os.getenv("RPI_USER", "pi")
 PASSWORD = os.getenv("RPI_PASSWORD", "")
 KEY_PATH = os.getenv("RPI_KEY_PATH", "")
 PORT = int(os.getenv("RPI_PORT", "22"))
+
+if not HOST:
+    sys.exit("ERROR: RPI_HOST no configurado. Establece RPI_HOST en .env")
 
 # ── Paths unificados ──────────────────────────────────────────
 PI_BASE = "/home/pi/rpi_hmi"

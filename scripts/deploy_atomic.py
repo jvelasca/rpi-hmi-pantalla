@@ -49,18 +49,20 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from backend.app.services.deploy_service import DeployService  # noqa: E402
 from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
-HOST = os.getenv("RPI_HOST", "192.168.88.211")
+HOST = os.getenv("RPI_HOST", "")
 USER = os.getenv("RPI_USER", "pi")
 PASSWORD = os.getenv("RPI_PASSWORD", "")
 KEY_PATH = os.getenv("RPI_KEY_PATH", "")
 PORT = int(os.getenv("RPI_PORT", "22"))
+
+if not HOST:
+    sys.exit("ERROR: RPI_HOST no configurado. Establece RPI_HOST en .env")
 
 # ── Paths ──────────────────────────────────────────────────────
 PI_BASE = "/home/pi/rpi_hmi"
 RELEASES_DIR = f"{PI_BASE}/releases"
 CURRENT_LINK = f"{PI_BASE}/current"
 VENV_PY = f"{PI_BASE}/venv/bin/python3"
-VENV_PIP = f"{PI_BASE}/venv/bin/pip3"
 ROOT = Path(__file__).resolve().parents[1]
 
 # Regex semver estricto
@@ -227,8 +229,8 @@ def setup_environment_in_release(ssh: ParamikoSSHDriver, version: str) -> None:
     release = f"{RELEASES_DIR}/{version}"
     print(f"  Instalando dependencias desde {release}/backend/requirements.txt...")
     result = ssh.execute(
-        f"{VENV_PIP} install --upgrade pip -q && "
-        f"{VENV_PIP} install -r {release}/backend/requirements.txt -q 2>&1 | tail -5",
+        f"{VENV_PY} -m pip install --upgrade pip -q && "
+        f"{VENV_PY} -m pip install -r {release}/backend/requirements.txt -q 2>&1 | tail -5",
         timeout=300,
     )
     print(f"  pip exit={result.exit_code}")
