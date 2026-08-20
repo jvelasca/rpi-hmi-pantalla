@@ -10,7 +10,7 @@ Conflicts=lightdm.service
 Type=simple
 User=pi
 Group=pi
-SupplementaryGroups=video,input,render
+SupplementaryGroups=video input render
 WorkingDirectory=/home/pi/rpi_hmi
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_KMSDRM_DEVICE_INDEX=0

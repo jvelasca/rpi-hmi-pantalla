@@ -44,7 +44,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /dev/mem /sys/class/gpio
+ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /sys/class/gpio
 ReadOnlyPaths=/sys/class/thermal
 
 # ── Watchdog (ACTIVO) ────────────────────────────────────────

@@ -1,0 +1,6 @@
+# Configuración Linux: forzar LF en archivos que NO toleran CRLF.
+# systemd, sudoers y shell scripts fallan o se comportan mal con CRLF
+# cuando se despliegan a la Raspberry Pi vía SFTP desde Windows.
+config/systemd/*.service text eol=lf
+config/sudoers.d/* text eol=lf
+*.sh text eol=lf
