@@ -4,17 +4,22 @@ Permite leer el estado de red y aplicar cambios (IP estatica o DHCP)
 sobre la conexion ethernet activa usando NetworkManager.
 
 Endpoints:
-    GET  /api/network        -> Estado de red actual
-    POST /api/network/static -> Aplicar IP estatica
-    POST /api/network/dhcp   -> Cambiar a DHCP
+    GET  /api/network        -> Estado de red actual (publico, solo lectura)
+    POST /api/network/static -> Aplicar IP estatica (protegido en SECURITY_MODE=protected)
+    POST /api/network/dhcp   -> Cambiar a DHCP (protegido en SECURITY_MODE=protected)
+
+Seguridad: ``GET`` es publico porque solo lee estado. Los ``POST`` mutan la
+configuracion de red y exigen el header ``X-API-Key`` cuando
+``SECURITY_MODE=protected`` (via ``require_admin_api_key``).
 """
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from backend.app.api.deps import require_admin_api_key
 from backend.app.models.network import NetworkResult, NetworkStatus, StaticIpRequest
 from backend.app.services.network_service import network_service
 
@@ -25,7 +30,7 @@ router = APIRouter(prefix="/api/network", tags=["Network"])
 
 @router.get("", response_model=NetworkStatus)
 async def get_network() -> NetworkStatus:
-    """Estado actual de la red.
+    """Estado actual de la red (publico, solo lectura).
 
     Returns:
         NetworkStatus con interfaz, IP, modo (dhcp/static), gateway y DNS.
@@ -33,9 +38,11 @@ async def get_network() -> NetworkStatus:
     return network_service.get_status()
 
 
-@router.post("/static", response_model=NetworkResult)
+@router.post("/static", response_model=NetworkResult, dependencies=[Depends(require_admin_api_key)])
 async def set_static_ip(request: StaticIpRequest) -> NetworkResult:
     """Aplica una configuracion de IP estatica.
+
+    Requiere autenticacion (header X-API-Key) cuando SECURITY_MODE=protected.
 
     AVISO: al re-activar la conexion la sesion actual (web/SSH) se cortara
     temporalmente hasta que la nueva IP este activa.
@@ -54,9 +61,11 @@ async def set_static_ip(request: StaticIpRequest) -> NetworkResult:
     return result
 
 
-@router.post("/dhcp", response_model=NetworkResult)
+@router.post("/dhcp", response_model=NetworkResult, dependencies=[Depends(require_admin_api_key)])
 async def set_dhcp() -> NetworkResult:
     """Cambia la conexion a DHCP (IP automatica).
+
+    Requiere autenticacion (header X-API-Key) cuando SECURITY_MODE=protected.
 
     AVISO: al re-activar la conexion la sesion actual (web/SSH) se cortara
     temporalmente hasta que el router asigne una nueva IP.

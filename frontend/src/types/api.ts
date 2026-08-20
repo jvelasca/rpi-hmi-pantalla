@@ -80,11 +80,11 @@ export type ClientMessage =
   | { type: "subscribe"; topics: WsTopic[]; version: string };
 
 export type ServerMessage =
-  | { type: "status_update"; data: SystemStatus; timestamp: string; version: string; sequence?: number }
-  | { type: "led_changed"; data: LedState; timestamp: string; version: string; sequence?: number }
-  | { type: "button_pressed"; data: ButtonState; timestamp: string; version: string; sequence?: number }
-  | { type: "button_released"; data: ButtonState; timestamp: string; version: string; sequence?: number }
-  | { type: "display_changed"; data: DisplayInfo; timestamp: string; version: string; sequence?: number }
-  | { type: "display_command"; data: { action: string }; timestamp: string; version: string; sequence?: number }
-  | { type: "display_settings_changed"; data: DisplaySettings; timestamp: string; version: string; sequence?: number }
-  | { type: "error"; data: { code: string; message: string }; timestamp: string; version: string };
+  | { type: "status_update"; data: SystemStatus; timestamp: string; version: string; sequence: number | null }
+  | { type: "led_changed"; data: LedState; timestamp: string; version: string; sequence: number | null }
+  | { type: "button_pressed"; data: ButtonState; timestamp: string; version: string; sequence: number | null }
+  | { type: "button_released"; data: ButtonState; timestamp: string; version: string; sequence: number | null }
+  | { type: "display_changed"; data: DisplayInfo; timestamp: string; version: string; sequence: number | null }
+  | { type: "display_command"; data: { action: string }; timestamp: string; version: string; sequence: number | null }
+  | { type: "display_settings_changed"; data: DisplaySettings; timestamp: string; version: string; sequence: number | null }
+  | { type: "error"; data: { code: string; message: string }; timestamp: string; version: string; sequence: number | null };

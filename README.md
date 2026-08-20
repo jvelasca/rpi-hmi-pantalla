@@ -21,9 +21,14 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 |------------|---------|
 | **Placa** | Raspberry Pi Model B+ Rev 1.2 (BCM2835, ARMv6, 512MB RAM) |
 | **Pantalla** | 3.5" SPI TFT 480×320 ILI9486 + táctil XPT2046 |
-| **LED** | GPIO 17 (pin físico 11) con resistencia 220Ω |
+| **LED** | **Virtual** — sin GPIO físico (`backend/config/devices.yaml` usa `pin: null`, `virtual: true`) |
+| **Touch IRQ** | GPIO 17 (`TP_IRQ`/pendown del XPT2046) — **NO** conectar un LED aquí |
 | **Red** | Ethernet — IP estática `<RASPBERRY_IP>` |
 | **OS** | Raspberry Pi OS Bookworm Lite 32-bit, kernel 6.12 |
+
+> **Aviso:** el LED es **virtual** (solo se muestra en pantalla y web). No
+> conectes un LED físico a **GPIO 17**: ese pin es la interrupción del panel
+> táctil (XPT2046 `TP_IRQ`/pendown) y un LED ahí interferiría con el touch.
 
 ---
 

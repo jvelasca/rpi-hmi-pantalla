@@ -819,15 +819,28 @@ class TestScreenDRMFallback:
     """Tests para fallback de DRM a mock."""
 
     def test_screen_initializes_mock_when_drm_unavailable(self) -> None:
-        """Si DRM no esta disponible, Screen debe inicializarse en modo mock."""
+        """Si DRM falla y el fallback está permitido, Screen cae a modo mock."""
         from unittest.mock import patch
 
         from display.ui.screen import Screen
 
-        with patch("display.ui.screen.pygame.display.init", side_effect=Exception("No video")):
-            screen = Screen(mock=True)
-            assert screen.mock is True
-            screen.cleanup()
+        screen = Screen(auto_detect=False, mock=False, allow_mock_fallback=True)
+        with patch.object(screen, "_init_drm", side_effect=Exception("No video")):
+            assert screen.init() is True
+        assert screen.mock is True
+        screen.cleanup()
+
+    def test_screen_returns_false_when_drm_fails_without_fallback(self) -> None:
+        """Si DRM falla y el fallback está deshabilitado, init() devuelve False."""
+        from unittest.mock import patch
+
+        from display.ui.screen import Screen
+
+        screen = Screen(auto_detect=False, mock=False, allow_mock_fallback=False)
+        with patch.object(screen, "_init_drm", side_effect=Exception("No video")):
+            assert screen.init() is False
+        assert screen.mock is False
+        screen.cleanup()
 
     def test_screen_size_on_init(self) -> None:
         """Screen se inicializa con las dimensiones correctas."""

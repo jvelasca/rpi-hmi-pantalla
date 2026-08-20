@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@solidjs/testing-library": "^0.8.10",

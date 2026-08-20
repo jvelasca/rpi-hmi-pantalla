@@ -25,19 +25,53 @@ from display.ui.theme import BACKGROUND, BASE_HEIGHT, BASE_WIDTH
 logger = logging.getLogger("rpi_hmi.display.screen")
 
 
+def _drm_connector_state() -> str:
+    """Lee el estado de los conectores DRM vía sysfs.
+
+    Returns:
+        "connected"    si al menos un conector reporta "connected".
+        "disconnected" si todos los conectores legibles reportan lo contrario.
+        "unknown"      si no hay sysfs DRM o no es legible.
+    """
+    status_files = sorted(Path("/sys/class/drm").glob("card0-*/status"))
+    if not status_files:
+        return "unknown"
+
+    connected = False
+    readable = False
+    for status_file in status_files:
+        try:
+            state = status_file.read_text().strip().lower()
+        except OSError:
+            continue
+        readable = True
+        if state == "connected":
+            connected = True
+
+    if not readable:
+        return "unknown"
+    return "connected" if connected else "disconnected"
+
+
 def _detect_display() -> tuple[str, str, int, int]:
     """Detecta la configuración del display físico.
 
     Prioridad:
-    1. /dev/dri/card0 → DRM/KMS (piscreen overlay)
+    1. /dev/dri/card0 con conector conectado (o estado desconocido) → DRM/KMS
     2. /dev/fb1       → Framebuffer ILI9486
     3. Fallback        → Mock mode (480x320 ventana)
+
+    En PC (Windows/sin DRM) no existen /dev/dri ni /dev/fb, por lo que
+    la detección resuelve a mock.
 
     Returns:
         (driver_type, device_path, width, height)
     """
     if Path("/dev/dri/card0").exists():
-        return ("drm", "/dev/dri/card0", BASE_WIDTH, BASE_HEIGHT)
+        state = _drm_connector_state()
+        if state in ("connected", "unknown"):
+            return ("drm", "/dev/dri/card0", BASE_WIDTH, BASE_HEIGHT)
+        # Conector desconectado: probar framebuffer antes que mock
     if Path("/dev/fb1").exists():
         return ("fb", "/dev/fb1", BASE_WIDTH, BASE_HEIGHT)
     return ("mock", "", BASE_WIDTH, BASE_HEIGHT)
@@ -71,6 +105,7 @@ class Screen:
         device: str = "/dev/dri/card0",
         fullscreen: bool = True,
         mock: bool = False,
+        allow_mock_fallback: bool = True,
     ) -> None:
         self.width = width
         self.height = height
@@ -78,6 +113,7 @@ class Screen:
         self.device = device
         self.fullscreen = fullscreen
         self.mock = mock
+        self.allow_mock_fallback = allow_mock_fallback
 
         if auto_detect:
             detected = _detect_display()
@@ -116,8 +152,7 @@ class Screen:
 
         except Exception as exc:
             logger.error("Error inicializando Pygame: %s", exc)
-            # Intentar modo mock como fallback
-            if not self.mock:
+            if self.allow_mock_fallback and not self.mock:
                 logger.info("Reintentando en modo mock...")
                 self.mock = True
                 return self.init()

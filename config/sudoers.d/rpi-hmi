@@ -1,0 +1,14 @@
+# rpi-hmi — regla sudoers minima para el servicio backend (User=pi)
+#
+# NetworkService ejecuta `sudo nmcli ...` para cambiar la configuracion de red
+# (IP estatica / DHCP). Esta regla permite a `pi` ejecutar UNICAMENTE nmcli
+# sin password. No concede ningun otro comando.
+#
+# Instalacion (en la Pi, como root):
+#   sudo install -m 0440 config/sudoers.d/rpi-hmi /etc/sudoers.d/
+#   sudo visudo -c
+#
+# La ruta debe coincidir con la ubicacion real de nmcli (`which nmcli`).
+# En Raspberry Pi OS Bookworm es /usr/bin/nmcli.
+
+pi ALL=(root) NOPASSWD: /usr/bin/nmcli

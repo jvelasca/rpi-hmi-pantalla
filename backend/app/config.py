@@ -19,6 +19,8 @@ Variables de entorno:
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,6 +51,11 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8000, ge=1, le=65535, description="Puerto HTTP")
 
     # Seguridad
+    security_mode: Literal["local", "protected"] = Field(
+        default="local",
+        description="Modo de seguridad. 'local' = HMI sin auth (prototipo domestico). "
+                    "'protected' = endpoints que mutan hardware/red exigen header X-API-Key.",
+    )
     admin_api_key: str = Field(
         default="",
         description="API key para proteger endpoints administrativos /admin/*",
@@ -85,6 +92,13 @@ class Settings(BaseSettings):
         import logging
 
         logger = logging.getLogger("rpi_hmi.config")
+
+        if self.security_mode == "protected" and not self.admin_api_key:
+            logger.critical(
+                "SECURITY_MODE=protected pero ADMIN_API_KEY no configurada. "
+                "Los endpoints que mutan hardware/red quedan inaccesibles "
+                "(exigen X-API-Key)."
+            )
 
         if self.enable_admin_api and not self.admin_api_key:
             logger.critical(

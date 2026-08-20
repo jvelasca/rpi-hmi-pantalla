@@ -132,7 +132,13 @@ class DisplayApp:
         self._button_press_duration: int = 2
 
         # Screen (se inicializa después de saber mock)
-        self.screen = Screen(auto_detect=not mock, mock=mock)
+        # En modo real (no --mock) NO permitimos fallback silencioso a mock:
+        # si DRM falla, init() devuelve False → run() devuelve 1 → systemd reinicia.
+        self.screen = Screen(
+            auto_detect=not mock,
+            mock=mock,
+            allow_mock_fallback=mock,
+        )
 
         # Touch
         self.touch: TouchHandler | None = None
