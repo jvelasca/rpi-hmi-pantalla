@@ -15,6 +15,7 @@ configuracion de red y exigen el header ``X-API-Key`` cuando
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,7 +36,9 @@ async def get_network() -> NetworkStatus:
     Returns:
         NetworkStatus con interfaz, IP, modo (dhcp/static), gateway y DNS.
     """
-    return network_service.get_status()
+    # get_status() es sincrono (subprocess.run); se ejecuta en un thread
+    # para no bloquear el event loop de FastAPI.
+    return await asyncio.to_thread(network_service.get_status)
 
 
 @router.post("/static", response_model=NetworkResult, dependencies=[Depends(require_admin_api_key)])
@@ -50,7 +53,8 @@ async def set_static_ip(request: StaticIpRequest) -> NetworkResult:
     Returns:
         NetworkResult con el resultado.
     """
-    result = network_service.apply_static(
+    result = await asyncio.to_thread(
+        network_service.apply_static,
         ip_address=request.ip_address,
         prefix=request.prefix,
         gateway=request.gateway,
@@ -73,7 +77,7 @@ async def set_dhcp() -> NetworkResult:
     Returns:
         NetworkResult con el resultado.
     """
-    result = network_service.apply_dhcp()
+    result = await asyncio.to_thread(network_service.apply_dhcp)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
     return result

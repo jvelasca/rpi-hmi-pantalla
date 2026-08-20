@@ -17,6 +17,22 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# ── Limites de recursos ────────────────────────────────────
+# MemoryMax: limita la RAM (RSS+swap) del proceso. 256M cubre el backend
+#   FastAPI + uvicorn en una Pi con 1 GB; ajustar si se anaden features.
+MemoryMax=256M
+# CPUQuota: % de CPU sobre el total de nucleos (100% = 1 nucleo). Evita
+#   que un bucle anormal acapare la CPU de la Pi (un solo nucleo en Pi Zero/W).
+CPUQuota=100%
+# TasksMax: numero maximo de procesos/hilos. Suficiente para uvicorn,
+#   el pool de threads de asyncio.to_thread y subprocesses de nmcli.
+TasksMax=256
+# LimitNOFILE: descriptores de fichero max. Asegura que no se agote con
+#   muchas conexiones WebSocket simultaneas.
+LimitNOFILE=65536
+# UMask: permisos restrictivos para ficheros/dirs creados (0700/0600).
+UMask=0077
+
 # ── Hardening ──────────────────────────────────────────────
 NoNewPrivileges=true
 PrivateTmp=true
@@ -29,6 +45,15 @@ RestrictSUIDSGID=true
 LockPersonality=true
 ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /dev/mem /sys/class/gpio
 ReadOnlyPaths=/sys/class/thermal
+
+# ── Watchdog (MEJORA FUTURA, NO ACTIVAR AUN) ────────────────
+# NO anadir WatchdogSec= hasta implementar la notificacion real del
+# servicio mediante sd_notify (p. ej. la libreria `sdnotify` en Python
+# o WATCHDOG_USEC via sd_notify()). Sin un notificador activo, systemd
+# reiniciaria el servicio cada N segundos al no recibir WATCHDOG=1.
+#   WatchdogSec=30s
+#   ExecStart con soporte sd_notify: notificar READY=1 al arrancar y
+#   WATCHDOG=1 periodicamente (ver man sd_notify y systemd.service).
 
 [Install]
 WantedBy=multi-user.target

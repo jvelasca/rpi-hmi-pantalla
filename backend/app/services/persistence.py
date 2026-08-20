@@ -40,6 +40,14 @@ class Persistence:
 
     MAX_EVENT_LOG_ROWS = 10000
 
+    # Migraciones incrementales. Cada item es (version, nombre, metodo).
+    # El metodo devuelve None; runner comprueba que solo se aplica si
+    # version > version actual registrada en schema_version.
+    _MIGRATIONS: list[tuple[int, str, str]] = [
+        (1, "schema_inicial", "_migration_001"),
+        (2, "indice_event_log", "_migration_002"),
+    ]
+
     def __init__(self, db_path: str) -> None:
         self.db_path: str = db_path
         self._conn: aiosqlite.Connection | None = None
@@ -58,7 +66,61 @@ class Persistence:
         # Habilitar WAL para mejor concurrencia
         await self._conn.execute("PRAGMA journal_mode=WAL")
 
-        # Crear tablas si no existen
+        # La tabla de versionado debe existir antes de ejecutar migraciones.
+        await self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
+        )
+
+        # Compatibilidad con BD existente: si las tablas legacy ya existen
+        # pero no hay registro de version, se marca la version inicial SIN
+        # volver a crearlas (no se pierden datos).
+        if await self._has_legacy_tables() and await self._get_schema_version() == 0:
+            await self._conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (1)")
+            await self._conn.commit()
+            logger.info("BD existente detectada: schema version marcada en 1")
+
+        # Ejecutar migraciones pendientes de forma incremental.
+        for version, _name, method_name in self._MIGRATIONS:
+            if version <= await self._get_schema_version():
+                continue
+            method = getattr(self, method_name)
+            await method()
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (?)", (version,)
+            )
+            await self._conn.commit()
+            logger.info("Migracion %s aplicada (version=%d)", method_name, version)
+
+        await self._conn.commit()
+        logger.info("Persistencia inicializada: %s", self.db_path)
+
+    async def _has_legacy_tables(self) -> bool:
+        """True si las tablas del esquema original ya existen."""
+        if not self._conn:
+            return False
+        cursor = await self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='led_state'"
+        )
+        row = await cursor.fetchone()
+        return row is not None
+
+    async def _get_schema_version(self) -> int:
+        """Devuelve la version de esquema registrada (0 si no hay)."""
+        if not self._conn:
+            return 0
+        cursor = await self._conn.execute("SELECT MAX(version) FROM schema_version")
+        row = await cursor.fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    async def get_schema_version(self) -> int:
+        """Version de esquema actual (API publica de introspeccion)."""
+        return await self._get_schema_version()
+
+    async def _migration_001(self) -> None:
+        """Esquema inicial: tablas led_state, button_state, event_log y display_settings."""
+        assert self._conn is not None
         # NOTA: gpio_pin NO se almacena en BD — la fuente unica de verdad
         #       del hardware es devices.yaml, nunca SQLite.
         await self._conn.executescript("""
@@ -99,8 +161,12 @@ class Persistence:
                 VALUES (1, 'dejavu', 'medium', datetime('now'));
         """)
 
-        await self._conn.commit()
-        logger.info("Persistencia inicializada: %s", self.db_path)
+    async def _migration_002(self) -> None:
+        """Anade indice sobre event_log.timestamp para consultas por fecha."""
+        assert self._conn is not None
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_timestamp ON event_log (timestamp)"
+        )
 
     async def close(self) -> None:
         """Cierra la conexion a la BD."""

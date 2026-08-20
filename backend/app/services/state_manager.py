@@ -31,6 +31,7 @@ from typing import Any, Literal
 
 from backend.app.models.events import ServerMessage, SubscriptionTopic
 from backend.app.models.hmi import ButtonState, DisplayInfo, DisplaySettings, LedState, SystemStatus
+from backend.app.services.ws_hub import WebSocketHub
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,10 @@ class StateManager:
         self._lock: threading.Lock = threading.Lock()
         self._start_time: float = time.monotonic()
         self._persistence: Any = None  # Persistence instance (seteado en set_persistence)
-        self._sequence: int = 0  # Contador de eventos para ordenamiento WS
         self._pending_persistence_tasks: set[asyncio.Task[Any]] = set()  # Track persistence tasks for drain
+
+        # Hub WebSocket: suscripciones, secuencia y broadcast serializado.
+        self._hub: WebSocketHub = WebSocketHub(lock=self._lock)
 
         # Cargar pin desde devices.yaml (fuente unica de verdad)
         pin = self._load_led_pin()
@@ -60,10 +63,7 @@ class StateManager:
         self._display_settings: DisplaySettings = DisplaySettings(
             font_family="dejavu", text_size="medium"
         )
-        self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
-        self._broadcast_queues: dict[str, asyncio.Queue[Any]] = {}  # topic -> queue for serialized broadcasts
-        self._broadcast_workers: dict[str, asyncio.Task[Any]] = {}  # topic -> worker task
 
     def set_persistence(self, persistence: Any) -> None:
         """Registra la capa de persistencia.
@@ -226,9 +226,8 @@ class StateManager:
         """
         label = "ENCENDIDO" if state else "APAGADO"
         with self._lock:
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             self._led_state = LedState(state=state, label=label, gpio_pin=self._led_state.gpio_pin)
-            seq = self._sequence
             new_state = self._led_state
 
         # Notificar a la HAL para actualizar GPIO fisico
@@ -247,7 +246,7 @@ class StateManager:
             data=new_state.model_dump(mode="json"),
             sequence=seq,
         )
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         self._log_event("led_" + ("on" if new_state.state else "off"), {"gpio_pin": new_state.gpio_pin})
         logger.info("LED -> %s (seq=%d)", new_state.label, seq)
         return new_state
@@ -266,9 +265,8 @@ class StateManager:
             new_state_val = not self._led_state.state
             label = "ENCENDIDO" if new_state_val else "APAGADO"
             gpio_pin = self._led_state.gpio_pin
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             self._led_state = LedState(state=new_state_val, label=label, gpio_pin=gpio_pin)
-            seq = self._sequence
             new_state = self._led_state
 
         # Notificar a la HAL para actualizar GPIO fisico
@@ -287,7 +285,7 @@ class StateManager:
             data=new_state.model_dump(mode="json"),
             sequence=seq,
         )
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         self._log_event("led_" + ("on" if new_state.state else "off"), {"gpio_pin": new_state.gpio_pin})
         logger.info("LED -> %s (seq=%d)", new_state.label, seq)
         return new_state
@@ -299,20 +297,19 @@ class StateManager:
             ButtonState actualizado.
         """
         with self._lock:
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             count = self._button_state.press_count + 1
             self._button_state = ButtonState(
                 pressed=True,
                 press_count=count,
             )
-            seq = self._sequence
             new_state = self._button_state
 
         # Persistir
         self._persist_button(new_state.press_count)
 
         msg = ServerMessage(type="button_pressed", data=new_state.model_dump(mode="json"), sequence=seq)
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         self._log_event("button_pressed", {"count": new_state.press_count})
         logger.info("Boton presionado (count=%d, seq=%d)", new_state.press_count, seq)
         return new_state
@@ -324,16 +321,15 @@ class StateManager:
             ButtonState actualizado.
         """
         with self._lock:
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             self._button_state = ButtonState(
                 pressed=False,
                 press_count=self._button_state.press_count,
             )
-            seq = self._sequence
             new_state = self._button_state
 
         msg = ServerMessage(type="button_released", data=new_state.model_dump(mode="json"), sequence=seq)
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         logger.info("Boton liberado (seq=%d)", seq)
         return new_state
 
@@ -346,17 +342,16 @@ class StateManager:
             driver: Nombre del driver kernel.
         """
         with self._lock:
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             self._display_info = DisplayInfo(
                 connected=connected,
                 resolution=resolution,
                 driver=driver,
             )
-            seq = self._sequence
             new_state = self._display_info
 
         msg = ServerMessage(type="display_changed", data=new_state.model_dump(mode="json"), sequence=seq)
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         logger.info("Display: connected=%s, %s, %s (seq=%d)", connected, resolution, driver, seq)
 
     # ── Display Settings (fuente / tamano) ─────────────────────
@@ -386,12 +381,11 @@ class StateManager:
             Nuevo DisplaySettings.
         """
         with self._lock:
-            self._sequence += 1
+            seq = self._hub.next_sequence()
             self._display_settings = DisplaySettings(
                 font_family=font_family,
                 text_size=text_size,
             )
-            seq = self._sequence
             new_state = self._display_settings
 
         # Persistir
@@ -403,7 +397,7 @@ class StateManager:
             data=new_state.model_dump(mode="json"),
             sequence=seq,
         )
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         self._log_event(
             "display_settings_changed",
             {"font_family": font_family, "text_size": text_size},
@@ -424,15 +418,14 @@ class StateManager:
                     'config' | 'main'.
         """
         with self._lock:
-            self._sequence += 1
-            seq = self._sequence
+            seq = self._hub.next_sequence()
 
         msg = ServerMessage(
             type="display_command",
             data={"action": action},
             sequence=seq,
         )
-        self._schedule_broadcast(msg)
+        self._hub.schedule_broadcast(msg)
         self._log_event("display_command", {"action": action})
         logger.info("Comando display enviado: %s (seq=%d)", action, seq)
 
@@ -446,7 +439,7 @@ class StateManager:
         """
         with self._lock:
             # Clientes unicos (set comprehension sobre todos los topics)
-            unique_clients = {ws for subs in self._subscribers.values() for ws in subs}
+            unique_clients = {ws for subs in self._hub.subscribers.values() for ws in subs}
             uptime = time.monotonic() - self._start_time
             return SystemStatus.from_manager(
                 led=self._led_state,
@@ -470,9 +463,7 @@ class StateManager:
         if topics is None:
             topics = list(SubscriptionTopic)
 
-        with self._lock:
-            for topic in topics:
-                self._subscribers.setdefault(topic.value, set()).add(websocket)
+        self._hub.subscribe(websocket, topics)
 
         # Enviar estado actual inmediatamente
         status = self.get_status()
@@ -487,9 +478,7 @@ class StateManager:
         Args:
             websocket: Conexion WebSocket a eliminar.
         """
-        with self._lock:
-            for subscribers in self._subscribers.values():
-                subscribers.discard(websocket)
+        self._hub.unsubscribe(websocket)
 
     # ── Callback hardware ──────────────────────────────────────
 
@@ -585,76 +574,18 @@ class StateManager:
 
     # ── Interno ────────────────────────────────────────────────
 
+    @property
+    def _sequence(self) -> int:
+        """Ultimo numero de secuencia emitido (delegado al WebSocketHub).
+
+        Se conserva como alias de solo lectura para compatibilidad con
+        tests e introspeccion; las mutaciones pasan por hub.next_sequence().
+        """
+        return self._hub.sequence
+
     def _schedule_broadcast(self, message: ServerMessage) -> None:
-        """Programa un broadcast serializado por topico.
-
-        Usa una cola por topico para garantizar que los mensajes
-        se entregan en orden de sequence a cada cliente.
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            topic = message.type.split("_")[0]  # "led_changed" -> "led"
-
-            # Lazy-init queue and worker for this topic
-            if topic not in self._broadcast_queues:
-                self._broadcast_queues[topic] = asyncio.Queue()
-                self._broadcast_workers[topic] = loop.create_task(
-                    self._broadcast_worker(topic)
-                )
-
-            # Put message in the queue (non-blocking)
-            self._broadcast_queues[topic].put_nowait(message)
-        except RuntimeError:
-            logger.debug("Broadcast omitido (sin event loop): %s", message.type)
-
-    async def _broadcast_worker(self, topic: str) -> None:
-        """Worker que serializa broadcasts para un topico.
-
-        Garantiza que los mensajes se envian en orden FIFO
-        a todos los suscriptores del topico.
-        """
-        queue = self._broadcast_queues.get(topic)
-        if not queue:
-            return
-
-        while True:
-            try:
-                message = await queue.get()
-                await self._broadcast(message)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("Error en broadcast worker para %s", topic)
-
-    async def _broadcast(self, message: ServerMessage) -> None:
-        """Envia un mensaje a todos los suscriptores del topico correspondiente.
-
-        Args:
-            message: ServerMessage a enviar.
-        """
-        topic = message.type.split("_")[0]  # "led_changed" -> "led"
-        payload = message.model_dump(mode="json")
-
-        subscribers: set[Any] = set()
-        with self._lock:
-            # Suscriptores especificos del topico + suscriptores de "system"
-            for t in (topic, SubscriptionTopic.SYSTEM.value):
-                if t in self._subscribers:
-                    subscribers.update(self._subscribers[t])
-
-        dead: list[Any] = []
-        for ws in subscribers:
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                dead.append(ws)
-
-        # Limpiar conexiones muertas
-        if dead:
-            with self._lock:
-                for s in self._subscribers.values():
-                    for d in dead:
-                        s.discard(d)
+        """Programa un broadcast serializado por topico (delegado al hub)."""
+        self._hub.schedule_broadcast(message)
 
 
 # ── Singleton ──────────────────────────────────────────────────

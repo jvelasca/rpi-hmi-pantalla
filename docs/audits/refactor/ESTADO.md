@@ -5,7 +5,7 @@
 
 ## Estado general
 
-- **Fase actual:** 2 — Seguridad y hardening (completada, gate G2 verde)
+- **Fase actual:** 3 — Arquitectura (completada, gate G3 verde)
 - **Última actualización:** 2026-08-20
 - **Commit base (restauración):** `64b4812`
 - **Baseline puerta de calidad:** pytest = 16 FAIL / 261 PASS · mypy = 57 errores · vitest = 16 PASS
@@ -19,7 +19,7 @@
 | B | Seguridad red + README + sudoers | 2 | ✅ completado | `handoffs/B.md` | — |
 | C | Display DRM hardening | 2 | ✅ completado | `handoffs/C.md` | — |
 | D | Frontend hardening | 2 | ✅ completado | `handoffs/D.md` | — |
-| E | Arquitectura (StateManager/persistencia/red/watchdog) | 3 | ⏳ pendiente | — | — |
+| E | Arquitectura (StateManager/persistencia/red/watchdog) | 3 | ✅ completado | `handoffs/E.md` | — |
 | F | Docs/consistencia | 4 | ⏳ pendiente | — | — |
 
 Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqueado
@@ -37,6 +37,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | 7 | `GET /api/network` queda público (solo lectura); solo POST mutadores exigen auth. No se movió a `/admin/network` (evita romper frontend). `ssh.py`/`deploy.py` sin consolidar en `require_admin_api_key` (futuro) | B | 2026-08-20 |
 | 8 | `Screen.allow_mock_fallback` (default True); en modo real se cablea `=mock` para que DRM falle → exit 1. systemd ya cumplía `Restart=on-failure`+`RestartSec=5` (sin cambios) | C | 2026-08-20 |
 | 9 | Frontend: Zod v4 + `sequence: number\|null` obligatorio + `lastSequence` init `null` (evita resync espurio). `package-lock` versión raíz alineada 0.1.0→0.3.0. Falta `frontend/.env.example` (futuro) | D | 2026-08-20 |
+| 10 | Migraciones versionadas (`schema_version` + `_MIGRATIONS`); red via `asyncio.to_thread`; límites systemd (`MemoryMax=256M`, `CPUQuota=100%`, `TasksMax=256`, `LimitNOFILE=65536`, `UMask=0077`); `WebSocketHub` con lock compartido y `_sequence` como property read-only. Watchdog NO activado (requiere `sdnotify`) | E | 2026-08-20 |
 
 ## Goles (gates)
 
@@ -44,7 +45,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 |---|---|---|
 | G1 (post Fase 1) | `pytest backend/tests/ display/tests/` verde · `mypy app/ --strict` = 0 · `vitest` verde | ✅ |
 | G2 (post Fase 2) | G1 + `npm run build` verde | ✅ |
-| G3 (post Fase 3) | G2 + smoke de importación backend | ⏳ |
+| G3 (post Fase 3) | G2 + smoke de importación backend | ✅ |
 | G4 (final) | CI equivalente completo (pytest + ruff + mypy + vitest + build) | ⏳ |
 
 ## Pendientes cross-workstream (no perder)
@@ -56,6 +57,9 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - **`SECURITY_MODE=protected` no cubre aún `/admin/*`**: ssh/deploy mantienen su propio `_verify_api_key` (exigen key siempre, independiente de `SECURITY_MODE`). Evaluar coherencia en `docs/SECURITY.md` (F).
 - **`frontend/.env.example`** para documentar `VITE_API_URL` (D lo dejó fuera; alcance F).
 - **`driver=="fb"` no distinguido en `Screen.init()`** (solo distingue mock vs no-mock); preexistente, fuera de alcance de C.
+- **Watchdog backend**: implementar `sdnotify` (READY=1/WATCHDOG=1) + `Type=notify`, y recién entonces añadir `WatchdogSec=` (E lo dejó documentado, NO activado).
+- **Tests de migraciones**: añadir test unitario dedicado a las migraciones SQLite (hoy validado por smoke manual de E).
+- **Validar límites systemd en la Pi real**: `systemd-analyze verify` + `systemctl daemon-reload`.
 
 ## Log de ejecución
 
@@ -66,3 +70,6 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - 2026-08-20 — Fase 2 lanzada: B, C y D en paralelo.
 - 2026-08-20 — B ✅ (seguridad red + README + sudoers), C ✅ (DRM hardening), D ✅ (frontend Zod + resync + VITE_API_URL).
 - 2026-08-20 — **Gate G2 verde** (verificado por hilo principal): pytest 278 passed / 4 skipped / 0 failed · mypy 0 errores (24 files) · vitest 16/16 · build OK.
+- 2026-08-20 — Fase 3 lanzada: E (arquitectura, secuencial).
+- 2026-08-20 — E ✅ (migraciones versionadas + red no bloqueante + límites systemd + split StateManager→WebSocketHub).
+- 2026-08-20 — **Gate G3 verde** (verificado por hilo principal): pytest 278 passed / 4 skipped / 0 failed · mypy 0 (25 files) · smoke import ok.
