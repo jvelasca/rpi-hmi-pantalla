@@ -80,6 +80,39 @@ jobs:
           cd backend
           python -m mypy app/ --config-file pyproject.toml
 
+  security:
+    name: Security audit (pip-audit + bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r display/requirements.txt
+
+      - name: Audit Python dependencies (pip-audit)
+        run: |
+          pip install pip-audit
+          # Audita el fichero de requisitos; si pip-audit falla (p. ej. por la
+          # versión de Python en uso), cae al modo sin argumentos que audita el
+          # entorno ya instalado.
+          pip-audit -r backend/requirements.txt || pip-audit
+
+      - name: Run bandit static security analysis
+        run: |
+          pip install bandit
+          # --severity-level medium: solo se bloquea el CI con hallazgos de
+          # severidad media o alta; los de severidad baja se informan pero no
+          # impiden el merge. Se excluyen los tests de backend y display.
+          bandit -r backend/app display --exclude backend/tests,display/tests -q --severity-level medium
+
   frontend:
     name: Frontend (build + test)
     runs-on: ubuntu-latest
@@ -97,6 +130,12 @@ jobs:
         run: |
           cd frontend
           npm ci
+
+      - name: Audit npm dependencies
+        run: |
+          cd frontend
+          # Falla solo con vulnerabilidades altas/críticas; las moderadas no bloquean.
+          npm audit --audit-level=high
 
       - name: Run frontend tests
         run: |

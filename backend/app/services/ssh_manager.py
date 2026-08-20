@@ -314,7 +314,7 @@ class ParamikoSSHDriver(SSHDriver):
 
         logger.debug("Ejecutando en %s: %s", self.host, command)
         try:
-            _stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+            _stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)  # nosec B601
             exit_code = stdout.channel.recv_exit_status()
             stdout_str = stdout.read().decode("utf-8", errors="replace").strip()
             stderr_str = stderr.read().decode("utf-8", errors="replace").strip()

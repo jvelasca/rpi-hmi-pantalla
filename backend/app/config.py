@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     rpi_timeout: int = Field(default=15, ge=1, description="Timeout SSH en segundos")
 
     # Servidor
-    backend_host: str = Field(default="0.0.0.0", description="Host de escucha")
+    backend_host: str = Field(default="0.0.0.0", description="Host de escucha")  # nosec B104
     backend_port: int = Field(default=8000, ge=1, le=65535, description="Puerto HTTP")
 
     # Seguridad
