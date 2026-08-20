@@ -1,9 +1,12 @@
-# Punto de arranque — Próximo chat: Despliegue y cierre de pendientes
+# Punto de arranque — Despliegue y cierre de la FASE FINAL
 
-> **LÉEME PRIMERO.** Este archivo es el punto de entrada para un **NUEVO chat de agente**.
-> Su objetivo: coordinar subagentes para **desplegar** lo ya refactorizado y **cerrar los
-> pendientes** que el refactor dejó documentados. Es autocontenido: no hace falta haber
-> participado en el chat anterior.
+> **LÉEME PRIMERO.** Este archivo es el punto de entrada para un **NUEVO chat de agente**
+> que debe **coordinar subagentes** para (1) desplegar lo ya refactorizado y (2) cerrar los
+> pendientes que dejó el refactor **más la segunda auditoría externa** (revisión del commit
+> `d16f991`, 20/08/2026).
+>
+> Es **autocontenido**: no hace falta haber participado en el chat anterior. Solo tienes que
+> leer este documento y los archivos que aquí se referencian.
 
 ---
 
@@ -14,7 +17,7 @@
 - **Backend:** FastAPI (REST + WebSocket) en `backend/`.
 - **Display:** Pygame + DRM/KMS + touch evdev en `display/`.
 - **Frontend:** SolidJS + TypeScript en `frontend/`.
-- **Hardware:** GPIO (LED virtual), SPI TFT ILI9486/piscreen, touch ADS7846/XPT2046.
+- **Hardware:** GPIO (LED **virtual**), SPI TFT ILI9486/piscreen, touch ADS7846/XPT2046.
 - **Persistencia:** SQLite (aiosqlite, WAL).
 - **Infra:** systemd, despliegue por SSH (Paramiko), CI en GitHub Actions.
 
@@ -24,23 +27,28 @@ Repositorio remoto: `https://github.com/jvelasca/rpi-hmi-pantalla.git` (rama `ma
 
 ## 2. Estado actual (snapshot inalterable)
 
-Verificado el **2026-08-20** por el hilo principal del chat anterior:
+Verificado el **2026-08-20** por el hilo principal (baseline ejecutado localmente):
 
 | Dato | Valor |
 |---|---|
-| Rama local | `main`, **sincronizada con `origin/main`** (push hecho) |
-| HEAD (commit más reciente) | `d16f991` — `refactor(Fase 5): ruff 0 errores + pin de version (G)` |
-| Historial del refactor | 6 commits: `64b4812` → `f2b7210` → `5c413f5` → `c1611f4` → `ee6ad9b` → `d16f991` |
+| Rama local | `main`, **sincronizada con `origin/main`** (push hecho en el refactor) |
+| HEAD | `1987ed9` — `docs: punto de arranque para el proximo chat` (docs-only) |
+| Commit auditado (2ª auditoría externa) | `d16f991` — `refactor(Fase 5): ruff 0 errores + pin de version (G)` |
+| Relación HEAD ↔ auditado | `1987ed9` = `d16f991` + **solo** `docs/deploy/INICIO.md`. **El código es idéntico al auditado.** |
+| Historial del refactor | `64b4812` → `f2b7210` → `5c413f5` → `c1611f4` → `ee6ad9b` → `d16f991` |
 | `pytest backend/tests/ display/tests/` | **278 passed / 4 skipped / 0 failed** |
-| `mypy app/ --config-file pyproject.toml` | **0 errores** (25 archivos, `strict=true`) |
-| `ruff check backend/ display/ scripts/` | **0 errores** (pineado a `==0.16.3`) |
+| `mypy app/ --config-file pyproject.toml` (desde `backend/`) | **0 errores** (25 archivos, `strict=true`) |
+| `ruff check backend/ display/ scripts/ --config backend/pyproject.toml` | **0 errores** (pineado a `==0.16.3`) |
 | `vitest` (frontend) | **16/16 passed** |
 | `npm run build` (frontend) | **verde** |
 
 **CI equivalente 100 % verde.** El refactor orquestado está **COMPLETO y commiteado**.
 
-> ⚠️ No reintroducir regresiones: cualquier subagente que toque código Python debe mantener
-> `ruff` + `mypy` + `pytest` en verde, y el que toque frontend debe mantener `vitest` + `build`.
+> ⚠️ No reintroducir regresiones. Cualquier subagente que toque código Python debe mantener
+> `ruff` + `mypy` + `pytest` en verde; el que toque frontend, `vitest` + `build`.
+> **Herramientas locales disponibles:** Python 3.13.7, pytest 8.4.2, ruff 0.16.3, mypy 1.19.1,
+> pygame 2.6.1, Node 22 / npm 10. `evdev` NO está instalado (normal en Windows; el touch no lo
+> importa a nivel de módulo, usa `os.read` directamente).
 
 ---
 
@@ -52,163 +60,169 @@ Cada uno dejó un **handoff** en `docs/audits/refactor/handoffs/<id>.md`.
 | Workstream | Fase | Qué aportó |
 |---|---|---|
 | A1 | 1 | Display: 16 tests corregidos (15 drift + 1 bug feedback botón) + feedback no-bloqueante del botón |
-| A2 | 1 | mypy `strict` a 0 errores (57→0); `pydantic.mypy` retirado por incompatibilidad, patrón `X = Field(default=...)` |
+| A2 | 1 | mypy `strict` a 0 errores (57→0); patrón `X = Field(default=...)` (sin `pydantic.mypy`, incompatible) |
 | B | 2 | `SECURITY_MODE=local\|protected` + dependencia `require_admin_api_key`; `POST /api/network/*` protegidos; README LED virtual; sudoers mínimo `pi → nmcli` |
-| C | 2 | `Screen.allow_mock_fallback` (DRM falla → exit 1 en producción); detección de conector DRM vía sysfs |
+| C | 2 | `Screen.allow_mock_fallback`; detección de conector DRM vía sysfs (`_drm_connector_state`) |
 | D | 2 | Validación WS con Zod; máquina de estados resync; `VITE_API_URL` sin IP fija |
 | E | 3 | Migraciones SQLite versionadas; red no bloqueante (`asyncio.to_thread`); límites systemd; split `StateManager → WebSocketHub` |
 | F | 4 | `docs/SECURITY.md` (modelo de amenazas + safe-state); README unificado (278 tests); `frontend/.env.example`; versiones `0.3.0` |
-| G | 5 | `ruff` 206→0 + pin `==0.16.3`; 2 bugs reales corregidos (`ERROR` no importado en `widgets.py`, `VENV_PIP` en `deploy_atomic.py`) |
+| G | 5 | `ruff` 206→0 + pin `==0.16.3`; 2 bugs reales corregidos (`ERROR` en `widgets.py`, `VENV_PIP` en `deploy_atomic.py`) |
 
 **Documentos de estado clave (léelos según necesites):**
 
-- `docs/audits/refactor/ESTADO.md` — estado global del refactor (ya cerrado en Fase 5).
-- `docs/audits/refactor/PLAN_REFACTOR.md` — plan maestro y **mapa de propiedad de archivos** original.
-- `docs/audits/refactor/PROMPTS_SUBAGENTES.md` — ejemplo de prompts autocontenidos (reutilizable como plantilla).
+- `docs/audits/refactor/ESTADO.md` — estado global del refactor (cerrado en Fase 5).
+- `docs/audits/refactor/PLAN_REFACTOR.md` — plan maestro y mapa de propiedad original.
+- `docs/audits/refactor/PROMPTS_SUBAGENTES.md` — ejemplo de prompts autocontenidos.
 - `docs/audits/refactor/handoffs/_PLANTILLA.md` — plantilla obligatoria de handoff.
-- `docs/SECURITY.md` — política de seguridad y safe-state (referencia de lo ya acordado).
+- `docs/SECURITY.md` — política de seguridad y safe-state (referencia de lo acordado).
 
 ---
 
-## 4. Qué queda: inventario de pendientes
+## 4. Segunda auditoría externa — veredicto y comparación
 
-Fuentes: `ESTADO.md` §Pendientes + hallazgos de la **auditoría externa** no abordados en el
-refactor. Clasificados por prioridad y por si requieren **hardware** (Raspberry Pi física) o no.
+La segunda auditoría (contra `d16f991`) **confirmó que prácticamente todos los problemas
+importantes de la primera ya están corregidos** (valoración global 8.7/10, seguridad 5.5→7.8,
+arquitectura 8.5→9.2). De sus 28 puntos, esto es lo que realmente queda:
 
-### 🔴 P0 — Bloqueantes de un despliegue real seguro (requieren hardware y decisión)
+### ✅ Ya corregido (NO rehacer)
 
-1. **Instalar la regla sudoers** `config/sudoers.d/rpi-hmi` en la Pi (`pi → /usr/bin/nmcli`).
-   Sin esto, `NetworkService` no puede ejecutar `sudo nmcli`.
-   - Acción: `sudo install -m 0440 config/sudoers.d/rpi-hmi /etc/sudoers.d/ && sudo visudo -c`.
-2. **Configurar `.env` de producción**: `SECURITY_MODE=protected` + `ADMIN_API_KEY` (32+ chars).
-   - Si se deja `local`, `POST /api/network/*` siguen abiertos en la LAN.
-3. **Verificar `VENV_PIP`** en `scripts/deploy_atomic.py`: quedó `f"{PI_BASE}/venv/bin/pip3"`;
-   confirmar que es la intención o cambiarlo a `{VENV_PY} -m pip`.
-4. **Validar límites systemd** en la Pi: `systemd-analyze verify` + `systemctl daemon-reload`.
+Network API protegida + `asyncio.to_thread` · `devices.yaml` LED virtual · WS con Zod + sequence +
+resync + snapshot REST · `WebSocketHub` separado de `StateManager` · migraciones versionadas ·
+detección DRM por conector · CORS restringido (sin `*` + credentials) · systemd endurecido ·
+`asyncio.to_thread` en `NetworkService` · CI ampliado (py3.11/3.12, pytest, ruff, mypy, vitest,
+build, smoke, VERSION, archivos prohibidos) · contrato Pydantic↔Zod con `safeParse`.
 
-### 🟠 P1 — Cierre de seguridad y robustez (código, sin hardware)
+> **Nota de auditoría propia:** el punto "README sigue diciendo LED GPIO17" de la auditoría
+> externa es **stale**. El README actual (líneas 24–31) ya dice que el LED es **virtual** y que
+> GPIO17 es la IRQ del touch. Se verificó con `grep` y **ya está corregido** por B/F.
 
-5. **Consolidar `_verify_api_key`**: `backend/app/api/ssh.py` y `deploy.py` duplican la lógica de
-   auth que ya vive en `backend/app/api/deps.py::require_admin_api_key`. Unificar.
-6. **Extender `SECURITY_MODE=protected`** a `/api/led/*`, `/api/button/*` y `/ws` (hoy solo cubre
-   `POST /api/network/*`). Decidir y documentar en `docs/SECURITY.md`.
-7. **`toggle` vs `set`** (hallazgo #5): añadir `PUT /api/led {state: bool}` (SET ON/OFF) además de
-   `toggle`, para eliminar la ambigüedad semántica distribuida.
-8. **Watchdog backend** (hallazgo #20): implementar `sdnotify` (`READY=1` + `WATCHDOG=1`), cambiar
-   systemd a `Type=notify` y recién entonces añadir `WatchdogSec=30`.
-9. **Tests de migraciones SQLite**: hoy validadas por smoke manual (E); añadir test unitario dedicado.
-10. **Touch**: implementar `invert_x`/`invert_y` en `raw_to_screen` (hoy son código muerto) y
-    revertir `test_mapping_with_invert` a las coordenadas invertidas.
-11. **`RAW_MAX` desde `EVIOCGABS`** (hallazgo #13): no asumir `0..4096`; leer capacidades reales del
-    dispositivo táctil.
+### 🔴 P1 — Bloqueantes de seguridad (código puro, sin hardware)
 
-### 🟡 P2 — Calidad, observabilidad y endurecimiento (sin hardware)
+| # | Hallazgo (2ª auditoría) | Verificado en código | Workstream |
+|---|---|---|---|
+| P1-1 | `WS /ws` **no autentica** en `protected` (permite `toggle_led`, `press_button`, `release_button`, `display_command` sin API key) | `backend/app/api/ws.py` no usa `require_admin_api_key` | **H1** |
+| P1-2 | `/api/led/*`, `/api/button/*`, `/api/display/command` **no siguen** el modelo `protected` | `backend/app/api/hmi.py` sin `Depends(require_admin_api_key)` en los POST | **H1** |
+| P1-3 | `X-API-Key` **falta** en CORS `allow_headers` | `backend/app/main.py:188` solo `["Content-Type","Accept"]` | **H1** |
+| P1-4 | `allow_mock_fallback=True` por defecto en `Screen` (oculta fallo físico de DRM) | `display/ui/screen.py:107`; el call-site `display/app.py:140` ya cablea `allow_mock_fallback=mock`, pero el **default** de la clase sigue siendo un footgun | **H2** |
 
-12. **Health check coherente** (hallazgo #18): definir explícitamente qué significa `/health/ready`
-    (API+DB vs API+DB+GPIO+Display) y documentarlo.
-13. **Tests HIL** (hallazgo #23): categorizar `UNIT/INTEGRATION` vs `HARDWARE` con un marcador
-    `@pytest.mark.hardware` y un runbook para ejecutar en la Pi (DRM, GPIO, touch, ILI9486).
-14. **CI endurecido** (hallazgo #24): `pip-audit`, `npm audit`, `bandit`, `gitleaks`.
-15. **Lock de dependencias** (hallazgo #25): `requirements.txt` con versiones exactas (o pip-tools),
-    más allá del pin de `ruff` ya hecho.
-16. **Frontend**: encapsular `setInterval` de `App.tsx` en un hook `useConnectionMonitor` (hallazgo #10).
-17. **Tipos TS desde OpenAPI** (hallazgo #22): generar `types/api.ts` desde el schema OpenAPI para
-    eliminar la duplicación manual Pydantic↔TS.
-18. **`driver=="fb"` no distinguido** en `Screen.init()` (solo distingue mock vs no-mock); preexistente.
+### 🟠 P2 — Correcciones de coherencia/robustez (código puro)
 
-### ⚪ P3 — Arquitectónico / decisión de producto (requieren decisión previa)
+| # | Hallazgo (2ª auditoría) | Verificado en código | Workstream |
+|---|---|---|---|
+| P2-1 | Mensaje engañoso en `config.py`: dice "`/admin/*` expuestos sin protección" pero ssh/deploy devuelven **503** si no hay key | `backend/app/config.py:103-107` | **H1** |
+| P2-2 | `_verify_api_key` duplicado en `ssh.py` y `deploy.py` (no usa `deps.py`) | `ssh.py:44-58`, `deploy.py:45-53` | **H1** |
+| P2-3 | Validación de red incompleta: no comprueba IP∈subnet, gateway∈subnet, IP≠red, IP≠broadcast | `network_service.py::apply_static` (191-227) | **H3** |
+| P2-4 | `/dev/mem` en `ReadWritePaths` del backend (superficie de privilegio) | `config/systemd/rpi-hmi-backend.service:46` | **H6** (decidir en Pi) |
+| P2-5 | Falta auditoría de dependencias: `pip-audit`, `bandit`, `npm audit` | `.github/workflows/ci.yml` no los incluye | **H4** |
+| P2-6 | README/QUICKSTART con `192.168.88.211` hardcodeada y versiones/strings inconsistentes (`HeaderWidget version="v1.2"` en `display/app.py:184`) | verificado | **H5** (+ fix `v1.2` en **H2**) |
 
-19. **Separar HMI runtime de Admin service** (hallazgos #27/#32): mover SSH/deploy/network a un
-    servicio/puerto separado (`:8001`) y firewall. Es la evolución mayor pendiente.
-20. **Semántica del botón** (no bloqueante): el auto-release usa `_button_press_duration=2` (~100 ms)
-    y dispara `POST /api/button/release`. Confirmar si se quiere "flash visual" o "mantener pulsado".
-21. **Realinear pydantic↔mypy** (opcional): recuperar el plugin `pydantic.mypy` alineando versiones,
-    o mantener el patrón actual `X = Field(default=...)`.
+### 🟡 P3 — Mejoras (código o decisión de producto)
+
+| # | Pendiente | Workstream |
+|---|---|---|
+| P3-1 | Leer `ABS_X`/`ABS_Y` reales del touch vía `EVIOCGABS` (no asumir 4096) | **H2** |
+| P3-2 | Implementar `invert_x`/`invert_y` en `raw_to_screen` (hoy código muerto) | **H2** |
+| P3-3 | Unificar fuente de versión (`VERSION` → build → Python → FastAPI → frontend) | **H5** |
+| P3-4 | Política explícita `startup_policy: off/restore/safe` para futuros actuadores | **H8** (decisión) |
+| P3-5 | Watchdog `sd_notify` (`READY=1` + `WATCHDOG=1`) + `Type=notify` + `WatchdogSec=30` | **H3** (opcional, código) |
+| P3-6 | Tests HIL (`@pytest.mark.hardware`) + runbook para la Pi | **H6** |
+
+### ⚪ P0 — Requieren HARDWARE (Raspberry Pi física) y decisión
+
+1. Instalar regla sudoers `config/sudoers.d/rpi-hmi` (`sudo install -m 0440 ... && visudo -c`).
+2. Crear `.env` de producción: `SECURITY_MODE=protected` + `ADMIN_API_KEY` (32+ chars). **No commitear `.env`.**
+3. Verificar `VENV_PIP` en `scripts/deploy_atomic.py` (`f"{PI_BASE}/venv/bin/pip3"` vs `{VENV_PY} -m pip`).
+4. Validar límites systemd en la Pi: `systemd-analyze verify` + `systemctl daemon-reload`.
+5. Decidir si `/dev/mem` es necesario en `ReadWritePaths` (P2-4) según el driver GPIO real.
 
 ---
 
-## 5. Workstreams propuestos para este chat
+## 5. Workstreams de esta fase (H1–H8) y mapa de propiedad de archivos
 
-La división respeta el principio de **cero colisiones** (cada archivo, un único workstream).
-Se sugiere este orden; los que no comparten archivos pueden ir en paralelo.
+La división respeta **cero colisiones** (cada archivo, un único workstream). Los que no
+comparten archivos pueden ir **en paralelo**. Los subagentes **no commitean**: el hilo
+principal verifica el gate y hace **commit por workstream**.
 
-| WS | Nombre | Archivos en exclusiva | Requiere HW | Paralelizable |
-|---|---|---|---|---|
-| H1 | Cierre de seguridad | `backend/app/api/{ssh,deploy,deps,hmi,ws}.py`, `backend/app/config.py`, `docs/SECURITY.md` | No | Tras H1 empieza todo lo demás |
-| H2 | Touch + display | `display/ui/{touch,screen}.py`, `display/tests/test_ui.py` | No | Sí (con H3) |
-| H3 | Observabilidad backend | `backend/app/services/{persistence,state_manager}.py`, `backend/app/services/systemd_notify.py` (nuevo), `backend/app/api/health.py`, `backend/tests/**`, `config/systemd/rpi-hmi-backend.service` | No | Sí (con H2) |
-| H4 | Frontend | `frontend/src/**`, `frontend/package.json` | No | Sí |
-| H5 | CI/CD + deps | `.github/workflows/ci.yml`, `backend/pyproject.toml`, `backend/requirements.txt`, `display/requirements.txt` | No | Sí |
-| H6 | Despliegue a la Pi | `config/sudoers.d/rpi-hmi`, `config/systemd/*`, `scripts/deploy*.py`, `.env` (NO commitear), `docs/deploy/runbook.md` (nuevo) | **Sí** | Secuencial (último) |
-| H7 | Arquitectura mayor (HMI vs Admin) | `backend/app/main.py`, `backend/app/api/*`, systemd | No | Solo tras decidir diseño |
-| H8 | Decisiones de producto | — (solo documentar/decidir) | No | Al inicio, con el usuario |
+| WS | Nombre | Archivos en exclusiva | Requiere HW | Paralelizable | Prioridad |
+|---|---|---|---|---|---|
+| H1 | Unificar auth REST+WS | `backend/app/api/{ws,hmi,deps,ssh,deploy}.py`, `backend/app/config.py`, `backend/app/main.py` (CORS), `docs/SECURITY.md`, `backend/tests/{test_ws_endpoint,test_hmi,test_config}.py` | No | **No** (primero, es el path crítico) | P1 |
+| H2 | Display + touch | `display/ui/{screen,touch}.py`, `display/app.py`, `display/tests/{test_ui,test_display_app}.py` | No | Sí (con H3/H4/H5) | P1/P2/P3 |
+| H3 | Red + watchdog | `backend/app/services/network_service.py`, `backend/app/models/network.py`, `backend/tests/test_network.py` (nuevo) | No | Sí | P2/P3 |
+| H4 | CI/CD + deps | `.github/workflows/ci.yml`, `backend/pyproject.toml`, `backend/requirements.txt`, `display/requirements.txt` | No | Sí | P2 |
+| H5 | Docs/versión | `README.md`, `QUICKSTART.md`, `docs/CONTEXT.md`, `docs/ARCHITECTURE.md`, `.env.example`, `frontend/.env.example` | No | Sí | P2/P3 |
+| H6 | Despliegue a la Pi | `config/sudoers.d/rpi-hmi`, `config/systemd/*`, `scripts/deploy*.py`, `.env` (NO commitear), `docs/deploy/runbook.md` (nuevo) | **Sí** | Secuencial (último) | P0 |
+| H7 | Arquitectura mayor (HMI vs Admin) | `backend/app/main.py`, `backend/app/api/*`, systemd | No | Solo tras decidir diseño | P3 |
+| H8 | Decisiones de producto | — (solo documentar/decidir) | No | Al inicio, con el usuario | P3 |
+
+### Reglas anti-colisión
+
+- `backend/app/main.py` lo posee **H1** (CORS) — H7 solo si se lanza (nunca en paralelo con H1).
+- `docs/SECURITY.md` lo posee **H1**; H5 **NO** lo toca (H5 solo README/QUICKSTART/CONTEXT/ARCHITECTURE/.env.example).
+- `display/app.py` lo posee **H2** (incluye el fix de `version="v1.2"` del HeaderWidget).
+- Los tests son disjuntos por workstream (H1: backend api/config; H3: `test_network.py` nuevo; H2: display).
 
 ### Detalle mínimo por workstream
 
-**H1 — Cierre de seguridad.**
-1. Mover `_verify_api_key` de `ssh.py`/`deploy.py` a usar `require_admin_api_key` (import de `deps.py`).
-2. Decidir y aplicar si `SECURITY_MODE=protected` debe cubrir `/api/led`, `/api/button`, `/ws`.
-3. Añadir `PUT /api/led {state}` (SET) conservando `toggle`.
-4. Actualizar `docs/SECURITY.md` §2/§3 en consecuencia.
-- Done: `pytest backend/tests/` + `mypy` + `ruff` verdes.
+**H1 — Unificar autenticación REST + WS.**
+1. Añadir auth al handshake WS: en `protected`, validar `X-API-Key` (header o `Sec-WebSocket-Protocol`) **antes** de `accept()`; en `local`, aceptar sin key. Usar `require_admin_api_key` o un helper nuevo en `deps.py` que permita lectura síncrona del header (el WS no pasa por `Depends`).
+2. Añadir `dependencies=[Depends(require_admin_api_key)]` a `POST /api/led/toggle|on|off`, `POST /api/button/press|release`, `POST /api/display/command` en `hmi.py`.
+3. Añadir `X-API-Key` a `allow_headers` en `main.py`.
+4. Consolidar `_verify_api_key` de `ssh.py`/`deploy.py` en `deps.py` con **dos** dependencias: `require_admin_api_key` (respeta `SECURITY_MODE`) para HMI, y `require_admin_api_key_always` (exige key **siempre**) para `/admin/*`. Documentar la diferencia.
+5. Corregir el mensaje de `config.py` (`enable_admin_api` sin key → "inaccesibles (503)", no "expuestos sin protección").
+6. Actualizar `docs/SECURITY.md` §2/§3 al modelo unificado (WS y mutadores HMI pasan a PROTECTED).
+- **Done:** `pytest backend/tests/` + `mypy` + `ruff` verdes.
 
-**H2 — Touch + display.**
-1. Implementar `invert_x`/`invert_y` en `raw_to_screen`; revertir `test_mapping_with_invert`.
-2. Obtener `RAW_MAX` de `EVIOCGABS` en vez de asumir 4096 (con fallback).
-3. Distinguir `driver=="fb"` en `Screen.init()`.
-- Done: `pytest display/tests/` verde.
+**H2 — Display + touch.**
+1. Cambiar el default de `Screen.allow_mock_fallback` a `False`; `DisplayApp` debe pasar `allow_mock_fallback=mock` (ya lo hace). Verificar que en producción DRM falla → `exit 1`.
+2. Implementar `invert_x`/`invert_y` en `raw_to_screen`; revertir `test_mapping_with_invert` a coordenadas invertidas.
+3. Leer `ABS_X`/`ABS_Y` reales vía `EVIOCGABS` (con fallback a `RAW_MAX=4096`).
+4. Fix `HeaderWidget(..., version="v1.2")` → `"0.3.0"` en `display/app.py`.
+- **Done:** `pytest display/tests/` verde + smoke import de `screen.py`.
 
-**H3 — Observabilidad backend.**
-1. Test unitario de migraciones SQLite (BD nueva y BD legacy → `schema_version` correcto, datos preservados).
-2. Watchdog: módulo `systemd_notify.py` (`READY=1`, `WATCHDOG=1`), `Type=notify` + `WatchdogSec=30`.
-3. Definir `/health/ready` (API+DB+GPIO+Display) y documentarlo.
-- Done: `pytest backend/tests/` + `mypy` + `ruff` verdes.
+**H3 — Red + watchdog (opcional).**
+1. Validar coherencia en `apply_static`: IP∈subred, gateway∈subred, IP≠dirección de red, IP≠broadcast. Devolver `NetworkResult(success=False, ...)`.
+2. Añadir `backend/tests/test_network.py` (unit, sin nmcli — inyectar/monkeypatch `_run`).
+3. (Opcional P3-5) módulo `systemd_notify.py` + `Type=notify` + `WatchdogSec=30` — **solo si el usuario lo confirma**.
+- **Done:** `pytest backend/tests/test_network.py` + `mypy` + `ruff` verdes.
 
-**H4 — Frontend.**
-1. Extraer el `setInterval` de `App.tsx` a `useConnectionMonitor()`.
-2. (Opcional/amplio) Generación de tipos TS desde OpenAPI.
-- Done: `vitest` + `npm run build` verdes.
+**H4 — CI/CD + dependencias.**
+1. Añadir `pip-audit` (Python) y `bandit` al workflow; `npm audit` al job de frontend.
+2. (Opcional) pin/lock de dependencias exactas.
+- **Done:** `ci.yml` válido (YAML) y los checks nuevos reproducibles localmente.
 
-**H5 — CI/CD + dependencias.**
-1. Pin/lock de dependencias Python (versiones exactas).
-2. Añadir `pip-audit`, `npm audit`, `bandit`, `gitleaks` al workflow.
-- Done: `ci.yml` verde (local: reproducir los checks nuevos).
+**H5 — Docs/versión.**
+1. Eliminar `192.168.88.211` hardcodeada de README/QUICKSTART (dejar `http://<IP_DE_LA_PI>:8000` o `VITE_API_URL`).
+2. Unificar conteos de tests y referencias de versión a `0.3.0`.
+3. Documentar el modelo `protected` unificado (mutadores HMI + WS) en README/QUICKSTART.
+4. Asegurar `frontend/.env.example` documenta `VITE_API_URL`.
+- **Done:** sin impacto en tests; revisar que no rompe `npm run build`.
 
-**H6 — Despliegue a la Pi (runbook).**
-1. Instalar sudoers + `visudo -c`.
-2. Crear `.env` de producción (`SECURITY_MODE`, `ADMIN_API_KEY`). **No commitear `.env`.**
-3. `systemd-analyze verify` + `systemctl daemon-reload` + arrancar servicios.
-4. Verificar `VENV_PIP` en `deploy_atomic.py`.
-5. Smoke: `/health`, `/api/status`, y validación de endpoints protegidos (curl 401 sin key / 200 con key).
-6. Ejecutar tests HIL en la Pi.
-- Entregable: `docs/deploy/runbook.md` con pasos exactos y resultado.
+**H6 — Despliegue a la Pi (runbook).** Ejecutar los P0 de §4 y producir `docs/deploy/runbook.md` con pasos exactos + resultado del smoke (`/health`, `/api/status`, curl 401 sin key / 200 con key).
 
-> **H7/H8** requieren decisión del usuario: plantearlas al inicio y no lanzarlas sin confirmación.
+> **H7/H8** requieren decisión del usuario: plantearlas al inicio y **no lanzarlas** sin confirmación.
 
 ---
 
 ## 6. Protocolo de orquestación (reutilizar el ya probado)
 
-El chat anterior demostró un protocolo que funcionó. **Mantenerlo**:
-
 1. **Visión global única** → este chat crea y mantiene `docs/deploy/ESTADO_DESPLEGUE.md`
-   (solo lo edita el hilo principal; los subagentes NO lo tocan).
+   (solo lo edita el hilo principal; los subagentes **NO** lo tocan).
 2. **Handoff obligatorio** → cada subagente escribe `docs/deploy/handoffs/<ws-id>.md` **antes de
    terminar**, siguiendo `docs/audits/refactor/handoffs/_PLANTILLA.md`.
 3. **Saturación vigilada** → si un subagente se queda sin contexto, escribe un checkpoint **parcial**
-   con un `## Texto de paso` exacto; el hilo principal relanza con `resume`, nunca desde cero.
+   con un `## Texto de paso` exacto; el hilo principal relanza con `resume`, **nunca desde cero**.
 4. **Cero colisiones** → respetar la tabla de propiedad de §5. Un archivo = un workstream.
-5. **Unidad verificable** → commit por workstream verificado. El historial git es la memoria inmutable.
-6. **Gates** → el hilo principal ejecuta la verificación y commitea solo si todo verde.
+5. **Unidad verificable** → **commit por workstream** verificado. El historial git es la memoria inmutable.
+6. **Gates** → el hilo principal ejecuta la verificación y commitea **solo si todo verde**.
 
-### Gates de este chat
+### Gates de esta fase
 
-| Gate | Criterio |
-|---|---|
-| D1 (tras H1) | `pytest backend/tests/` + `mypy` + `ruff` verdes |
-| D2 (tras H2+H3+H4) | `pytest` (backend+display) + `mypy` + `ruff` + `vitest` + `build` verdes |
-| D3 (tras H5) | `ci.yml` con los checks nuevos reproducible localmente |
-| D4 (tras H6) | servicios vivos en la Pi + HIL verde + runbook firmado |
+| Gate | Criterio | Cuándo |
+|---|---|---|
+| D1 | `pytest backend/tests/` + `mypy` + `ruff` verdes | tras H1 |
+| D2 | `pytest` (backend+display) + `mypy` + `ruff` + `vitest` + `build` verdes | tras H2+H3+H4+H5 |
+| D3 | `ci.yml` con los checks nuevos reproducible localmente | tras H4 |
+| D4 | servicios vivos en la Pi + HIL verde + runbook firmado | tras H6 |
 
 ---
 
@@ -219,18 +233,20 @@ Pegar lo siguiente como **primer mensaje** del nuevo chat:
 ```text
 Continúa el proyecto RPi HMI desde el punto de arranque docs/deploy/INICIO.md.
 
-Estado: el refactor orquestado (A1..G) está completo y pusheado (HEAD d16f991, CI verde).
-Ahora hay que desplegar lo refactorizado y cerrar los pendientes.
+Estado: el refactor orquestado (A1..G) está completo y pusheado (HEAD 1987ed9 = d16f991 + docs,
+CI verde). La segunda auditoría externa confirmó que casi todo está corregido y dejó un
+inventario P0-P3 que cierra la V1.
 
 Haz, en este orden:
 1. Lee docs/deploy/INICIO.md (este doc), docs/audits/refactor/ESTADO.md y docs/SECURITY.md.
 2. Crea docs/deploy/ESTADO_DESPLEGUE.md y la carpeta docs/deploy/handoffs/.
-3. Plantea al usuario las decisiones P3 (H7/H8) antes de lanzarlas.
-4. Lanza H1 (seguridad) primero; al verificar su gate, abre H2∥H3∥H4∥H5 en paralelo.
+3. Plantea al usuario las decisiones P3 (H7/H8 y el P3-5 watchdog) antes de lanzarlas.
+4. Lanza H1 (seguridad) primero; al verificar su gate D1, abre H2∥H3∥H4∥H5 en paralelo.
 5. Cierra con H6 (despliegue a la Pi) y escribe docs/deploy/runbook.md.
 
 Mantén la visión global en ESTADO_DESPLEGUE.md, exige handoff a cada subagente y
-commit por workstream verificado. No pierdas contexto entre subagentes.
+commit por workstream verificado. No pierdas contexto entre subagentes. Vigila que
+ningún subagente se sature, alucine o rompa la app: si algo no está verde, no commitees.
 ```
 
 ---
