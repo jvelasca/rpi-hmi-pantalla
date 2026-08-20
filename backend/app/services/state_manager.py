@@ -29,6 +29,7 @@ import threading
 import time
 from typing import Any, Literal
 
+from backend.app.config import settings
 from backend.app.models.events import ServerMessage, SubscriptionTopic
 from backend.app.models.hmi import ButtonState, DisplayInfo, DisplaySettings, LedState, SystemStatus
 from backend.app.services.ws_hub import WebSocketHub
@@ -91,6 +92,7 @@ class StateManager:
             led_on = await self._persistence.get_led()
             count = await self._persistence.get_button_count()
             pin = self._load_led_pin()  # Siempre desde devices.yaml
+            led_on = self._apply_startup_policy(led_on, pin)
             with self._lock:
                 self._led_state = LedState(
                     state=led_on,
@@ -121,6 +123,30 @@ class StateManager:
             self._apply_hardware_state()
         except Exception:
             logger.warning("No se pudo restaurar estado desde BD", exc_info=True)
+
+    @staticmethod
+    def _apply_startup_policy(led_on: bool, pin: int) -> bool:
+        """Aplica la politica de arranque configurada al estado restaurado del LED.
+
+        Args:
+            led_on: Estado persistido en SQLite.
+            pin: Pin BCM del LED (0 si el dispositivo es virtual/sin GPIO).
+
+        Returns:
+            Estado final del LED tras aplicar la politica.
+        """
+        policy = settings.startup_policy
+        if policy == "off":
+            logger.info("Politica de arranque '%s': LED forzado a apagado", policy)
+            return False
+        if policy == "safe" and pin > 0:
+            logger.info(
+                "Politica de arranque '%s': LED fisico (GPIO %d), forzado a apagado",
+                policy, pin,
+            )
+            return False
+        logger.info("Politica de arranque '%s': LED restaurado a %s", policy, led_on)
+        return led_on
 
     @staticmethod
     def _load_led_pin() -> int:

@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="info", description="Nivel de logging")
 
+    # Actuadores
+    startup_policy: Literal["off", "restore", "safe"] = Field(
+        default="restore",
+        description="Politica de arranque de actuadores: 'off'=siempre apagado, "
+                    "'restore'=restaurar estado persistido, 'safe'=restaurar solo si el "
+                    "dispositivo es virtual/seguro. Para actuadores fisicos futuros se "
+                    "recomienda 'safe' o 'off'.",
+    )
+
     # Persistencia
     db_path: str = Field(
         default="data/state.db",

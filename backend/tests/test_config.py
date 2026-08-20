@@ -36,6 +36,15 @@ class TestSettingsDefaults:
         assert s.enable_docs is False
         assert s.enable_admin_api is False
         assert s.db_path == "data/state.db"
+        assert s.startup_policy == "restore"
+
+    def test_startup_policy_rejects_invalid_value(self):
+        """startup_policy solo acepta 'off', 'restore' y 'safe'."""
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _new_settings(startup_policy="nope")
 
     def test_cors_origin_list_splits_comma(self):
         """cors_origin_list debe dividir por coma y limpiar espacios."""

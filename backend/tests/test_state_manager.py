@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from backend.app.config import settings
 from backend.app.models.hmi import ButtonState, LedState, SystemStatus
 from backend.app.services.state_manager import StateManager, state_manager
 
@@ -367,3 +368,48 @@ class TestStateManagerPersistenceIntegration:
         """_load_led_pin respeta los 3 niveles de prioridad."""
         pin = StateManager._load_led_pin()
         assert isinstance(pin, int)
+
+
+class TestStartupPolicy:
+    """Politica de arranque de actuadores aplicada en restore_from_db."""
+
+    def _make_manager(self, monkeypatch, policy: str) -> StateManager:
+        """Crea un StateManager con persistencia que devuelve led=True."""
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr(settings, "startup_policy", policy)
+        sm = StateManager()
+        persist = AsyncMock()
+        persist.get_led.return_value = True
+        persist.get_button_count.return_value = 0
+        sm.set_persistence(persist)
+        return sm
+
+    @pytest.mark.asyncio
+    async def test_policy_off_forces_led_off(self, monkeypatch):
+        """'off' ignora el estado persistido y deja el LED apagado."""
+        sm = self._make_manager(monkeypatch, "off")
+        await sm.restore_from_db()
+        assert sm.led.state is False
+
+    @pytest.mark.asyncio
+    async def test_policy_restore_keeps_persisted_state(self, monkeypatch):
+        """'restore' conserva el estado persistido (comportamiento actual)."""
+        sm = self._make_manager(monkeypatch, "restore")
+        await sm.restore_from_db()
+        assert sm.led.state is True
+
+    @pytest.mark.asyncio
+    async def test_policy_safe_restores_virtual_led(self, monkeypatch):
+        """'safe' restaura cuando el LED es virtual (pin 0)."""
+        sm = self._make_manager(monkeypatch, "safe")
+        await sm.restore_from_db()
+        assert sm.led.state is True
+
+    @pytest.mark.asyncio
+    async def test_policy_safe_forces_off_on_physical_pin(self, monkeypatch):
+        """'safe' fuerza apagado cuando el LED tiene pin fisico (GPIO > 0)."""
+        sm = self._make_manager(monkeypatch, "safe")
+        sm._load_led_pin = lambda: 17  # type: ignore[method-assign]
+        await sm.restore_from_db()
+        assert sm.led.state is False
