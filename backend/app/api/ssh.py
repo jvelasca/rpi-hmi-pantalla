@@ -17,30 +17,31 @@ TODOS los endpoints requieren autenticacion via header X-API-Key.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets as _secrets
-from typing import Optional
 
+from dotenv import load_dotenv as _load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
-from backend.app.services.ssh_manager import SSHDriver, ParamikoSSHDriver, SSHResult
+from backend.app.services.ssh_manager import ParamikoSSHDriver, SSHDriver, SSHResult
 
 logger = logging.getLogger("backend.api.ssh")
 
 router = APIRouter(prefix="/admin/ssh", tags=["Admin/SSH"])
 
 # ── Estado global del driver SSH (singleton durante la vida del proceso) ──
-_ssh_driver: Optional[SSHDriver] = None
+_ssh_driver: SSHDriver | None = None
 
 # ── Autenticacion por API Key ─────────────────────────────────────────────
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def _verify_api_key(api_key: Optional[str] = Security(_api_key_header)) -> None:
+def _verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     """Verifica que la API key proporcionada coincide con la configurada.
 
     Raises:
@@ -102,8 +103,8 @@ class SSHStatusResponse(BaseModel):
     """
 
     connected: bool
-    host: Optional[str] = None
-    user: Optional[str] = None
+    host: str | None = None
+    user: str | None = None
 
 
 class SSHResultResponse(BaseModel):
@@ -139,7 +140,7 @@ class SSHMessageResponse(BaseModel):
 # ── Dependencia: obtener driver SSH ───────────────────────────────────────
 
 
-def get_ssh_driver() -> Optional[SSHDriver]:
+def get_ssh_driver() -> SSHDriver | None:
     """Devuelve el driver SSH global si esta conectado.
 
     Returns:
@@ -149,7 +150,10 @@ def get_ssh_driver() -> Optional[SSHDriver]:
         HTTPException 503: Si no hay ningun driver instanciado.
     """
     if _ssh_driver is None:
-        raise HTTPException(status_code=503, detail="SSH no configurado. Usa POST /admin/ssh/connect primero.")
+        raise HTTPException(
+            status_code=503,
+            detail="SSH no configurado. Usa POST /admin/ssh/connect primero.",
+        )
     return _ssh_driver
 
 
@@ -171,10 +175,8 @@ def ssh_connect(req: SSHConnectRequest) -> SSHMessageResponse:
 
     # Cerrar conexion previa si existe
     if _ssh_driver is not None:
-        try:
+        with contextlib.suppress(Exception):
             _ssh_driver.disconnect()
-        except Exception:
-            pass
 
     driver = ParamikoSSHDriver()
     try:
@@ -191,16 +193,16 @@ def ssh_connect(req: SSHConnectRequest) -> SSHMessageResponse:
         return SSHMessageResponse(message=f"Conectado a {req.host} como {req.user}", success=True)
     except PermissionError as exc:
         logger.warning("Auth fallida: %s", exc)
-        raise HTTPException(status_code=401, detail=str(exc))
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     except TimeoutError as exc:
         logger.warning("Timeout: %s", exc)
-        raise HTTPException(status_code=504, detail=str(exc))
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except ConnectionError as exc:
         logger.warning("Conexion rechazada: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Error inesperado conectando SSH")
-        raise HTTPException(status_code=500, detail=f"Error interno: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {exc}") from exc
 
 
 @router.post("/disconnect", response_model=SSHMessageResponse, dependencies=[Depends(_verify_api_key)])
@@ -208,10 +210,8 @@ def ssh_disconnect() -> SSHMessageResponse:
     """Cierra la conexion SSH activa. Requiere autenticacion."""
     global _ssh_driver
     if _ssh_driver is not None:
-        try:
+        with contextlib.suppress(Exception):
             _ssh_driver.disconnect()
-        except Exception:
-            pass
         _ssh_driver = None
         logger.info("Conexion SSH cerrada")
         return SSHMessageResponse(message="Desconectado correctamente", success=True)
@@ -219,7 +219,7 @@ def ssh_disconnect() -> SSHMessageResponse:
 
 
 @router.get("/status", response_model=SSHStatusResponse, dependencies=[Depends(_verify_api_key)])
-def ssh_status(driver: Optional[SSHDriver] = Depends(get_ssh_driver)) -> SSHStatusResponse:
+def ssh_status(driver: SSHDriver | None = Depends(get_ssh_driver)) -> SSHStatusResponse:  # noqa: B008
     """Devuelve el estado actual de la conexion SSH. Requiere autenticacion.
 
     Incluye si esta conectado, y en ese caso, el host y usuario.
@@ -235,7 +235,7 @@ def ssh_status(driver: Optional[SSHDriver] = Depends(get_ssh_driver)) -> SSHStat
 @router.post("/execute", response_model=SSHResultResponse, dependencies=[Depends(_verify_api_key)])
 def ssh_execute(
     req: SSHExecuteRequest,
-    driver: Optional[SSHDriver] = Depends(get_ssh_driver),
+    driver: SSHDriver | None = Depends(get_ssh_driver),  # noqa: B008
 ) -> SSHResultResponse:
     """Ejecuta un comando en la Raspberry Pi via SSH. Requiere autenticacion.
 
@@ -266,18 +266,15 @@ def ssh_execute(
             ok=result.ok,
         )
     except TimeoutError as exc:
-        raise HTTPException(status_code=504, detail=str(exc))
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Error ejecutando comando remoto")
-        raise HTTPException(status_code=500, detail=f"Error: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error: {exc}") from exc
 
 
 # ── Auto-conexion al arrancar (solo si hay configuracion) ─────────────────
-
-import os as _os
-from dotenv import load_dotenv as _load_dotenv
 
 _load_dotenv()
 

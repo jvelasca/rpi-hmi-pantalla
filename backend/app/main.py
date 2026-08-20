@@ -11,16 +11,23 @@ Ejecucion:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api import hmi_router, ws_router, health_router, network_router, admin_ssh_router, admin_deploy_router
+from backend.app.api import (
+    admin_deploy_router,
+    admin_ssh_router,
+    health_router,
+    hmi_router,
+    network_router,
+    ws_router,
+)
 from backend.app.config import settings
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
@@ -55,8 +62,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Configurar GPIO — leer pin desde devices.yaml (fuente unica de verdad)
     try:
-        from backend.app.services.gpio_service import load_devices
         from backend.app.models.device import DeviceType
+        from backend.app.services.gpio_service import load_devices
 
         # Usar ruta absoluta relativa a este archivo (main.py)
         devices_path = str(
@@ -162,7 +169,10 @@ _redoc_url = "/redoc" if settings.enable_docs else None
 
 app = FastAPI(
     title="RPi HMI Backend",
-    description="Backend para panel de control HMI en Raspberry Pi. Controla GPIO, display fisico y expone API REST + WebSocket.",
+    description=(
+        "Backend para panel de control HMI en Raspberry Pi. "
+        "Controla GPIO, display fisico y expone API REST + WebSocket."
+    ),
     version="0.3.0",
     lifespan=lifespan,
     docs_url=_docs_url,

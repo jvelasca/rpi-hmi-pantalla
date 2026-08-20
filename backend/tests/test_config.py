@@ -6,10 +6,7 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
-from backend.app.config import Settings, settings
-
+from backend.app.config import Settings
 
 # ── Helper: create a fresh Settings instance ───────────────────
 

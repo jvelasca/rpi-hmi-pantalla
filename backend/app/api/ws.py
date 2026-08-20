@@ -25,6 +25,7 @@ Mensajes Servidor -> Cliente:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -127,7 +128,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info("Cliente WS desconectado")
     except Exception as exc:
         logger.exception("Error en WebSocket")
-        try:
+        with contextlib.suppress(Exception):
             await websocket.send_json(
                 ServerMessage(
                     type="error",
@@ -137,7 +138,5 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     },
                 ).model_dump(mode="json")
             )
-        except Exception:
-            pass
     finally:
         state_manager.unsubscribe(websocket)

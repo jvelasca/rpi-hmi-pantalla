@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,6 @@ from pydantic import ValidationError
 from backend.app.models.device import DeviceConfig, DeviceType, PinMapping, load_devices
 from backend.app.models.events import ClientMessage, ServerMessage, SubscriptionTopic
 from backend.app.models.hmi import ButtonState, DisplayInfo, LedState, SystemStatus
-
 
 # ── DeviceConfig ────────────────────────────────────────────────
 
@@ -152,13 +152,13 @@ class TestServerMessage:
 
     def test_server_message_with_timestamp(self):
         """timestamp se genera automaticamente si no se pasa."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         msg = ServerMessage(type="led_changed", data={"state": True})
         assert msg.timestamp is not None
         assert isinstance(msg.timestamp, datetime)
         # Debe ser un timestamp reciente (UTC)
-        delta = datetime.now(timezone.utc) - msg.timestamp
+        delta = datetime.now(UTC) - msg.timestamp
         assert abs(delta.total_seconds()) < 5
 
 
@@ -186,7 +186,7 @@ class TestSystemStatus:
         assert status.websocket_clients == 5
         # cpu_temp_celsius puede ser None en entornos sin /sys
         assert status.cpu_temp_celsius is None or isinstance(status.cpu_temp_celsius, float)
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         assert isinstance(status.timestamp, datetime)
 

@@ -36,7 +36,6 @@ Usage:
 import argparse
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -46,8 +45,9 @@ from dotenv import load_dotenv
 # Cargar .env desde raiz del proyecto
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from backend.app.services.ssh_manager import ParamikoSSHDriver
-from backend.app.services.deploy_service import DeployService
+# Imports tras load_dotenv(): los modulos de backend leen settings del entorno al importar.
+from backend.app.services.deploy_service import DeployService  # noqa: E402
+from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
 HOST = os.getenv("RPI_HOST", "192.168.88.211")
 USER = os.getenv("RPI_USER", "pi")
@@ -60,6 +60,7 @@ PI_BASE = "/home/pi/rpi_hmi"
 RELEASES_DIR = f"{PI_BASE}/releases"
 CURRENT_LINK = f"{PI_BASE}/current"
 VENV_PY = f"{PI_BASE}/venv/bin/python3"
+VENV_PIP = f"{PI_BASE}/venv/bin/pip3"
 ROOT = Path(__file__).resolve().parents[1]
 
 # Regex semver estricto
@@ -139,7 +140,6 @@ def deploy_files_to_release(ssh: ParamikoSSHDriver, version: str) -> Path:
     # Extensiones que deben copiarse SIEMPRE (sin extension, como VERSION)
     no_ext_files = {"VERSION", "README.md", "LICENSE"}
 
-    steps = []
     total = 0
     failed = 0
 
@@ -238,14 +238,13 @@ def setup_environment_in_release(ssh: ParamikoSSHDriver, version: str) -> None:
 
 def switch_current(ssh: ParamikoSSHDriver, version: str) -> None:
     """Actualiza el symlink current para apuntar al nuevo release."""
-    release = f"{RELEASES_DIR}/{version}"
     ssh.execute(f"ln -sfn releases/{version} {CURRENT_LINK}", timeout=10)
     print(f"  current -> releases/{version}")
 
 
 def restart_display(ssh: ParamikoSSHDriver) -> None:
     """Reinicia el servicio display via systemctl."""
-    result = ssh.execute(
+    ssh.execute(
         "sudo systemctl restart rpi-hmi-display.service 2>/dev/null || true",
         timeout=10,
     )
@@ -254,7 +253,9 @@ def restart_display(ssh: ParamikoSSHDriver) -> None:
 
 def verify_deployed(ssh: ParamikoSSHDriver) -> None:
     """Verifica el estado tras el deploy."""
-    result = ssh.execute("curl -fsS http://localhost:8000/health 2>/dev/null || echo 'UNREACHABLE'", timeout=10)
+    result = ssh.execute(
+        "curl -fsS http://localhost:8000/health 2>/dev/null || echo 'UNREACHABLE'", timeout=10
+    )
     print(f"  Backend health: {result.stdout[:200]}")
 
     if check_backend_ready(ssh):

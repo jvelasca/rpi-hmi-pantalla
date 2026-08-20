@@ -14,14 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.services.ssh_manager import MockSSHDriver, SSHResult
 from backend.app.services.deploy_service import (
     DeployService,
     DeployStatus,
     NetworkScanner,
     ScanResult,
 )
-
+from backend.app.services.ssh_manager import MockSSHDriver
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
 

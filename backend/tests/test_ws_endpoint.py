@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.main import app
 from backend.app.services.state_manager import StateManager, state_manager
 
 

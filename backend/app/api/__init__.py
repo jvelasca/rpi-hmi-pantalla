@@ -8,12 +8,12 @@ Expone los routers:
 - admin_deploy_router: endpoints administrativos de deploy (/admin/deploy/*)
 """
 
-from backend.app.api.hmi import router as hmi_router
-from backend.app.api.ws import router as ws_router
+from backend.app.api.deploy import router as admin_deploy_router
 from backend.app.api.health import router as health_router
+from backend.app.api.hmi import router as hmi_router
 from backend.app.api.network import router as network_router
 from backend.app.api.ssh import router as admin_ssh_router
-from backend.app.api.deploy import router as admin_deploy_router
+from backend.app.api.ws import router as ws_router
 
 __all__ = [
     "hmi_router",

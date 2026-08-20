@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import secrets as _secrets
-from typing import Optional
 
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -29,7 +28,7 @@ logger = logging.getLogger("backend.api.deps")
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def require_admin_api_key(api_key: Optional[str] = Security(_api_key_header)) -> None:
+def require_admin_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     """Exige API key unicamente en modo ``protected``.
 
     En ``SECURITY_MODE == "local"`` no exige autenticacion y retorna ``None``.

@@ -28,8 +28,9 @@ from dotenv import load_dotenv
 # Cargar .env desde raiz del proyecto
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from backend.app.services.ssh_manager import ParamikoSSHDriver
-from backend.app.services.deploy_service import DeployService
+# Imports tras load_dotenv(): los modulos de backend leen settings del entorno al importar.
+from backend.app.services.deploy_service import DeployService  # noqa: E402
+from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
 HOST = os.getenv("RPI_HOST", "192.168.88.211")
 USER = os.getenv("RPI_USER", "pi")
@@ -185,7 +186,9 @@ def install_display_deps(ssh: ParamikoSSHDriver) -> bool:
 def verify(ssh: ParamikoSSHDriver) -> None:
     """Run verification checks."""
     # Health (usa /health/ready con HTTP status)
-    result = ssh.execute("curl -fsS http://localhost:8000/health 2>/dev/null || echo 'UNREACHABLE'", timeout=10)
+    result = ssh.execute(
+        "curl -fsS http://localhost:8000/health 2>/dev/null || echo 'UNREACHABLE'", timeout=10
+    )
     print(f"  Backend health: {result.stdout[:200]}")
 
     # Check ready endpoint
@@ -377,7 +380,7 @@ def main() -> None:
         step("ENSURE SCRIPTS EXECUTABLE")
         script_errors = _ensure_scripts_executable(ssh)
         if script_errors:
-            print(f"\n[ERROR] Script chmod errors:")
+            print("\n[ERROR] Script chmod errors:")
             for e in script_errors:
                 print(f"  - {e}")
             sys.exit(1)

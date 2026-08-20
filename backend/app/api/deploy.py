@@ -22,15 +22,15 @@ from __future__ import annotations
 
 import logging
 import secrets as _secrets
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.app.config import settings
+from backend.app.services.deploy_service import DeployService, ScanResult
 from backend.app.services.ssh_manager import SSHDriver
-from backend.app.services.deploy_service import DeployService, DeployStatus, ScanResult
 
 logger = logging.getLogger("backend.api.deploy")
 
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/admin/deploy", tags=["Admin/Deploy"])
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def _verify_api_key(api_key: Optional[str] = Security(_api_key_header)) -> None:
+def _verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
     """Verifica que la API key proporcionada coincide con la configurada."""
     if not settings.admin_api_key:
         raise HTTPException(
@@ -105,7 +105,7 @@ class DeployResultResponse(BaseModel):
     """
 
     success: bool
-    steps: List[DeployStatusResponse]
+    steps: list[DeployStatusResponse]
 
 
 class ScanResultResponse(BaseModel):
@@ -116,7 +116,7 @@ class ScanResultResponse(BaseModel):
         count: Numero total de dispositivos encontrados.
     """
 
-    results: List[dict[str, Any]]
+    results: list[dict[str, Any]]
     count: int
 
 
@@ -150,7 +150,7 @@ def deploy_scan() -> ScanResultResponse:
     from backend.app.services.deploy_service import NetworkScanner
 
     logger.info("Escaneando red local...")
-    scan_results: List[ScanResult] = NetworkScanner.scan(timeout=1.0)
+    scan_results: list[ScanResult] = NetworkScanner.scan(timeout=1.0)
     results = [
         {
             "ip": r.ip,
@@ -163,7 +163,7 @@ def deploy_scan() -> ScanResultResponse:
 
 
 @router.post("/setup", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:
+def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:  # noqa: B008
     """Configura el entorno Python en la Raspberry Pi. Requiere autenticacion.
 
     Crea la estructura de directorios, instala paquetes del sistema,
@@ -189,7 +189,7 @@ def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRes
 
 
 @router.post("/app", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:
+def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:  # noqa: B008
     """Despliega los archivos de la aplicacion en la Raspberry Pi. Requiere autenticacion.
 
     Copia todos los archivos .py, .yaml y .txt del proyecto local
@@ -215,7 +215,7 @@ def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRespo
 
 
 @router.get("/diagnostics", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
+def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Ejecuta el script de diagnostico en la Raspberry Pi. Requiere autenticacion.
 
     Recopila informacion del sistema (SO, GPIO, pantalla, red, etc.)
@@ -235,7 +235,7 @@ def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeploySta
 
 
 @router.get("/health", response_model=HealthCheckResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckResponse:
+def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckResponse:  # noqa: B008
     """Verifica que el backend FastAPI responde en la Raspberry Pi. Requiere autenticacion.
 
     Realiza una peticion HTTP desde la propia Pi a localhost:8000/health
@@ -253,7 +253,7 @@ def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckRes
 
 
 @router.post("/start", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
+def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Inicia el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 
     Lanza uvicorn en segundo plano en el puerto 8000.
@@ -273,7 +273,7 @@ def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusRes
 
 
 @router.post("/stop", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
-def deploy_stop(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:
+def deploy_stop(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Detiene el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 
     Envia SIGTERM al proceso uvicorn remoto.

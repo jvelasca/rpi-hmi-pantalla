@@ -6,12 +6,11 @@ con validacion Pydantic estricta y discriminacion por campo `type`.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
-
 
 # ── Enums ──────────────────────────────────────────────────────
 
@@ -131,6 +130,6 @@ class ServerMessage(BaseModel):
         default=None, ge=0, description="Contador secuencial de eventos (None para errores)"
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Timestamp UTC del evento",
     )

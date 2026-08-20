@@ -19,8 +19,8 @@ Uso:
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 
 import aiosqlite
 
@@ -209,7 +209,7 @@ class Persistence:
             return
         await self._conn.execute(
             "UPDATE led_state SET state = ?, updated_at = ? WHERE id = 1",
-            (1 if state else 0, datetime.now(timezone.utc).isoformat()),
+            (1 if state else 0, datetime.now(UTC).isoformat()),
         )
         await self._conn.commit()
 
@@ -241,7 +241,7 @@ class Persistence:
             return
         await self._conn.execute(
             "UPDATE button_state SET press_count = ?, updated_at = ? WHERE id = 1",
-            (count, datetime.now(timezone.utc).isoformat()),
+            (count, datetime.now(UTC).isoformat()),
         )
         await self._conn.commit()
 
@@ -274,7 +274,7 @@ class Persistence:
             return
         await self._conn.execute(
             "UPDATE display_settings SET font_family = ?, text_size = ?, updated_at = ? WHERE id = 1",
-            (font_family, text_size, datetime.now(timezone.utc).isoformat()),
+            (font_family, text_size, datetime.now(UTC).isoformat()),
         )
         await self._conn.commit()
 
@@ -291,7 +291,7 @@ class Persistence:
             return
         await self._conn.execute(
             "INSERT INTO event_log (timestamp, event_type, payload) VALUES (?, ?, ?)",
-            (datetime.now(timezone.utc).isoformat(), event_type, payload),
+            (datetime.now(UTC).isoformat(), event_type, payload),
         )
         await self._conn.commit()
         await self._rotate_event_log()

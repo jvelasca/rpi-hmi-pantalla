@@ -9,7 +9,6 @@ Valida:
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 
 from backend.app.models.hmi import ButtonState, LedState, SystemStatus

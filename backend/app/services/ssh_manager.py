@@ -23,12 +23,11 @@ Incluye soporte para context manager (``with``), manejo de errores
 """
 from __future__ import annotations
 
+import contextlib
 import logging
-import socket
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("backend.services.ssh")
 
@@ -158,9 +157,9 @@ class SSHDriver(ABC):
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[object],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
     ) -> None:
         """Cierra la conexión automáticamente al salir del bloque with."""
         self.disconnect()
@@ -224,6 +223,7 @@ class ParamikoSSHDriver(SSHDriver):
             TimeoutError: Timeout agotado durante la conexión.
         """
         import os as _os
+
         import paramiko  # type: ignore[import-untyped]  # paramiko no distribuye stubs de tipos
 
         self.host = host
@@ -236,10 +236,8 @@ class ParamikoSSHDriver(SSHDriver):
             # RejectPolicy: solo acepta claves conocidas en known_hosts.
             # Para primera conexion en LAN, cargar known_hosts local.
             self._client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            try:
+            with contextlib.suppress(Exception):
                 self._client.load_system_host_keys()
-            except Exception:
-                pass  # Si no hay known_hosts, intentamos cargar del usuario
             try:
                 known_hosts = _os.path.expanduser("~/.ssh/known_hosts")
                 if _os.path.exists(known_hosts):
@@ -273,10 +271,8 @@ class ParamikoSSHDriver(SSHDriver):
 
                 if key is None:
                     # Intentar con password de la clave (frase de paso)
-                    try:
+                    with contextlib.suppress(paramiko.SSHException):
                         key = paramiko.RSAKey.from_private_key_file(expanded_path, password=password or None)
-                    except paramiko.SSHException:
-                        pass
 
                 if key is None:
                     raise PermissionError(f"No se pudo leer la clave privada: {expanded_path}")
@@ -292,7 +288,7 @@ class ParamikoSSHDriver(SSHDriver):
         except paramiko.AuthenticationException as exc:
             logger.error("Autenticación fallida para %s@%s", user, host)
             raise PermissionError(f"Credenciales incorrectas para {user}@{host}") from exc
-        except (socket.timeout, paramiko.SSHException) as exc:
+        except (TimeoutError, paramiko.SSHException) as exc:
             logger.error("Timeout conectando a %s:%d", host, port)
             raise TimeoutError(f"Timeout conectando a {host}:{port} ({timeout}s)") from exc
         except (OSError, EOFError) as exc:
@@ -337,7 +333,7 @@ class ParamikoSSHDriver(SSHDriver):
                 len(stderr_str),
             )
             return result
-        except socket.timeout as exc:
+        except TimeoutError as exc:
             logger.error("Timeout ejecutando comando en %s: %s", self.host, command)
             raise TimeoutError(f"Timeout ejecutando '{command}' (>{timeout}s)") from exc
 
@@ -379,17 +375,13 @@ class ParamikoSSHDriver(SSHDriver):
         Es idempotente: llamar múltiples veces no produce errores.
         """
         if self._sftp:
-            try:
+            with contextlib.suppress(Exception):
                 self._sftp.close()
-            except Exception:
-                pass
             self._sftp = None
 
         if self._client:
-            try:
+            with contextlib.suppress(Exception):
                 self._client.close()
-            except Exception:
-                pass
             self._client = None
 
         logger.info("Conexión SSH cerrada (host=%s)", self.host or "desconocido")
@@ -508,9 +500,7 @@ class MockSSHDriver(SSHDriver):
             out = "RESTARTED"
         elif "systemctl enable" in command:
             out = "Created symlink"
-        elif "systemctl daemon-reload" in command:
-            out = ""
-        elif "systemctl disable" in command:
+        elif "systemctl daemon-reload" in command or "systemctl disable" in command:
             out = ""
         elif "curl" in command and "health" in command:
             if "/health/ready" in command:
@@ -550,7 +540,7 @@ class MockSSHDriver(SSHDriver):
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Mock: archivo local no encontrado: {local_path}")
 
-        with open(local_path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(local_path, encoding="utf-8", errors="replace") as fh:
             content = fh.read()
 
         self.files[remote_path] = content

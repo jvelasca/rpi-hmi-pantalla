@@ -9,13 +9,9 @@ Valida:
 
 from __future__ import annotations
 
-import pytest
-
 from backend.app.services.gpio_service import (
     GPIOService,
     MockGPIODriver,
-    RealGPIODriver,
-    gpio_service,
 )
 
 

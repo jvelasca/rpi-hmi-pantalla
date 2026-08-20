@@ -36,7 +36,7 @@ import requests
 # ── Pygame import (puede fallar en PC sin pygame instalado) ──
 try:
     import pygame  # noqa: E402
-except ImportError as exc:
+except ImportError:
     _msg = (
         "\n"
         "=" * 55 + "\n"
@@ -80,7 +80,7 @@ from display.ui.widgets import (  # noqa: E402
 logger = logging.getLogger("rpi_hmi.display")
 
 # Referencia global a la instancia activa para shutdown graceful por señales
-_app_instance: "DisplayApp | None" = None
+_app_instance: DisplayApp | None = None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -446,7 +446,9 @@ class DisplayApp:
             with self._ws_lock:
                 self.ws_connected = True
             # Suscribirse a topicos
-            ws.send(json.dumps({"type": "subscribe", "topics": ["led", "button", "display"], "version": "1.0"}))
+            ws.send(
+                json.dumps({"type": "subscribe", "topics": ["led", "button", "display"], "version": "1.0"})
+            )
 
         def on_message(ws: WebSocketApp, message: str) -> None:
             try:
@@ -646,9 +648,13 @@ class DisplayApp:
                     dirty = True
 
             # ── Auto-volver tras calibración ──
-            if self.view == "touch_calib" and self.touch_calib_view.is_done:
-                if self._calib_done_time and now - self._calib_done_time > 2.5:
-                    self._show_main()
+            if (
+                self.view == "touch_calib"
+                and self.touch_calib_view.is_done
+                and self._calib_done_time
+                and now - self._calib_done_time > 2.5
+            ):
+                self._show_main()
 
             # ── Renderizar solo cuando hay cambios ──
             if dirty:

@@ -6,8 +6,8 @@ Expone los servicios principales:
 - Persistence: capa de persistencia SQLite asincrona.
 """
 
-from backend.app.services.state_manager import StateManager
 from backend.app.services.gpio_service import GPIOService
 from backend.app.services.persistence import Persistence
+from backend.app.services.state_manager import StateManager
 
 __all__ = ["GPIOService", "StateManager", "Persistence"]

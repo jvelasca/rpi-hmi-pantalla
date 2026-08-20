@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Literal
+from typing import Literal
 
 from backend.app.models.network import NetworkResult, NetworkStatus
 
@@ -145,7 +145,9 @@ class NetworkService:
         gateway: str | None = None
         dns: str | None = None
 
-        code, out, _ = self._run([_NMCLI, "-t", "-f", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS", "device", "show", device])
+        code, out, _ = self._run(
+            [_NMCLI, "-t", "-f", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS", "device", "show", device]
+        )
         if code == 0:
             for line in out.splitlines():
                 if line.startswith("IP4.ADDRESS[") and ":" in line:
@@ -193,7 +195,9 @@ class NetworkService:
 
         active = self._active_ethernet()
         if active is None:
-            return NetworkResult(success=False, message="No se encontro conexion ethernet activa", status=None)
+            return NetworkResult(
+                success=False, message="No se encontro conexion ethernet activa", status=None
+            )
 
         name, _device = active
         dns_value = dns or gateway
@@ -233,7 +237,9 @@ class NetworkService:
 
         active = self._active_ethernet()
         if active is None:
-            return NetworkResult(success=False, message="No se encontro conexion ethernet activa", status=None)
+            return NetworkResult(
+                success=False, message="No se encontro conexion ethernet activa", status=None
+            )
 
         name, _device = active
 

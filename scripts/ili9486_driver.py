@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 ili9486_driver.py — Driver Python puro para pantalla ILI9486 480x320 por SPI
 
@@ -19,11 +18,10 @@ Uso:
     sudo python3 ili9486_driver.py --run    # Bucle HMI completo
 """
 
+import argparse
 import os
 import sys
 import time
-import struct
-import argparse
 
 # ── Configuracion de pines ──────────────────────────────────
 PIN_DC = 24
@@ -126,7 +124,8 @@ class ILI9486:
                     f"SPI device {spidev_path} no encontrado. "
                     f"Asegurate de que dtparam=spi=on esta en /boot/config.txt"
                 )
-        self.spi = open(spidev_path, "wb", buffering=0)
+        # El fd SPI debe permanecer abierto durante toda la vida del objeto.
+        self.spi = open(spidev_path, "wb", buffering=0)  # noqa: SIM115
         print(f"[ILI9486] SPI abierto: {spidev_path}")
 
     def send_cmd(self, cmd, data=None):

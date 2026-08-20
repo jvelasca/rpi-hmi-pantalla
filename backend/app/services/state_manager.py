@@ -140,8 +140,8 @@ class StateManager:
         from pathlib import Path as _Path
 
         try:
-            from backend.app.services.gpio_service import load_devices
             from backend.app.models.device import DeviceType
+            from backend.app.services.gpio_service import load_devices
 
             # Resolver ruta absoluta relativa a este archivo
             project_root = _Path(__file__).resolve().parents[3]  # services -> app -> backend -> root
@@ -161,7 +161,7 @@ class StateManager:
 
             # 2. Buscar dispositivo por led_device_id
             led_device_id = None
-            for dev_id, dev in devices.items():
+            for _, dev in devices.items():
                 if dev.kwargs.get("led_device_id"):
                     led_device_id = dev.kwargs["led_device_id"]
                     break

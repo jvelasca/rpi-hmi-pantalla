@@ -10,15 +10,14 @@ state_manager/gpio_service se resetea en conftest.py via autouse.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from backend.app.main import app, lifespan
-from backend.app.models.device import DeviceType, PinMapping, DeviceConfig
+from backend.app.models.device import DeviceConfig, DeviceType, PinMapping
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -70,7 +69,7 @@ class TestLifespanStartup:
         with patch(
             "backend.app.services.gpio_service.load_devices", return_value={}
         ), patch.object(gpio_service, "setup_output") as mock_setup, \
-           patch.object(state_manager, "set_updater") as mock_updater, \
+           patch.object(state_manager, "set_updater"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -270,7 +269,11 @@ class TestLifespanStartup:
            patch.object(gpio_service, "cleanup"), \
            patch.object(Path, "exists", return_value=False), \
            patch("backend.app.main.settings.enable_admin_api", False), \
-           patch("backend.app.services.persistence.get_persistence", new_callable=AsyncMock, return_value=mock_db) as mock_get_pers, \
+           patch(
+               "backend.app.services.persistence.get_persistence",
+               new_callable=AsyncMock,
+               return_value=mock_db,
+           ) as mock_get_pers, \
            patch("backend.app.services.persistence.close_persistence", new_callable=AsyncMock):
 
             async with lifespan(app):
@@ -366,7 +369,10 @@ class TestLifespanShutdown:
            patch.object(Path, "exists", return_value=False), \
            patch("backend.app.main.settings.enable_admin_api", False), \
            patch("backend.app.services.persistence.get_persistence", new_callable=AsyncMock), \
-           patch("backend.app.services.persistence.close_persistence", new_callable=AsyncMock) as mock_close_pers:
+           patch(
+               "backend.app.services.persistence.close_persistence",
+               new_callable=AsyncMock,
+           ) as mock_close_pers:
 
             async with lifespan(app):
                 pass

@@ -772,11 +772,13 @@ class TestTouchDetection:
                     return m.return_value
                 raise FileNotFoundError
 
-            with patch("builtins.open", mock_open):
-                with patch("pathlib.Path.exists", return_value=True):
-                    result = _find_touch_device()
-                    assert result is not None
-                    assert "event1" in str(result)
+            with (
+                patch("builtins.open", mock_open),
+                patch("pathlib.Path.exists", return_value=True),
+            ):
+                result = _find_touch_device()
+                assert result is not None
+                assert "event1" in str(result)
 
     def test_find_touch_device_no_match_returns_none(self) -> None:
         """Ningun dispositivo coincide -> None."""
@@ -792,10 +794,12 @@ class TestTouchDetection:
                     return m.return_value
                 raise FileNotFoundError
 
-            with patch("builtins.open", mock_open):
-                with patch("pathlib.Path.exists", return_value=True):
-                    result = _find_touch_device()
-                    assert result is None
+            with (
+                patch("builtins.open", mock_open),
+                patch("pathlib.Path.exists", return_value=True),
+            ):
+                result = _find_touch_device()
+                assert result is None
 
     def test_touch_handler_no_device(self) -> None:
         """TouchHandler sin dispositivo detectado -> available=False."""

@@ -9,11 +9,10 @@ Tipos TypeScript equivalentes: frontend/src/types/api.ts
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
-
 
 # ── LED ────────────────────────────────────────────────────────
 
@@ -29,7 +28,9 @@ class LedState(BaseModel):
 
     state: Annotated[bool, Field(description="True = encendido, False = apagado")]
     label: str = Field(description="Etiqueta: ENCENDIDO | APAGADO")
-    gpio_pin: Annotated[int, Field(default=0, ge=0, le=27, description="Pin BCM del GPIO (cargado desde devices.yaml)")]
+    gpio_pin: Annotated[
+        int, Field(default=0, ge=0, le=27, description="Pin BCM del GPIO (cargado desde devices.yaml)")
+    ]
 
     @property
     def is_on(self) -> bool:
@@ -161,7 +162,7 @@ class SystemStatus(BaseModel):
             uptime_seconds=uptime_seconds,
             cpu_temp_celsius=cls._read_cpu_temp(),
             websocket_clients=ws_count,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     @staticmethod
@@ -172,7 +173,7 @@ class SystemStatus(BaseModel):
             Temperatura en grados Celsius, o None si el archivo no existe.
         """
         try:
-            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+            with open("/sys/class/thermal/thermal_zone0/temp") as f:
                 return float(f.read().strip()) / 1000.0
         except (OSError, FileNotFoundError):
             return None

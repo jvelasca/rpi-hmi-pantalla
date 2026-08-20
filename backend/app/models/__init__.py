@@ -7,13 +7,10 @@ Los tipos equivalentes en TypeScript se definen en `frontend/src/types/api.ts`
 y deben mantenerse sincronizados manualmente (o via generacion automatica en CI).
 """
 
-from backend.app.models.hmi import (
-    ButtonState,
-    DisplayCommand,
-    DisplayInfo,
-    DisplaySettings,
-    LedState,
-    SystemStatus,
+from backend.app.models.device import (
+    DeviceConfig,
+    DeviceType,
+    PinMapping,
 )
 from backend.app.models.events import (
     ClientMessage,
@@ -21,10 +18,13 @@ from backend.app.models.events import (
     ServerMessage,
     SubscriptionTopic,
 )
-from backend.app.models.device import (
-    DeviceConfig,
-    DeviceType,
-    PinMapping,
+from backend.app.models.hmi import (
+    ButtonState,
+    DisplayCommand,
+    DisplayInfo,
+    DisplaySettings,
+    LedState,
+    SystemStatus,
 )
 from backend.app.models.network import (
     NetworkResult,

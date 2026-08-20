@@ -20,14 +20,15 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from backend.app.services.ssh_manager import ParamikoSSHDriver
+# Import tras load_dotenv(): el modulo de backend lee settings del entorno al importar.
+from backend.app.services.ssh_manager import ParamikoSSHDriver  # noqa: E402
 
 HOST = os.getenv("RPI_HOST", "192.168.88.211")
 USER = os.getenv("RPI_USER", "pi")
@@ -58,7 +59,7 @@ def _connect() -> ParamikoSSHDriver:
 
 def cmd_backup(ssh: ParamikoSSHDriver) -> None:
     """Create a timestamped backup of the current deployment."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     backup_name = f"rpi_hmi_{timestamp}"
     backup_path = f"{BACKUP_BASE}/{backup_name}"
     archive = f"{backup_path}.tar.gz"
@@ -178,7 +179,7 @@ def cmd_restore(ssh: ParamikoSSHDriver, backup_name: str | None = None) -> None:
         return
 
     # Create safety backup of current deployment before restoring
-    safety_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safety_ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     safety_name = f"PRE_ROLLBACK_{safety_ts}"
     safety_archive = f"{BACKUP_BASE}/{safety_name}.tar.gz"
 
@@ -231,7 +232,7 @@ def cmd_restore(ssh: ParamikoSSHDriver, backup_name: str | None = None) -> None:
 
     print(f"\n  [OK] Restored to version: {restored_version}")
     print(f"       Safety backup: {safety_name}.tar.gz")
-    print(f"       Display service will auto-start when backend is ready.")
+    print("       Display service will auto-start when backend is ready.")
 
 
 def cmd_clean(ssh: ParamikoSSHDriver, keep: int) -> None:

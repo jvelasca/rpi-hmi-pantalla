@@ -101,7 +101,7 @@ def main() -> None:
         if "RESTARTED" in result.stdout:
             print("  Backend restart: OK")
         else:
-            print(f"  [ERROR] Backend restart failed. Revisa: sudo journalctl -u rpi-hmi-backend")
+            print("  [ERROR] Backend restart failed. Revisa: sudo journalctl -u rpi-hmi-backend")
             sys.exit(1)
 
         print(f"\n[DONE] {count} files -> http://{HOST}:8000/")

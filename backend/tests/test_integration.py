@@ -14,16 +14,14 @@ Ejecutar:
 from __future__ import annotations
 
 import sys
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from backend.app.main import app
-from backend.app.services.state_manager import StateManager, state_manager
 from backend.app.services.ssh_manager import MockSSHDriver
-
+from backend.app.services.state_manager import StateManager, state_manager
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -786,15 +784,17 @@ class TestErrorHandlingExtended:
         """El backend propaga RuntimeError como 500 cuando toggle_led falla."""
         from unittest.mock import patch
 
-        with patch(
-            "backend.app.services.state_manager.state_manager.toggle_led",
-            side_effect=RuntimeError("Simulated crash"),
+        with (
+            patch(
+                "backend.app.services.state_manager.state_manager.toggle_led",
+                side_effect=RuntimeError("Simulated crash"),
+            ),
+            pytest.raises(RuntimeError, match="Simulated crash"),
         ):
             # Starlette TestClient propaga excepciones no manejadas.
             # En produccion, FastAPI capturaria esto como 500.
             # Aqui verificamos que la excepcion se genera correctamente.
-            with pytest.raises(RuntimeError, match="Simulated crash"):
-                client.post("/api/led/toggle")
+            client.post("/api/led/toggle")
 
     def test_status_endpoint_reflects_ws_count(self, client) -> None:  # type: ignore[no-untyped-def]
         """GET /api/status refleja el numero de clientes WS."""

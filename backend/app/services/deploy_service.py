@@ -26,14 +26,13 @@ de servicios se hace via systemctl (nada de nohup/pkill).
 """
 from __future__ import annotations
 
+import contextlib
 import logging
-import os
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List, Dict
 
-from backend.app.services.ssh_manager import SSHDriver, SSHResult
+from backend.app.services.ssh_manager import SSHDriver
 
 logger = logging.getLogger("backend.services.deploy")
 
@@ -78,8 +77,8 @@ class ScanResult:
     """
 
     ip: str
-    hostname: Optional[str] = None
-    model: Optional[str] = None
+    hostname: str | None = None
+    model: str | None = None
     ssh_available: bool = False
 
 
@@ -94,13 +93,13 @@ class NetworkScanner:
     """
 
     @staticmethod
-    def _get_local_subnets() -> List[str]:
+    def _get_local_subnets() -> list[str]:
         """Obtiene las subredes locales de las interfaces de red activas.
 
         Returns:
             Lista de prefijos de subred en formato '192.168.1'.
         """
-        subnets: List[str] = []
+        subnets: list[str] = []
         try:
             hostname = socket.gethostname()
             ips = socket.gethostbyname_ex(hostname)[2]
@@ -127,9 +126,9 @@ class NetworkScanner:
             return False
 
     @staticmethod
-    def scan(timeout: float = 1.0, max_hosts: int = 20) -> List[ScanResult]:
+    def scan(timeout: float = 1.0, max_hosts: int = 20) -> list[ScanResult]:
         """Escanea la red local en busca de Raspberry Pi."""
-        results: List[ScanResult] = []
+        results: list[ScanResult] = []
         subnets = NetworkScanner._get_local_subnets()
         logger.info(
             "Escaneando %d subred(es), rango .1-.%d, timeout=%.1fs",
@@ -142,10 +141,8 @@ class NetworkScanner:
                 if NetworkScanner._check_ssh(ip, timeout=timeout):
                     logger.info("SSH detectado en %s", ip)
                     hostname = None
-                    try:
+                    with contextlib.suppress(Exception):
                         hostname = socket.gethostbyaddr(ip)[0]
-                    except Exception:
-                        pass
                     results.append(ScanResult(ip=ip, hostname=hostname, ssh_available=True))
                     if len(results) >= 3:
                         logger.info("Limite de resultados alcanzado, deteniendo escaneo")
@@ -156,7 +153,7 @@ class NetworkScanner:
         return results
 
     @staticmethod
-    def identify(ip: str, ssh: SSHDriver) -> Optional[ScanResult]:
+    def identify(ip: str, ssh: SSHDriver) -> ScanResult | None:
         """Identifica el modelo de un dispositivo ya detectado via SSH."""
         try:
             model_result = ssh.execute("cat /proc/device-tree/model 2>/dev/null || echo 'unknown'")
@@ -207,12 +204,12 @@ class DeployService:
         """
         self.ssh = ssh
         self.remote_root = remote_root
-        self.status_log: List[DeployStatus] = []
+        self.status_log: list[DeployStatus] = []
         logger.info("DeployService inicializado — remote_root=%s", remote_root)
 
     # ── Escaneo ──────────────────────────────────────────────────────
 
-    def detect_raspberry_pi(self, timeout: float = 1.0) -> List[ScanResult]:
+    def detect_raspberry_pi(self, timeout: float = 1.0) -> list[ScanResult]:
         """Escanea la red local en busca de Raspberry Pi."""
         logger.info("Iniciando deteccion de Raspberry Pi en la red local")
         results = NetworkScanner.scan(timeout=timeout)
@@ -226,7 +223,7 @@ class DeployService:
 
     # ── Configuracion del entorno ────────────────────────────────────
 
-    def setup_environment(self) -> List[DeployStatus]:
+    def setup_environment(self) -> list[DeployStatus]:
         """Configura el entorno Python en la Raspberry Pi.
 
         Crea el directorio del proyecto, el entorno virtual (venv/) e
@@ -236,7 +233,7 @@ class DeployService:
         """
         import time
 
-        steps: List[DeployStatus] = []
+        steps: list[DeployStatus] = []
         logger.info("Configurando entorno en la Raspberry Pi...")
 
         # 1. Crear estructura de directorios
@@ -267,7 +264,8 @@ class DeployService:
         t0 = time.time()
         result = self.ssh.execute(
             "dpkg -l python3-venv 2>/dev/null | grep -q '^ii' && echo 'OK' || "
-            "(sudo apt update -qq && sudo apt install -y python3-venv python3-pip python3-dev -qq && echo 'OK')"
+            "(sudo apt update -qq && sudo apt install -y python3-venv python3-pip "
+            "python3-dev -qq && echo 'OK')"
         )
         steps.append(DeployStatus(
             step="install_system_deps",
@@ -312,7 +310,7 @@ class DeployService:
 
     # ── Despliegue de la aplicacion ──────────────────────────────────
 
-    def deploy_app(self, project_root: Optional[str] = None) -> List[DeployStatus]:
+    def deploy_app(self, project_root: str | None = None) -> list[DeployStatus]:
         """Copia el proyecto completo a la Raspberry Pi via SFTP.
 
         Despliega directorios completos (con sus archivos .py, .yaml, .toml)
@@ -331,7 +329,7 @@ class DeployService:
         if project_root is None:
             project_root = str(Path.cwd())
 
-        steps: List[DeployStatus] = []
+        steps: list[DeployStatus] = []
         logger.info("Desplegando proyecto desde %s -> %s", project_root, self.remote_root)
 
         # Limpiar frontend/dist remoto antes de copiar para evitar
@@ -588,7 +586,7 @@ class DeployService:
 
     # ── Despliegue completo ──────────────────────────────────────────
 
-    def full_deploy(self, project_root: Optional[str] = None) -> Dict[str, List[DeployStatus]]:
+    def full_deploy(self, project_root: str | None = None) -> dict[str, list[DeployStatus]]:
         """Ejecuta el ciclo completo de despliegue con fail-fast.
 
         Si un paso falla, no continua con los siguientes.
@@ -600,7 +598,7 @@ class DeployService:
             Diccionario con los resultados agrupados por fase.
         """
         logger.info("=== INICIANDO DESPLIEGUE COMPLETO ===")
-        results: Dict[str, List[DeployStatus]] = {}
+        results: dict[str, list[DeployStatus]] = {}
 
         # 1. Environment
         env_steps = self.setup_environment()

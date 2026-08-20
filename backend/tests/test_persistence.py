@@ -14,7 +14,6 @@ import pytest_asyncio
 
 from backend.app.services.persistence import Persistence
 
-
 # ── Persistence Tests ──────────────────────────────────────────
 
 class TestPersistence:
@@ -151,7 +150,7 @@ class TestPersistenceEdgeCases:
     @pytest.mark.asyncio
     async def test_get_persistence_singleton_reuses_instance(self):
         """Llamar get_persistence dos veces devuelve la misma instancia."""
-        from backend.app.services.persistence import get_persistence, close_persistence
+        from backend.app.services.persistence import close_persistence, get_persistence
 
         await close_persistence()  # Reset singleton
         db1 = await get_persistence(":memory:")
@@ -162,7 +161,7 @@ class TestPersistenceEdgeCases:
     @pytest.mark.asyncio
     async def test_close_persistence_and_reinit(self):
         """Cerrar y reabrir la BD funciona."""
-        from backend.app.services.persistence import get_persistence, close_persistence
+        from backend.app.services.persistence import close_persistence, get_persistence
 
         await close_persistence()
         db = await get_persistence(":memory:")
@@ -181,15 +180,15 @@ class TestPersistenceEdgeCases:
 
         db = Persistence(":memory:")
         await db.init()
-        MAX = db.MAX_EVENT_LOG_ROWS
+        max_rows = db.MAX_EVENT_LOG_ROWS
         # Insert MAX + 500 events
-        for i in range(MAX + 500):
+        for i in range(max_rows + 500):
             await db.log_event(f"test_{i}")
         # Count remaining
         cursor = await db._conn.execute("SELECT COUNT(*) FROM event_log")
         row = await cursor.fetchone()
         count = row[0]
-        assert count <= MAX  # Should have rotated down
+        assert count <= max_rows  # Should have rotated down
         await db.close()
 
     @pytest.mark.asyncio

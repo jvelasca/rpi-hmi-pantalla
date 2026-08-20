@@ -13,6 +13,7 @@ una única llamada a on_touch_down, no una ráfaga de eventos.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -85,49 +86,49 @@ def solve_affine(points: list[tuple[int, int, int, int]]) -> tuple[float, float,
     if len(points) < 3:
         raise ValueError("Se necesitan al menos 3 puntos para calibrar")
 
-    S_rx2 = sum(rx * rx for rx, ry, sx, sy in points)
-    S_rxry = sum(rx * ry for rx, ry, sx, sy in points)
-    S_rx = sum(rx for rx, ry, sx, sy in points)
-    S_ry2 = sum(ry * ry for rx, ry, sx, sy in points)
-    S_ry = sum(ry for rx, ry, sx, sy in points)
-    S_sx = sum(sx for rx, ry, sx, sy in points)
-    S_sy = sum(sy for rx, ry, sx, sy in points)
-    S_rxsx = sum(rx * sx for rx, ry, sx, sy in points)
-    S_rysx = sum(ry * sx for rx, ry, sx, sy in points)
-    S_rxsy = sum(rx * sy for rx, ry, sx, sy in points)
-    S_rysy = sum(ry * sy for rx, ry, sx, sy in points)
+    s_rx2 = sum(rx * rx for rx, ry, sx, sy in points)
+    s_rxry = sum(rx * ry for rx, ry, sx, sy in points)
+    s_rx = sum(rx for rx, ry, sx, sy in points)
+    s_ry2 = sum(ry * ry for rx, ry, sx, sy in points)
+    s_ry = sum(ry for rx, ry, sx, sy in points)
+    s_sx = sum(sx for rx, ry, sx, sy in points)
+    s_sy = sum(sy for rx, ry, sx, sy in points)
+    s_rxsx = sum(rx * sx for rx, ry, sx, sy in points)
+    s_rysx = sum(ry * sx for rx, ry, sx, sy in points)
+    s_rxsy = sum(rx * sy for rx, ry, sx, sy in points)
+    s_rysy = sum(ry * sy for rx, ry, sx, sy in points)
 
     mat = [
-        [S_rx2, S_rxry, S_rx],
-        [S_rxry, S_ry2, S_ry],
-        [S_rx, S_ry, n],
+        [s_rx2, s_rxry, s_rx],
+        [s_rxry, s_ry2, s_ry],
+        [s_rx, s_ry, n],
     ]
-    a, b, c = _solve3(mat, [S_rxsx, S_rysx, S_sx])
-    d, e, f = _solve3(mat, [S_rxsy, S_rysy, S_sy])
+    a, b, c = _solve3(mat, [s_rxsx, s_rysx, s_sx])
+    d, e, f = _solve3(mat, [s_rxsy, s_rysy, s_sy])
     return a, b, c, d, e, f
 
 
 def _solve3(mat: list[list[float]], rhs: list[float]) -> tuple[float, float, float]:
     """Resuelve un sistema lineal 3x3 por eliminación gaussiana con pivoteo."""
-    M = [list(r) for r in mat]
+    m = [list(r) for r in mat]
     b = list(rhs)
     for col in range(3):
-        piv = max(range(col, 3), key=lambda i: abs(M[i][col]))
-        if abs(M[piv][col]) < 1e-12:
+        piv = max(range(col, 3), key=lambda i: abs(m[i][col]))
+        if abs(m[piv][col]) < 1e-12:
             raise ValueError("Sistema singular — puntos colineales")
-        M[col], M[piv] = M[piv], M[col]
+        m[col], m[piv] = m[piv], m[col]
         b[col], b[piv] = b[piv], b[col]
         for i in range(col + 1, 3):
-            factor = M[i][col] / M[col][col]
+            factor = m[i][col] / m[col][col]
             for j in range(col, 3):
-                M[i][j] -= factor * M[col][j]
+                m[i][j] -= factor * m[col][j]
             b[i] -= factor * b[col]
     x = [0.0, 0.0, 0.0]
     for i in range(2, -1, -1):
         s = b[i]
         for j in range(i + 1, 3):
-            s -= M[i][j] * x[j]
-        x[i] = s / M[i][i]
+            s -= m[i][j] * x[j]
+        x[i] = s / m[i][i]
     return x[0], x[1], x[2]
 
 
@@ -344,9 +345,7 @@ class TouchHandler:
     def close(self) -> None:
         """Cierra el dispositivo táctil."""
         if self._fd is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(self._fd)
-            except OSError:
-                pass
             self._fd = None
             logger.debug("Touch cerrado")

@@ -5,7 +5,6 @@ or from RPI_HOST, RPI_USER, RPI_PASSWORD, RPI_KEY_PATH env vars.
 """
 import os
 import sys
-import time
 from pathlib import Path
 
 from dotenv import load_dotenv

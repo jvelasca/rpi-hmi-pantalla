@@ -15,13 +15,12 @@ Uso:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from backend.app.config import settings
 from backend.app.services.state_manager import state_manager
 
 router = APIRouter(prefix="/health", tags=["Health"])
@@ -273,7 +272,7 @@ async def health_check() -> HealthStatus:
     result = HealthStatus(
         status=global_status,
         checks=checks,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         uptime_seconds=status.uptime_seconds,
     )
 

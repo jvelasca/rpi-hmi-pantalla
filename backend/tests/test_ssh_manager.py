@@ -19,12 +19,11 @@ import tempfile
 import pytest
 
 from backend.app.services.ssh_manager import (
-    SSHDriver,
-    SSHResult,
     MockSSHDriver,
     ParamikoSSHDriver,
+    SSHDriver,
+    SSHResult,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml  # type: ignore[import-untyped]  # sin stubs de PyYAML
@@ -81,7 +80,7 @@ def load_devices(path: str) -> dict[str, DeviceConfig]:
         Diccionario id -> DeviceConfig.
     """
     logger.info("Cargando devices desde %s", path)
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
 
     raw_devices = data.get("devices", [])

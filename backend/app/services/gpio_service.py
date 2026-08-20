@@ -25,12 +25,12 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]  # noqa: F401 — retrocompat, sin stubs de PyYAML
 
-from backend.app.models.device import DeviceConfig, load_devices as _load_devices  # noqa: F401
+from backend.app.models.device import DeviceConfig  # noqa: F401
+from backend.app.models.device import load_devices as _load_devices
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ __all__ = [
 ]
 
 
-def load_devices(path: str) -> Dict[str, DeviceConfig]:
+def load_devices(path: str) -> dict[str, DeviceConfig]:
     """Carga el registro de dispositivos desde un fichero YAML.
 
     Delega en backend.app.models.device.load_devices (modelo Pydantic).

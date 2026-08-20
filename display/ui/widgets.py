@@ -13,19 +13,14 @@ Soporta pygame.freetype (preferido) y pygame.font (fallback para ARMv6).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 import pygame
 
-# ── Font module detection (freetype not always available on ARMv6) ──
-_HAS_FREETYPE = hasattr(pygame, "freetype")
-if _HAS_FREETYPE:
-    import pygame.freetype
-
 from display.ui.theme import (
-    BACKGROUND,
     BTN_IDLE_BG,
     BTN_IDLE_MID,
     BTN_PRESSED_BG,
@@ -38,8 +33,7 @@ from display.ui.theme import (
     CONFIG_BTN_BG,
     CONFIG_BTN_HOVER,
     CONFIG_BTN_ICON,
-    FOOTER_BG,
-    FOOTER_TEXT,
+    ERROR,
     FONT_BOLD,
     FONT_FAMILY,
     FONT_SIZE_BIG,
@@ -48,8 +42,14 @@ from display.ui.theme import (
     FONT_SIZE_NORMAL,
     FONT_SIZE_SMALL,
     FONT_SIZE_TITLE,
+    FOOTER_BG,
+    FOOTER_TEXT,
     HEADER_BG,
     HEADER_TEXT,
+    LED2_ON_CORE,
+    LED2_ON_GLOW,
+    LED2_ON_HIGHLIGHT,
+    LED2_ON_MID,
     LED_OFF_BG,
     LED_OFF_HIGHLIGHT,
     LED_OFF_MID,
@@ -57,10 +57,6 @@ from display.ui.theme import (
     LED_ON_GLOW,
     LED_ON_HIGHLIGHT,
     LED_ON_MID,
-    LED2_ON_CORE,
-    LED2_ON_GLOW,
-    LED2_ON_HIGHLIGHT,
-    LED2_ON_MID,
     NETWORK_ACCENT,
     NETWORK_ACTIVE,
     NETWORK_BG,
@@ -70,7 +66,6 @@ from display.ui.theme import (
     NETWORK_STEP_BG,
     NETWORK_TEXT,
     OPTION_BG,
-    OPTION_HOVER,
     OPTION_ICON_BACK,
     OPTION_ICON_FONT,
     OPTION_ICON_MONITOR,
@@ -94,7 +89,6 @@ from display.ui.theme import (
     TEST_BAR_R,
     TEST_BAR_W,
     TEST_BAR_Y,
-    TEST_GRID_COLOR,
     TEXT_DIM,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -103,6 +97,11 @@ from display.ui.theme import (
     get_font_scale,
     set_font_settings,
 )
+
+# ── Font module detection (freetype not always available on ARMv6) ──
+_HAS_FREETYPE = hasattr(pygame, "freetype")
+if _HAS_FREETYPE:
+    import pygame.freetype
 
 if TYPE_CHECKING:
     pass
@@ -763,7 +762,7 @@ class ScreenTestView(Widget):
         pygame.draw.rect(surface, HEADER_BG, (0, bar_y, self.rect.width, 44))
 
         font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
-        for i, (label, btn) in enumerate(zip(_SCREEN_PATTERNS, self._btn_rects)):
+        for i, (label, btn) in enumerate(zip(_SCREEN_PATTERNS, self._btn_rects, strict=False)):
             bg = BUTTON_BG if i != self._pattern_idx else CONFIG_BTN_HOVER
             pygame.draw.rect(surface, bg, btn)
             pygame.draw.rect(surface, TEXT_DIM, btn, 1)
@@ -773,7 +772,16 @@ class ScreenTestView(Widget):
             _render_text(surface, font, label, BUTTON_TEXT, tx, ty)
 
     def _draw_color_bars(self, surface: pygame.Surface, area: pygame.Rect) -> None:
-        colors = [TEST_BAR_W, TEST_BAR_Y, TEST_BAR_C, TEST_BAR_G, TEST_BAR_M, TEST_BAR_R, TEST_BAR_B, TEST_BAR_BK]
+        colors = [
+            TEST_BAR_W,
+            TEST_BAR_Y,
+            TEST_BAR_C,
+            TEST_BAR_G,
+            TEST_BAR_M,
+            TEST_BAR_R,
+            TEST_BAR_B,
+            TEST_BAR_BK,
+        ]
         bar_w = area.width // len(colors)
         for i, color in enumerate(colors):
             pygame.draw.rect(surface, color, (area.x + i * bar_w, area.y, bar_w, area.height))
@@ -799,7 +807,7 @@ class ScreenTestView(Widget):
             _render_text(surface, font, label, text_color, tx, ty)
 
     def _draw_grid(self, surface: pygame.Surface, area: pygame.Rect) -> None:
-        from random import seed, randint
+        from random import randint, seed
         seed(42)
         cell = 20
         for row in range(0, area.height, cell):
@@ -978,7 +986,7 @@ class TouchCalibrationView(Widget):
         header_y = 44
         col_x = [20, 130, 240, 340]
         headers = ["Punto", "Target", "Offset X", "Offset Y"]
-        for i, (h, x) in enumerate(zip(headers, col_x)):
+        for _, (h, x) in enumerate(zip(headers, col_x, strict=False)):
             _render_text(surface, row_font, h, TEXT_SECONDARY, x, header_y)
 
         for j, off in enumerate(self._offsets):
@@ -1050,10 +1058,8 @@ class NetworkConfigView(Widget):
         if ip and "." in ip:
             parts = ip.split(".")
             if len(parts) == 4:
-                try:
+                with contextlib.suppress(ValueError):
                     self.octets = [int(p) for p in parts]
-                except ValueError:
-                    pass
         self.mode = "static" if net.get("mode") == "static" else "dhcp"
         self.prefix = net.get("prefix") or 24
         self._info_lines = [
