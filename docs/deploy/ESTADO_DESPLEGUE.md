@@ -5,10 +5,10 @@
 
 ## Estado general
 
-- **Fase actual:** FASE FINAL — código cerrado (H1–H9). Queda **H6 (hardware)** y validación en Pi de **H9**.
+- **Fase actual:** FASE FINAL — código cerrado (H1–H9) + **despliegue físico en la Pi completado (H6)**. Pendiente de cierre: validación H9 (watchdog) y firma del runbook.
 - **Última actualización:** 2026-08-20
-- **Commit base (restauración):** `d16f991` (HEAD actual `912e9a7`)
-- **Puerta de calidad actual:** pytest = 318 passed / 9 skipped · mypy = 0 · ruff = 0 · vitest = 16/16 · build OK
+- **Commit base (restauración):** `d16f991` (HEAD actual `3cb1eb8`)
+- **Puerta de calidad actual:** pytest = 318 passed / 9 skipped · mypy = 0 · ruff = 0 · vitest = 16/16 · build OK · HIL en Pi = 5/5 passed
 
 ## Workstreams
 
@@ -19,11 +19,11 @@
 | H3 | Red (validación) | P2 | ✅ completado | `handoffs/H3.md` | `d8ff3dd` |
 | H4 | CI/CD + dependencias | P2 | ✅ completado | `handoffs/H4.md` | `0802149` |
 | H5 | Docs/versión | P2/P3 | ✅ completado | `handoffs/H5.md` | `c2a3db1` |
-| H6 | Despliegue a la Pi (scripts + runbook + HIL) | P0 | ✅ código listo (ejecución en la Pi pendiente) | `handoffs/H6-deploy.md`, `handoffs/H6-hil.md` | `8203970`, `92fa837`, `52f46c4` |
+| H6 | Despliegue a la Pi (scripts + runbook + HIL) | P0 | ✅ completado (ejecución real en la Pi) | `handoffs/H6-deploy.md`, `handoffs/H6-hil.md` | `8203970`, `92fa837`, `52f46c4` |
 | H7 | Arquitectura mayor (HMI vs Admin) | P3 | ⏭️ diferido (decisión: no separar ahora) | — | — |
 | H8 | `startup_policy` (actuadores) | P3 | ✅ completado | `handoffs/H8.md` | `64bbf14` |
 | H8-button | Semántica del botón (toggle LED) | P3 | ✅ completado | `handoffs/H8-button.md` | `912e9a7` |
-| H9 | Watchdog `sd_notify` | P3 | ✅ completado (validación en Pi pendiente) | `handoffs/H9.md` | `5381ceb` |
+| H9 | Watchdog `sd_notify` | P3 | ✅ completado (validado en Pi: `NRestarts=0` tras 240s, `WatchdogTimestamp` avanza cada ~30s, sin falsos reinicios) | `handoffs/H9.md` | `5381ceb` |
 
 Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqueado
 
@@ -47,6 +47,10 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | 14 | **H7 diferido:** no separar HMI runtime de Admin service ahora (recomendación de la auditoría externa). Documentado como decisión; revisable al crecer la superficie admin | H7 | 2026-08-20 |
 | 15 | **Botón = toggle LED:** cada pulsación alterna el LED (vía `toggle_led()` atómico) e incrementa el contador. UI renombrada a "TOGGLE LED"/"ALTERNAR" | H8-button | 2026-08-20 |
 | 16 | **UI web sin `X-API-Key`:** diferido. En `protected`, la UI web desde LAN queda read-only (el display local por loopback y scripts/curl con header sí funcionan). Documentado como limitación conocida | UI | 2026-08-20 |
+| 17 | **Pi = `SECURITY_MODE=local`:** la Pi se despliega en modo `local` (LAN de confianza). `protected` rompería el touch porque el display Pygame llama a los mutadores REST sin `X-API-Key` (la exención loopback solo cubre `WS /ws`) | H6 | 2026-08-20 |
+| 18 | **Sin `/dev/mem`:** LED virtual (`pin: null`) ⇒ se retira `/dev/mem` de `ReadWritePaths` en el backend. Se conserva `/dev/gpiomem` para GPIO real futuro | H6 | 2026-08-20 |
+| 19 | **`SupplementaryGroups` con espacios:** `video input render` (systemd rechaza comas). Fijado en la unidad de display | H6 | 2026-08-20 |
+| 20 | **LF forzado en config Linux:** `.gitattributes` fuerza `eol=lf` para systemd/sudoers/`*.sh` (evita errores CRLF en `visudo -c` y `systemd-analyze verify`) | H6 | 2026-08-20 |
 
 ## Gates
 
@@ -57,7 +61,7 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | D3 (tras H4) | checks nuevos de `ci.yml` reproducibles localmente (bandit 0 medium+, pip-audit/npm audit en CI) | ✅ (bandit exit 0) |
 | D2/D3 (tras H6+H8+H9) | pytest (backend+display) + mypy + ruff verdes | ✅ (315 passed / 9 skipped · mypy 0 · ruff 0) |
 | D2/D3 (tras H8-button) | pytest (backend+display) + mypy + ruff + vitest + build verdes | ✅ (318 passed / 9 skipped · mypy 0 · ruff 0 · vitest 16/16 · build OK) |
-| D4 (tras H6) | servicios vivos en la Pi + HIL + runbook firmado | ⏳ (HW) |
+| D4 (tras H6) | servicios vivos en la Pi + HIL + runbook firmado | ✅ (backend `Type=notify` + display `User=pi` vivos · HIL 5/5 · sudoers OK · red 400 validada) |
 
 ## Log de ejecución
 
@@ -69,10 +73,12 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - 2026-08-20 — H6-deploy ∥ H6-hil ∥ H8 ∥ H9 ✅ en paralelo. Gate D2/D3 verde (315 passed / 9 skipped · mypy 0 · ruff 0).
 - 2026-08-20 — Commits H6–H9: `8203970`(H6-deploy) · `64bbf14`(H8) · `5381ceb`(H9) · `92fa837`(H6-hil) · `52f46c4`(runbook).
 - 2026-08-20 — Decisiones de producto H7/H8/UI registradas. H8-button ✅ (botón = toggle LED). Commit `912e9a7`. Gate D2/D3 verde (318 passed / 9 skipped · mypy 0 · ruff 0 · vitest 16/16 · build OK).
+- 2026-08-20 — **H6 (hardware) ejecutado en la Pi física (Raspberry Pi 1 Model B+, ARMv6).** Diagnóstico, sync SFTP (94 archivos), instalación sudoers + `.env` + units systemd, `systemd-analyze verify`, reinicio de servicios. Corregidos: CRLF en sudoers/systemd, `SupplementaryGroups` (espacios), `mkdirs` POSIX del script de sync, `/dev/mem` retirado.
+- 2026-08-20 — Smoke tests HTTP en modo `local` (200 público, 200 mutadores, 404 admin). HIL 5/5 passed (`gpiomem`, DRM card0, `/health`, `/api/status`, touch). Backend `Type=notify` + watchdog activo (`WATCHDOG=1`). Display como `User=pi` sin `--debug` (RSS 112→71 MB). Red: sudoers `nmcli` OK + `POST /api/network/static` inválido → 400.
+- 2026-08-20 — **H9 validado en la Pi.** Observación 240s: `NRestarts=0` (baseline 12:14:56 → final 12:18:56, `WatchdogTimestamp` avanza cada ~30s), `Result=success`, `active/running`, sin líneas stop/kill/timeout/restart en el journal. Sin falsos reinicios bajo carga real. Display ~82% CPU (esperable en ARMv6).
 
 ## Pendientes tras esta fase (para la Pi o decisión de usuario)
 
-- **H6 (hardware, ejecución real en la Pi):** instalar sudoers, crear `.env` de producción, `systemd-analyze verify`, decidir `/dev/mem`, correr smoke (401/200) y HIL, firmar el runbook. Todo documentado en `docs/deploy/runbook.md`.
 - **H7:** separar HMI runtime de Admin service (`:8001` + firewall) — diferido por decisión de producto (n.º 14). Revisable al crecer la superficie admin.
-- **H9 (validación en Pi):** confirmar que `Type=notify` + `WatchdogSec=30` no producen falsos reinicios bajo carga real.
 - **UI web auth:** añadir un mecanismo en el cliente web para enviar `X-API-Key` (WS y REST) — diferido por decisión de producto (n.º 16).
+- **Observación (no bloqueante):** el proceso de display (Pygame/kmsdrm) consume ~82% CPU en la Pi 1 Model B+ (ARMv6, 1 núcleo), lo esperable para un render loop continuo. Monitorizar si se desea reducir consumo (vblank/dirty-rectangles).

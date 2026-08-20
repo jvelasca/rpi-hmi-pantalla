@@ -8,6 +8,20 @@
 > `main`. Este runbook cubre únicamente el paso de hardware (P0) y las pruebas
 > físicas de cierre (gate D4).
 
+### Registro de ejecución — 2026-08-20 (Pi 1 Model B+, ARMv6)
+
+**Verificado programáticamente (SSH):**
+
+- Sync SFTP de 94 archivos actualizados; servicios instalados y `systemd-analyze verify` OK.
+- `SECURITY_MODE=local` desplegado (ver limitación de `protected` en `docs/SECURITY.md` §8).
+- Backend `Type=notify` + watchdog activo; HIL 5/5 passed; smoke HTTP (200 público, 200 mutadores, 404 admin).
+- sudoers `nmcli` funcional; `POST /api/network/static` inválido → `400` sin romper la red.
+- Watchdog validado 240 s: `NRestarts=0`, `WatchdogTimestamp` avanza cada ~30 s, sin falsos reinicios.
+
+**Pendiente de confirmación física (usuario, en la TFT):**
+
+- Boot completo tras `reboot`; UI visible en la TFT; coordenadas de touch; reconexión WebSocket; pérdida de red/display sin tumbar el backend.
+
 ---
 
 ## 0. Prerrequisitos y alcance
@@ -213,8 +227,8 @@ presente). Si alguno se salta, revisa el recurso concreto (ver
 - [ ] Touch responde y las coordenadas son correctas (si no: `invert_x`/`invert_y` en `display/ui/touch.py`).
 - [ ] WebSocket conecta desde el display local (loopback).
 - [ ] Reconexión WebSocket tras reiniciar el backend.
-- [ ] `POST /api/network/static` valida IP/gateway/subred incoherentes y devuelve 400 (sin romper la red).
-- [ ] Reinicio limpio: `sudo systemctl restart rpi-hmi-backend.service`.
+- [x] `POST /api/network/static` valida IP/gateway/subred incoherentes y devuelve 400 (sin romper la red).
+- [x] Reinicio limpio: `sudo systemctl restart rpi-hmi-backend.service`.
 - [ ] Pérdida de red (desconectar cable) no tumba el backend (watchdog no reinicia en falso).
 - [ ] Pérdida de display (desconectar TFT) no tumba el backend.
 - [ ] Restauración SQLite: togglear LED, `restart`, verificar que el LED se restaura según `STARTUP_POLICY`.

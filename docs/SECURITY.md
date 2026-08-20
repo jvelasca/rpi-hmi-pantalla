@@ -160,3 +160,45 @@ Política explícita de qué ocurre con el estado del dispositivo en cada moment
 - [ ] `SECURITY_MODE` decidido explícitamente (`local` o `protected`)
 - [ ] Regla sudoers instalada y validada (`visudo -c`)
 - [ ] Puerto 8000 no expuesto a Internet
+
+---
+
+## 8. Despliegue real en la Pi (2026-08-20)
+
+Hallazgos y decisiones aplicados durante la primera instalación física (H6).
+
+### Reducción de superficie de privilegios: sin `/dev/mem`
+
+El LED es **virtual** (`pin: null` en `backend/config/devices.yaml`), por lo que el
+backend no necesita acceso a memoria física. En `config/systemd/rpi-hmi-backend.service`
+se retiró `/dev/mem` de `ReadWritePaths`, quedando:
+
+```ini
+ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /sys/class/gpio
+```
+
+`/dev/gpiomem` se conserva para el acceso a GPIO real cuando se configure un actuador
+físico. Si en el futuro se mapea un LED a un pin GPIO, las librerías (`gpiozero`/
+`libgpiod`) usan `/dev/gpiomem` y **no** requieren `/dev/mem`.
+
+### `SupplementaryGroups` separado por espacios
+
+`systemd-analyze verify` rechaza los grupos separados por comas (regla estricta de
+nombres de usuario/grupo). La unidad de display usa `SupplementaryGroups=video input
+render` (espacios, no comas).
+
+### Fin de línea LF en config Linux (CRLF → LF)
+
+Los ficheros `systemd`, `sudoers` y `*.sh` desplegados vía SFTP desde Windows deben
+llevar fin de línea LF. El archivo `.gitattributes` fuerza `eol=lf` para ellos, evitando
+errores de `visudo -c` y `systemd-analyze verify` provocados por el carácter `\r` (CRLF).
+
+### `SECURITY_MODE` en la primera instalación
+
+La Pi quedó desplegada con `SECURITY_MODE=local` (prototipo doméstico en LAN de
+confianza). **Limitación conocida de `protected`:** el display Pygame llama a los
+mutadores REST locales (`POST /api/led/*`, `POST /api/button/*`) **sin** header
+`X-API-Key`, ya que la exención de loopback solo aplica a `WS /ws`. Por tanto, activar
+`SECURITY_MODE=protected` rompe el control táctil del HMI. Pendiente documentado (decisión
+n.º 16 en `docs/deploy/ESTADO_DESPLEGUE.md`): o bien se extiende la exención de loopback a
+los mutadores REST, o bien el display local envía el header.
