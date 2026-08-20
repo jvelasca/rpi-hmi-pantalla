@@ -9,12 +9,17 @@ Variables de entorno:
     RPI_PASSWORD: Password SSH
     RPI_KEY_PATH: Ruta a clave privada SSH (opcional)
     RPI_PORT: Puerto SSH (default: 22)
+    RPI_TIMEOUT: Timeout SSH en segundos (default: 15)
     BACKEND_HOST: Host de escucha del servidor (default: 0.0.0.0)
     BACKEND_PORT: Puerto de escucha (default: 8000)
-    ADMIN_API_KEY: Clave API para endpoints administrativos
+    SECURITY_MODE: Modo de seguridad 'local' | 'protected' (default: local)
+    ADMIN_API_KEY: Clave API para endpoints protegidos y administrativos
+    ENABLE_ADMIN_API: Habilitar endpoints /admin/* (default: false)
     CORS_ORIGINS: Origenes CORS permitidos (separados por coma)
     ENABLE_DOCS: Habilitar Swagger/Redoc (default: false)
     LOG_LEVEL: Nivel de logging (default: info)
+    STARTUP_POLICY: Politica de arranque de actuadores 'off'|'restore'|'safe' (default: restore)
+    DB_PATH: Ruta al archivo SQLite de persistencia (default: data/state.db)
 """
 
 from __future__ import annotations

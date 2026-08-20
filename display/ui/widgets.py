@@ -230,12 +230,21 @@ class Widget(ABC):
 
     @abstractmethod
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el widget sobre la superficie dada (obligatorio en subclases)."""
         ...
 
     def hit_test(self, screen_x: int, screen_y: int) -> bool:
+        """Devuelve True si el punto (screen_x, screen_y) cae dentro del widget.
+
+        Solo responde si el widget esta visible y habilitado.
+        """
         return self.visible and self.enabled and self.rect.collidepoint(screen_x, screen_y)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Maneja un toque; devuelve True si el evento fue consumido.
+
+        Por defecto no consume eventos. Las subclases interactivas lo sobreescriben.
+        """
         return False
 
 
@@ -259,6 +268,7 @@ class Panel(Widget):
         self.border_width = border_width
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el panel (fondo y borde) sobre la superficie."""
         if not self.visible:
             return
         pygame.draw.rect(surface, self.bg_color, self.rect)
@@ -281,6 +291,7 @@ class HeaderWidget(Widget):
         self.version = version
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la barra de titulo con el nombre de la app y la version."""
         if not self.visible:
             return
 
@@ -315,6 +326,7 @@ class StatusBar(Widget):
         self.fps: float = 0.0
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la barra de estado (hora, FPS y estado del backend)."""
         if not self.visible:
             return
 
@@ -369,9 +381,11 @@ class LedIndicator(Widget):
                                      w - 2 * padding, btn_h)
 
     def set_on_toggle(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar el boton toggle del LED."""
         self._on_toggle = callback
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el panel LED: titulo, circulo indicador y boton toggle."""
         if not self.visible:
             return
 
@@ -387,6 +401,7 @@ class LedIndicator(Widget):
         self._draw_toggle_button(surface)
 
     def _draw_led(self, surface: pygame.Surface) -> None:
+        """Dibuja el circulo LED con su estado (encendido/apagado)."""
         cx, cy = self._led_center_x, self._led_center_y
         r = self._led_radius
 
@@ -413,6 +428,7 @@ class LedIndicator(Widget):
         _render_text(surface, state_font, state_text, state_color, state_x, state_y)
 
     def _draw_toggle_button(self, surface: pygame.Surface) -> None:
+        """Dibuja el boton toggle con la etiqueta segun el estado del LED."""
         label = "APAGAR" if self.on else "ENCENDER"
         btn_rect = self._btn_rect
 
@@ -426,11 +442,13 @@ class LedIndicator(Widget):
         _render_text(surface, btn_font, label, BUTTON_TEXT, text_x, text_y)
 
     def hit_test(self, screen_x: int, screen_y: int) -> bool:
+        """Devuelve True si el toque cae dentro del boton toggle del LED."""
         if not self.visible or not self.enabled:
             return False
         return self._btn_rect.collidepoint(screen_x, screen_y)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Activa el callback de toggle si el toque cae en el boton."""
         if self._btn_rect.collidepoint(screen_x, screen_y):
             if self._on_toggle:
                 self._on_toggle()
@@ -469,12 +487,15 @@ class ButtonWidget(Widget):
         self._led2_radius = 8
 
     def set_on_press(self, callback: callable) -> None:
+        """Registra el callback invocado al presionar el boton."""
         self._on_press = callback
 
     def set_on_release(self, callback: callable) -> None:
+        """Registra el callback invocado al soltar el boton."""
         self._on_release = callback
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el boton: titulo, LED 2, boton circular y contador."""
         if not self.visible:
             return
 
@@ -505,6 +526,7 @@ class ButtonWidget(Widget):
             pygame.draw.circle(surface, LED_OFF_HIGHLIGHT, (cx - r // 3, cy - r // 3), r // 4)
 
     def _draw_button(self, surface: pygame.Surface) -> None:
+        """Dibuja el circulo del boton con la etiqueta ALTERNAR/ALTERNADO."""
         cx, cy = self._btn_center_x, self._btn_center_y
         r = self._btn_radius
 
@@ -527,6 +549,7 @@ class ButtonWidget(Widget):
         _render_text(surface, btn_font, label, color, text_x, text_y)
 
     def _draw_counter(self, surface: pygame.Surface) -> None:
+        """Dibuja la etiqueta y el valor del contador de pulsaciones."""
         label_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
         label_text = "Pulsaciones:"
         label_rect = _get_text_rect(label_font, label_text)
@@ -541,6 +564,7 @@ class ButtonWidget(Widget):
         _render_text(surface, counter_font, count_text, HEADER_TEXT, count_x, count_y)
 
     def hit_test(self, screen_x: int, screen_y: int) -> bool:
+        """Devuelve True si el toque cae dentro del circulo del boton."""
         if not self.visible or not self.enabled:
             return False
         cx, cy = self._btn_center_x, self._btn_center_y
@@ -550,6 +574,7 @@ class ButtonWidget(Widget):
         return (dx * dx + dy * dy) <= (r * r)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Activa el callback de presion si el toque cae dentro del circulo."""
         if self.hit_test(screen_x, screen_y):
             if self._on_press:
                 self._on_press()
@@ -572,9 +597,11 @@ class ConfigButton(Widget):
         self._on_click: callable | None = None
 
     def set_on_click(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar el boton de configuracion."""
         self._on_click = callback
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el boton flotante con icono de engranaje."""
         if not self.visible:
             return
         cx = self.rect.centerx
@@ -607,6 +634,7 @@ class ConfigButton(Widget):
             pygame.draw.circle(surface, CONFIG_BTN_ICON, (sx, sy), 2)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Activa el callback de clic si el toque cae sobre el boton."""
         if self.hit_test(screen_x, screen_y):
             if self._on_click:
                 self._on_click()
@@ -649,6 +677,7 @@ class ConfigOverlay(Widget):
 
     def set_callbacks(self, screen_test: callable, touch_calib: callable,
                       network: callable, font: callable, back: callable) -> None:
+        """Registra los callbacks de las 5 opciones del overlay de configuracion."""
         self._on_screen_test = screen_test
         self._on_touch_calib = touch_calib
         self._on_network = network
@@ -656,6 +685,7 @@ class ConfigOverlay(Widget):
         self._on_back = back
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el overlay de configuracion a pantalla completa."""
         if not self.visible:
             return
         # Full screen background
@@ -678,6 +708,7 @@ class ConfigOverlay(Widget):
 
     def _draw_option(self, surface: pygame.Surface, rect: pygame.Rect,
                      label: str, icon_char: str, icon_color: tuple) -> None:
+        """Dibuja una opcion del overlay (icono + etiqueta)."""
         pygame.draw.rect(surface, OPTION_BG, rect)
         pygame.draw.rect(surface, OVERLAY_BORDER, rect, 2)
 
@@ -694,6 +725,7 @@ class ConfigOverlay(Widget):
         _render_text(surface, label_font, label, TEXT_PRIMARY, label_x, label_y)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Activa el callback de la opcion tocada en el overlay de configuracion."""
         if self._btn_screen.collidepoint(screen_x, screen_y):
             if self._on_screen_test:
                 self._on_screen_test()
@@ -740,9 +772,11 @@ class ScreenTestView(Widget):
             self._btn_rects.append(pygame.Rect(i * btn_w, h - 44, btn_w, 44))
 
     def set_on_exit(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar la opcion 'Salir'."""
         self._on_exit = callback
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja el patron de prueba actual y la barra de botones inferior."""
         if not self.visible:
             return
 
@@ -772,6 +806,7 @@ class ScreenTestView(Widget):
             _render_text(surface, font, label, BUTTON_TEXT, tx, ty)
 
     def _draw_color_bars(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        """Dibuja el patron de barras de color (SMPTE-like)."""
         colors = [
             TEST_BAR_W,
             TEST_BAR_Y,
@@ -787,6 +822,7 @@ class ScreenTestView(Widget):
             pygame.draw.rect(surface, color, (area.x + i * bar_w, area.y, bar_w, area.height))
 
     def _draw_solid_colors(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        """Dibuja celdas de colores solidos con su nombre centrado."""
         colors = [
             ((255, 255, 255), "BLANCO"),
             ((255, 0, 0), "ROJO"),
@@ -807,6 +843,7 @@ class ScreenTestView(Widget):
             _render_text(surface, font, label, text_color, tx, ty)
 
     def _draw_grid(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        """Dibuja una rejilla de celdas con colores pseudo-aleatorios (seed fija)."""
         from random import randint, seed
         seed(42)
         cell = 20
@@ -816,6 +853,7 @@ class ScreenTestView(Widget):
                 pygame.draw.rect(surface, color, (area.x + col, area.y + row, cell, cell))
 
     def _draw_gradient(self, surface: pygame.Surface, area: pygame.Rect) -> None:
+        """Dibuja un degradado horizontal de rojo a azul."""
         for x in range(area.width):
             ratio = x / area.width
             r = int(255 * (1 - ratio))
@@ -826,6 +864,7 @@ class ScreenTestView(Widget):
                              (area.x + x, area.y + area.height - 1))
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Cambia el patron o sale de la vista segun el boton tocado."""
         for i, btn in enumerate(self._btn_rects):
             if btn.collidepoint(screen_x, screen_y):
                 if i == 4:  # Salir
@@ -884,6 +923,12 @@ class TouchCalibrationView(Widget):
             self._finish()
 
     def _finish(self) -> None:
+        """Valida los puntos capturados y resuelve la transformacion afin.
+
+        Rechaza capturas degeneradas (span raw < 300 en X o Y) reiniciando
+        el asistente, y calcula los offsets por punto para mostrarlos en la
+        vista de resultados.
+        """
         # Validar que los puntos raw capturados no sean degenerados
         rxs = [rx for rx, ry, sx, sy in self._raw_points]
         rys = [ry for rx, ry, sx, sy in self._raw_points]
@@ -916,17 +961,21 @@ class TouchCalibrationView(Widget):
 
     @property
     def is_done(self) -> bool:
+        """True si se completaron los 5 puntos de calibracion."""
         return self._done
 
     @property
     def coefficients(self) -> tuple | None:
+        """Coeficientes afines resueltos, o None si aun no se completaron."""
         return self._coeffs
 
     @property
     def raw_points(self) -> list[tuple[int, int, int, int]]:
+        """Copia de los puntos (raw_x, raw_y, screen_x, screen_y) capturados."""
         return list(self._raw_points)
 
     def reset(self) -> None:
+        """Reinicia el asistente de calibracion al primer punto."""
         self._current = 0
         self._done = False
         self._coeffs = None
@@ -934,6 +983,7 @@ class TouchCalibrationView(Widget):
         self._raw_points = []
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la cruz de calibracion o la tabla de resultados segun el estado."""
         if not self.visible:
             return
         pygame.draw.rect(surface, CALIB_BG, self.rect)
@@ -943,6 +993,7 @@ class TouchCalibrationView(Widget):
             self._draw_target(surface)
 
     def _draw_target(self, surface: pygame.Surface) -> None:
+        """Dibuja la cruz de calibracion y el progreso actual."""
         title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
         title_text = "CALIBRACION TACTIL"
         title_r = _get_text_rect(title_font, title_text)
@@ -971,6 +1022,7 @@ class TouchCalibrationView(Widget):
             pygame.draw.circle(surface, TARGET_TOUCHED, (px, py), 7, 2)
 
     def _draw_results(self, surface: pygame.Surface) -> None:
+        """Dibuja la tabla de resultados (offsets por punto de calibracion)."""
         title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
         if self._coeffs:
             title_text = "Calibracion correcta"
@@ -1047,9 +1099,11 @@ class NetworkConfigView(Widget):
         self._back_rect = pygame.Rect(20, 290, 440, 26)
 
     def set_on_apply(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar 'APLICAR' (recibe el payload)."""
         self._on_apply = callback
 
     def set_on_back(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar 'VOLVER'."""
         self._on_back = callback
 
     def set_status(self, net: dict) -> None:
@@ -1069,14 +1123,17 @@ class NetworkConfigView(Widget):
         ]
 
     def set_result(self, message: str, error: bool = False) -> None:
+        """Muestra un mensaje de resultado (exito o error) en la vista."""
         self._result = message
         self._result_error = error
 
     @property
     def gateway(self) -> str:
+        """Puerta de enlace derivada de los octetos editados (subnet .1)."""
         return f"{self.octets[0]}.{self.octets[1]}.{self.octets[2]}.1"
 
     def _payload(self) -> dict:
+        """Construye el payload JSON que se envia a POST /api/network/static."""
         ip = ".".join(str(o) for o in self.octets)
         return {
             "mode": self.mode,
@@ -1087,6 +1144,7 @@ class NetworkConfigView(Widget):
         }
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la vista de configuracion de IP (DHCP/estatica)."""
         if not self.visible:
             return
         pygame.draw.rect(surface, NETWORK_BG, self.rect)
@@ -1145,6 +1203,7 @@ class NetworkConfigView(Widget):
 
     def _draw_mode_btn(self, surface: pygame.Surface, rect: pygame.Rect,
                        label: str, active: bool) -> None:
+        """Dibuja un boton de seleccion de modo (DHCP/estatica)."""
         bg = NETWORK_ACTIVE if active else NETWORK_FIELD_BG
         border = NETWORK_ACTIVE if active else NETWORK_FIELD_BORDER
         pygame.draw.rect(surface, bg, rect)
@@ -1156,6 +1215,7 @@ class NetworkConfigView(Widget):
                      rect.y + (rect.height - text_r.height) // 2)
 
     def _draw_octets(self, surface: pygame.Surface) -> None:
+        """Dibuja los 4 octetos de la IP con flechas arriba/abajo."""
         for i in range(4):
             up = self._oct_up[i]
             val = self._oct_val[i]
@@ -1182,6 +1242,7 @@ class NetworkConfigView(Widget):
             self._draw_arrow(surface, down, up=False)
 
     def _draw_arrow(self, surface: pygame.Surface, rect: pygame.Rect, up: bool) -> None:
+        """Dibuja una flecha triangular (arriba o abajo) en el rectangulo dado."""
         cx = rect.centerx
         if up:
             y1 = rect.y + rect.height - 5
@@ -1192,6 +1253,7 @@ class NetworkConfigView(Widget):
         pygame.draw.polygon(surface, NETWORK_TEXT, [(cx - 5, y1), (cx + 5, y1), (cx, y2)])
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Maneja la interaccion: seleccion de modo, edicion de octetos y aplicar."""
         if self._btn_dhcp.collidepoint(screen_x, screen_y):
             self.mode = "dhcp"
             return True
@@ -1253,9 +1315,11 @@ class FontSettingsView(Widget):
         self._back_rect = pygame.Rect(20, 268, 440, 42)
 
     def set_on_change(self, callback: callable) -> None:
+        """Registra el callback invocado al cambiar fuente o tamano (familia, tamano)."""
         self._on_change = callback
 
     def set_on_back(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar 'VOLVER'."""
         self._on_back = callback
 
     def set_selection(self, font_family: str, text_size: str) -> None:
@@ -1266,6 +1330,7 @@ class FontSettingsView(Widget):
             self.text_size = text_size
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la vista de seleccion de fuente y tamano de texto."""
         if not self.visible:
             return
         pygame.draw.rect(surface, NETWORK_BG, self.rect)
@@ -1302,6 +1367,7 @@ class FontSettingsView(Widget):
 
     def _draw_choice(self, surface: pygame.Surface, rect: pygame.Rect,
                      label: str, active: bool) -> None:
+        """Dibuja una opcion seleccionable de fuente o tamano."""
         bg = NETWORK_ACTIVE if active else NETWORK_FIELD_BG
         border = NETWORK_ACTIVE if active else NETWORK_FIELD_BORDER
         pygame.draw.rect(surface, bg, rect)
@@ -1314,6 +1380,7 @@ class FontSettingsView(Widget):
                      rect.y + (rect.height - text_r.height) // 2)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Aplica la fuente o tamano seleccionado, o vuelve a la vista anterior."""
         for key, rect in self._font_btns.items():
             if rect.collidepoint(screen_x, screen_y):
                 self.font_family = key
