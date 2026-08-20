@@ -145,11 +145,17 @@ async def get_display_settings() -> DisplaySettings:
     return state_manager.get_display_settings()
 
 
-@router.post("/settings/display", response_model=DisplaySettings)
+@router.post(
+    "/settings/display",
+    response_model=DisplaySettings,
+    dependencies=[Depends(require_admin_api_key)],
+)
 async def set_display_settings(request: DisplaySettings) -> DisplaySettings:
     """Actualiza los ajustes visuales del display fisico.
 
     Se persiste en SQLite y se propaga al display fisico por WebSocket.
+    Protegido por ``require_admin_api_key``: en ``protected`` exige
+    ``X-API-Key`` salvo para el display local (loopback).
     """
     return state_manager.set_display_settings(
         request.font_family, request.text_size

@@ -98,11 +98,16 @@ class DisplaySettings(BaseModel):
     ]
 
 
+# Accion de cambio de vista valida. Fuente unica compartida entre REST
+# (DisplayCommand) y WebSocket (ClientMessage.display_command).
+DisplayAction = Literal["screen_test", "touch_calib", "network", "font", "config", "main"]
+
+
 class DisplayCommand(BaseModel):
     """Comando de cambio de vista enviado al display fisico."""
 
     action: Annotated[
-        Literal["screen_test", "touch_calib", "network", "font", "config", "main"],
+        DisplayAction,
         Field(description="Vista a mostrar en el display fisico"),
     ]
 

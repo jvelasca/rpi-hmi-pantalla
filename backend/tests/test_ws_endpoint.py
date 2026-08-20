@@ -275,3 +275,22 @@ class TestWebSocketAuth:
             ws.send_json({"version": "1.0", "type": "subscribe"})
             data = ws.receive_json()
             assert data["type"] == "status_update"
+
+    def test_protected_non_loopback_with_subprotocol_key_accepted(self, client, protected_mode):
+        """En protected, WS desde no-loopback con key via subprotocolo es aceptado.
+
+        Simula el navegador: new WebSocket(url, ["rpi-hmi", apiKey]).
+        """
+        with client.websocket_connect(
+            "/ws", subprotocols=["rpi-hmi", protected_mode]
+        ) as ws:
+            ws.send_json({"version": "1.0", "type": "subscribe"})
+            data = ws.receive_json()
+            assert data["type"] == "status_update"
+
+    def test_protected_non_loopback_with_query_token_accepted(self, client, protected_mode):
+        """En protected, WS desde no-loopback con key via ?token= es aceptado."""
+        with client.websocket_connect(f"/ws?token={protected_mode}") as ws:
+            ws.send_json({"version": "1.0", "type": "subscribe"})
+            data = ws.receive_json()
+            assert data["type"] == "status_update"

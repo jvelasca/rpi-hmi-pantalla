@@ -12,8 +12,10 @@ Valida:
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.app import config as config_module
+from backend.app.main import app
 
 # ── Health Check ──────────────────────────────────────────────
 
@@ -193,4 +195,38 @@ class TestProtectedHmi:
     def test_get_led_remains_public_in_protected(self, client, protected_mode):
         """Los GET de solo lectura siguen siendo publicos en protected."""
         r = client.get("/api/led")
+        assert r.status_code == 200
+
+    def test_led_on_loopback_without_key_returns_200(self, protected_mode):
+        """POST /api/led/on en protected desde loopback -> 200 (display local)."""
+        loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+        r = loopback_client.post("/api/led/on")
+        assert r.status_code == 200
+        assert r.json()["state"] is True
+
+    def test_settings_display_protected_without_key_returns_401(self, client, protected_mode):
+        """POST /api/settings/display en protected sin key (no-loopback) -> 401."""
+        r = client.post(
+            "/api/settings/display",
+            json={"font_family": "dejavu", "text_size": "medium"},
+        )
+        assert r.status_code == 401
+
+    def test_settings_display_protected_with_key_returns_200(self, client, protected_mode):
+        """POST /api/settings/display en protected con key -> 200."""
+        r = client.post(
+            "/api/settings/display",
+            json={"font_family": "liberation", "text_size": "large"},
+            headers={"X-API-Key": protected_mode},
+        )
+        assert r.status_code == 200
+        assert r.json()["font_family"] == "liberation"
+
+    def test_settings_display_loopback_without_key_returns_200(self, protected_mode):
+        """POST /api/settings/display en protected desde loopback -> 200."""
+        loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+        r = loopback_client.post(
+            "/api/settings/display",
+            json={"font_family": "dejavu", "text_size": "medium"},
+        )
         assert r.status_code == 200

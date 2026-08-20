@@ -18,6 +18,7 @@ acceso consistente desde multiples hilos/corutinas.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from typing import Any
@@ -27,6 +28,12 @@ from backend.app.models.events import ServerMessage, SubscriptionTopic
 logger = logging.getLogger(__name__)
 
 __all__ = ["WebSocketHub"]
+
+# Tope de la cola de broadcast por topico. Evita crecimiento ilimitado si un
+# cliente queda bloqueado o una tarea de broadcast se atasca: al llenarse se
+# descarta el evento mas antiguo (drop-oldest), aceptable para un HMI donde
+# el ultimo estado es el que importa.
+BROADCAST_QUEUE_MAXSIZE = 100
 
 
 class WebSocketHub:
@@ -91,13 +98,22 @@ class WebSocketHub:
 
             # Lazy-init queue and worker for this topic
             if topic not in self._broadcast_queues:
-                self._broadcast_queues[topic] = asyncio.Queue()
+                self._broadcast_queues[topic] = asyncio.Queue(
+                    maxsize=BROADCAST_QUEUE_MAXSIZE
+                )
                 self._broadcast_workers[topic] = loop.create_task(
                     self._broadcast_worker(topic)
                 )
 
-            # Put message in the queue (non-blocking)
-            self._broadcast_queues[topic].put_nowait(message)
+            # Put message in the queue (non-blocking), con drop-oldest si
+            # la cola esta llena (ver BROADCAST_QUEUE_MAXSIZE).
+            queue = self._broadcast_queues[topic]
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+                queue.put_nowait(message)
         except RuntimeError:
             logger.debug("Broadcast omitido (sin event loop): %s", message.type)
 

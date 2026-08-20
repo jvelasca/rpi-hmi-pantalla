@@ -2,9 +2,10 @@
  * App — Componente raiz. Orquesta WebSocket, estado y layout.
  */
 
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { useApi } from "@/hooks/useApi";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useConnectionMonitor } from "@/hooks/useConnectionMonitor";
 import { Header } from "@/components/Header";
 import { LedPanel } from "@/components/LedPanel";
 import { ButtonPanel } from "@/components/ButtonPanel";
@@ -15,7 +16,7 @@ import { ScreenTest } from "@/components/ScreenTest";
 import { TouchCalibration } from "@/components/TouchCalibration";
 import { NetworkConfig } from "@/components/NetworkConfig";
 import { FontSettings } from "@/components/FontSettings";
-import type { LedState, ButtonState, ServerMessage } from "@/types/api";
+import type { LedState, ButtonState, DisplayAction, ServerMessage } from "@/types/api";
 
 type View = "main" | "config" | "screenTest" | "touchCalibration" | "network" | "font";
 
@@ -61,15 +62,14 @@ export function App() {
   const ws = useWebSocket(handleWsMessage);
 
   // ── Poll REST como fallback cada 5s ────────────────
-  const pollInterval = setInterval(async () => {
-    if (ws.connected()) return; // WS activo, no poll
-    const status = await api.getStatus();
-    if (status) {
+  useConnectionMonitor({
+    isConnected: ws.connected,
+    getStatus: api.getStatus,
+    onStatus: (status) => {
       setLed(status.led);
       setButton(status.button);
-    }
-  }, 5000);
-  onCleanup(() => clearInterval(pollInterval));
+    },
+  });
 
   // ── Acciones ────────────────────────────────────────
   async function toggleLed() {
@@ -102,7 +102,7 @@ export function App() {
   }
 
   // ── Control del display fisico desde el panel web ──
-  function commandDisplay(action: string) {
+  function commandDisplay(action: DisplayAction) {
     if (ws.connected()) {
       ws.send({ type: "display_command", action, version: "1.0" });
     } else {

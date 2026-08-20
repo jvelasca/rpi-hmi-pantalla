@@ -35,8 +35,8 @@
 | Clase | Endpoints | Autenticación |
 |---|---|---|
 | **PUBLIC** | `GET /health`, `GET /health/live`, `GET /health/ready` | Ninguna |
-| **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET|POST /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
-| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **solo si** `SECURITY_MODE=protected` |
+| **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
+| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **solo si** `SECURITY_MODE=protected` (loopback exento) |
 | **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
 
 Notas:
@@ -44,22 +44,33 @@ Notas:
 - Los routers `/admin/*` solo se registran cuando `ENABLE_ADMIN_API=true`
   (deshabilitada por defecto). Si está deshabilitada, las rutas `/admin/*`
   no existen (responden 404).
-- Los endpoints HMI de solo lectura/ajuste (`GET /api/*`, `GET|POST
-  /api/settings/display`) y `GET /api/network` son públicos a propósito.
-- `POST /api/settings/display` (ajustes visuales) se deja **sin auth por ahora**:
-  lo usa el display local (Pygame) para ajustar fuente/tamaño de texto. Se
-  revisará en una auditoría posterior.
+- Los endpoints HMI de solo lectura (`GET /api/*`, `GET /api/settings/display`)
+  y `GET /api/network` son públicos a propósito.
+- `POST /api/settings/display` (ajustes visuales) está en **PROTECTED**: en modo
+  `protected` exige `X-API-Key` salvo desde loopback, de modo que el display
+  local (Pygame) sigue ajustando fuente/tamaño sin key.
 - `GET /api/network` es público a propósito (solo lectura); los `POST` que mutan
   la red son los que exigen auth en modo `protected`.
 
-### Exención de loopback para `WS /ws`
+### Exención de loopback (REST + WS)
 
-El display físico (Pygame) se conecta a `ws://localhost:8000/ws` desde la propia
-Pi. En `SECURITY_MODE=protected`, las conexiones WebSocket cuyo host de cliente
-sea `127.0.0.1`, `::1` o `localhost` se aceptan **sin** `X-API-Key` (display local
-de confianza). El resto de clientes deben enviar el header `X-API-Key` igual a
-`ADMIN_API_KEY`; si no lo envían, el handshake se rechaza con close code `4401`
-(no se llama a `accept()`).
+El display físico (Pygame) se conecta a `localhost:8000` (REST y `ws://`) desde la
+propia Pi. En `SECURITY_MODE=protected`, las peticiones cuyo host de cliente sea
+`127.0.0.1`, `::1` o `localhost` se aceptan **sin** `X-API-Key` (display local de
+confianza). Aplica a:
+
+- **REST**: la dependencia `require_admin_api_key` (ver `backend/app/api/deps.py`)
+  exime a loopback, de modo que los mutadores HMI (`/api/led/*`, `/api/button/*`,
+  `/api/settings/display`, etc.) siguen funcionando desde el display local.
+- **WS**: el handshake `WS /ws` exime a loopback.
+
+El resto de clientes deben autenticarse con `ADMIN_API_KEY`:
+
+- **REST**: header `X-API-Key`.
+- **WS**: header `X-API-Key`, subprotocolo `Sec-WebSocket-Protocol`
+  (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`) o query param `?token=`.
+  Si no se autentica, el handshake se rechaza con close code `4401`
+  (no se llama a `accept()`).
 
 ---
 
@@ -85,7 +96,8 @@ de confianza). El resto de clientes deben enviar el header `X-API-Key` igual a
 Dependencias de auth (ver `backend/app/api/deps.py`):
 
 - `require_admin_api_key` — respeta `SECURITY_MODE` (en `local` no exige nada; en
-  `protected` exige `X-API-Key`). Se usa en los mutadores HMI y de red.
+  `protected` exige `X-API-Key` salvo desde loopback). Se usa en los mutadores HMI
+  y de red.
 - `require_admin_api_key_always` — exige `X-API-Key` **siempre**; si
   `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
 
@@ -196,9 +208,9 @@ errores de `visudo -c` y `systemd-analyze verify` provocados por el carácter `\
 ### `SECURITY_MODE` en la primera instalación
 
 La Pi quedó desplegada con `SECURITY_MODE=local` (prototipo doméstico en LAN de
-confianza). **Limitación conocida de `protected`:** el display Pygame llama a los
-mutadores REST locales (`POST /api/led/*`, `POST /api/button/*`) **sin** header
-`X-API-Key`, ya que la exención de loopback solo aplica a `WS /ws`. Por tanto, activar
-`SECURITY_MODE=protected` rompe el control táctil del HMI. Pendiente documentado (decisión
-n.º 16 en `docs/deploy/ESTADO_DESPLEGUE.md`): o bien se extiende la exención de loopback a
-los mutadores REST, o bien el display local envía el header.
+confianza). La exención de loopback se extiende ahora a REST **y** WS, por lo que
+`SECURITY_MODE=protected` es compatible con el HMI táctil: el display local (loopback)
+muta LED/button/display sin key, mientras el resto de la LAN exige `X-API-Key`. Para
+activarlo en producción, establece `SECURITY_MODE=protected` y una `ADMIN_API_KEY`
+segura (32+ caracteres) en el `.env` del backend; y la misma key en `VITE_API_KEY` al
+compilar el frontend si el panel web debe poder mutar el HMI.

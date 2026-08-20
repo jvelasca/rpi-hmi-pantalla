@@ -4,17 +4,30 @@
  *
  * Incluye:
  *  - Validacion runtime de mensajes entrantes via Zod (safeParse, sin casts)
- *  - Sequence tracking con maquina de estados NORMAL -> RESYNCING -> NORMAL:
+ *  - Sequence tracking POR-TOPIC con maquina de estados NORMAL -> RESYNCING -> NORMAL:
  *    al detectar un gap se descartan los eventos WS hasta que el snapshot
  *    REST de /api/status complete, evitando mezclar eventos WS con el snapshot.
+ *
+ * El backend emite un `sequence` GLOBAL (orden total), por lo que dos eventos
+ * consecutivos del mismo topico pueden saltar varios numeros (los intermedios
+ * son de otros topicos). La deteccion de gaps se delega en
+ * createSequenceTracker(), que evalua el salto contra la marca de agua global
+ * (maximo sequence visto en cualquier topico), evitando gaps aparentes.
  */
 
 import { createSignal, onCleanup } from "solid-js";
 import { ServerMessageSchema, SystemStatusSchema } from "@/schemas/ws";
 import type { ClientMessage, ServerMessage } from "@/types/api";
+import { createSequenceTracker } from "@/hooks/sequenceTracker";
 
 const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`;
 const RECONNECT_DELAY = 2000;
+
+// En SECURITY_MODE=protected el backend exige autenticacion en /ws para
+// clientes no-loopback. El navegador no puede enviar X-API-Key como header,
+// pero si como subprotocolo: new WebSocket(url, ["rpi-hmi", apiKey]).
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
+const WS_PROTOCOLS = API_KEY ? ["rpi-hmi", API_KEY] : [];
 
 type SyncState = "normal" | "resyncing";
 
@@ -23,7 +36,7 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let shouldReconnect = true;
-  let lastSequence: number | null = null;
+  const tracker = createSequenceTracker();
   let syncState: SyncState = "normal";
 
   /** Recupera el estado completo via /api/status y re-baseline la secuencia. */
@@ -48,7 +61,7 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
         version: "1.0",
         sequence: null,
       });
-      lastSequence = null;
+      tracker.reset();
       console.info("useWebSocket: resync completado via /api/status");
     } catch (err) {
       console.warn("useWebSocket: resync fallido", err);
@@ -63,7 +76,7 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
     }
 
     try {
-      ws = new WebSocket(WS_URL);
+      ws = new WebSocket(WS_URL, WS_PROTOCOLS);
     } catch {
       scheduleReconnect();
       return;
@@ -72,7 +85,7 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
     ws.onopen = () => {
       setConnected(true);
       // Nueva conexion: re-baseline de secuencia y estado de sincronizacion.
-      lastSequence = null;
+      tracker.reset();
       syncState = "normal";
       // Suscribirse a todos los topicos
       send({ type: "subscribe", topics: ["led", "button", "display", "system"], version: "1.0" });
@@ -95,17 +108,16 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
           return;
         }
 
-        // Sequence tracking: detectar gaps.
-        if (typeof msg.sequence === "number") {
-          if (lastSequence !== null && msg.sequence > lastSequence + 1) {
-            console.warn(
-              `useWebSocket: gap detectado (last=${lastSequence}, current=${msg.sequence}), resync...`,
-            );
-            syncState = "resyncing";
-            void resync();
-            return;
-          }
-          lastSequence = msg.sequence;
+        // Sequence tracking: detectar gaps reales comparando contra la marca de
+        // agua global (maximo sequence visto en cualquier topico). Evita gaps
+        // aparentes del sequence global compartido entre topicos.
+        if (tracker.track(msg.type, msg.sequence)) {
+          console.warn(
+            `useWebSocket: gap detectado (type=${msg.type}, current=${msg.sequence}), resync...`,
+          );
+          syncState = "resyncing";
+          void resync();
+          return;
         }
 
         onMessage(msg);

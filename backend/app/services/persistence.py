@@ -71,13 +71,13 @@ class Persistence:
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
         )
 
-        # Compatibilidad con BD existente: si las tablas legacy ya existen
-        # pero no hay registro de version, se marca la version inicial SIN
-        # volver a crearlas (no se pierden datos).
+        # Compatibilidad con BD existente: si hay tablas legacy sin registro de
+        # version, NO se marca version a mano. Las migraciones son idempotentes
+        # (_migration_001 usa CREATE TABLE IF NOT EXISTS + INSERT OR IGNORE),
+        # por lo que se ejecutan igualmente y crean las tablas que falten
+        # (p. ej. display_settings) sin perder los datos existentes.
         if await self._has_legacy_tables() and await self._get_schema_version() == 0:
-            await self._conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (1)")
-            await self._conn.commit()
-            logger.info("BD existente detectada: schema version marcada en 1")
+            logger.info("BD existente detectada: se aplicaran migraciones idempotentes")
 
         # Ejecutar migraciones pendientes de forma incremental.
         for version, _name, method_name in self._MIGRATIONS:

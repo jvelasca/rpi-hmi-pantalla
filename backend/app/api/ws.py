@@ -21,6 +21,12 @@ Mensajes Servidor -> Cliente:
     {"version": "1.0", "type": "button_pressed", "data": {...}, "sequence": 2, "timestamp": "..."}
     {"version": "1.0", "type": "button_released", "data": {...}, "sequence": 3, "timestamp": "..."}
     {"version": "1.0", "type": "error", "data": {"code": "...", "message": "..."}, "timestamp": "..."}
+
+Nota sobre ``sequence``: es un contador GLOBAL (orden total entre todos los
+eventos), pero las colas de broadcast son por-topico. Por ello, los clientes
+NO deben asumir que el ``sequence`` es consecutivo si comparan globalmente; la
+deteccion de gaps debe hacerse POR-TOPIC, comparando solo contra el ultimo
+``sequence`` del MISMO topico.
 """
 
 from __future__ import annotations
@@ -28,10 +34,12 @@ from __future__ import annotations
 import contextlib
 import logging
 import secrets as _secrets
+import urllib.parse
 from collections.abc import Mapping
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.app.api.deps import is_loopback_host
 from backend.app.config import settings
 from backend.app.models.events import ClientMessage, ServerMessage
 from backend.app.services.state_manager import state_manager
@@ -43,15 +51,12 @@ router = APIRouter()
 # Version de protocolo soportada
 SUPPORTED_VERSION = "1.0"
 
-# Hosts de loopback considerados de confianza en modo ``protected``.
-# El display fisico (Pygame) se conecta a ws://localhost:8000/ws desde la
-# propia Pi, por lo que estas conexiones no requieren X-API-Key.
-_LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
-
-
-def _is_loopback(host: str | None) -> bool:
-    """Devuelve True si el host del cliente es loopback (display local)."""
-    return (host or "").lower() in _LOOPBACK_HOSTS
+# Subprotocolo WebSocket anunciado por el frontend (navegador). El navegador
+# no puede enviar X-API-Key como header, pero si como subprotocolo:
+#   new WebSocket(url, ["rpi-hmi", apiKey])
+# El backend selecciona y hace echo de "rpi-hmi" y usa el resto de
+# subprotocolos/query/header como candidatos de API key.
+WS_PROTOCOL = "rpi-hmi"
 
 
 def _extract_api_key(headers: object) -> str | None:
@@ -64,6 +69,33 @@ def _extract_api_key(headers: object) -> str | None:
     return None
 
 
+def _extract_api_key_candidates(websocket: WebSocket) -> list[str]:
+    """Recolecta candidatos de API key del handshake WebSocket.
+
+    Fuentes soportadas (en orden de prioridad):
+    1. Header ``X-API-Key`` (clientes no navegador).
+    2. Subprotocolos ``Sec-WebSocket-Protocol`` (navegador: subprotocolo).
+    3. Query param ``?token=`` (fallback explicito).
+
+    Returns:
+        Lista de cadenas candidatas (puede incluir vacias).
+    """
+    candidates: list[str] = []
+
+    header_key = _extract_api_key(websocket.headers)
+    if header_key:
+        candidates.append(header_key)
+
+    for proto in websocket.scope.get("subprotocols") or []:
+        candidates.append(str(proto))
+
+    query = websocket.scope.get("query_string", b"")
+    parsed = urllib.parse.parse_qs(query.decode("utf-8"))
+    candidates.extend(parsed.get("token", []))
+
+    return candidates
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """Endpoint WebSocket principal.
@@ -74,8 +106,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     Autenticacion:
     - ``SECURITY_MODE == "local"``: acepta a todos.
     - ``SECURITY_MODE == "protected"``: acepta conexiones desde loopback
-      (display local de confianza); el resto debe enviar ``X-API-Key``
-      igual a ``settings.admin_api_key``.
+      (display local de confianza); el resto debe autenticarse con
+      ``settings.admin_api_key`` via header ``X-API-Key``, subprotocolo
+      ``Sec-WebSocket-Protocol`` o query param ``?token=``.
 
     Valida la version del protocolo: rechaza mensajes con
     version != "1.0" enviando PROTOCOL_VERSION_MISMATCH.
@@ -85,17 +118,23 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     """
     if settings.security_mode == "protected":
         client_host = websocket.client.host if websocket.client else None
-        if not _is_loopback(client_host):
-            api_key = _extract_api_key(websocket.headers)
-            if not api_key or not _secrets.compare_digest(api_key, settings.admin_api_key or ""):
-                logger.warning(
-                    "WS rechazado por auth fallida (host=%s)",
-                    client_host,
-                )
-                await websocket.close(code=4401)
-                return
+        if not is_loopback_host(client_host) and not any(
+            _secrets.compare_digest(candidate, settings.admin_api_key or "")
+            for candidate in _extract_api_key_candidates(websocket)
+        ):
+            logger.warning(
+                "WS rechazado por auth fallida (host=%s)",
+                client_host,
+            )
+            await websocket.close(code=4401)
+            return
 
-    await websocket.accept()
+    # Echo del subprotocolo anunciado por el navegador, si lo ofrecio.
+    requested_subprotocols = websocket.scope.get("subprotocols") or []
+    selected_subprotocol = (
+        WS_PROTOCOL if WS_PROTOCOL in requested_subprotocols else None
+    )
+    await websocket.accept(subprotocol=selected_subprotocol)
     logger.info("Cliente WS conectado")
 
     try:

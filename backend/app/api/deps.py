@@ -9,7 +9,8 @@ y configurables segun ``settings.SECURITY_MODE``:
 
 En ``local`` (default) no se exige autenticacion (HMI de prototipo domestico);
 en ``protected`` se exige el header ``X-API-Key`` igual a
-``settings.admin_api_key``.
+``settings.admin_api_key``, excepto para clientes loopback (el display fisico
+local), que quedan exentos para no romper el HMI táctil.
 
 Pensada para proteger endpoints que mutan hardware/red (p. ej. cambio de IP).
 Los endpoints de solo lectura pueden seguir siendo publicos.
@@ -20,7 +21,7 @@ from __future__ import annotations
 import logging
 import secrets as _secrets
 
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 from backend.app.config import settings
@@ -31,21 +32,45 @@ logger = logging.getLogger("backend.api.deps")
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# Hosts de loopback considerados de confianza en modo ``protected``.
+# El display fisico (Pygame) llama a la REST local (localhost:8000) desde la
+# propia Pi, por lo que estas conexiones no requieren X-API-Key.
+_LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 
-def require_admin_api_key(api_key: str | None = Security(_api_key_header)) -> None:
-    """Exige API key unicamente en modo ``protected``.
+
+def is_loopback_host(host: str | None) -> bool:
+    """Devuelve True si el host del cliente es loopback (display local)."""
+    return (host or "").lower() in _LOOPBACK_HOSTS
+
+
+def _is_loopback_client(request: Request) -> bool:
+    """Devuelve True si la peticion proviene de loopback (cliente local)."""
+    client = getattr(request, "client", None)
+    return client is not None and is_loopback_host(client.host)
+
+
+def require_admin_api_key(
+    request: Request,
+    api_key: str | None = Security(_api_key_header),
+) -> None:
+    """Exige API key unicamente en modo ``protected``, salvo loopback.
 
     En ``SECURITY_MODE == "local"`` no exige autenticacion y retorna ``None``.
-    En ``SECURITY_MODE == "protected"`` exige ``X-API-Key == settings.admin_api_key``.
+    En ``SECURITY_MODE == "protected"``:
+    - Las peticiones desde loopback (127.0.0.1 / ::1 / localhost) se aceptan
+      sin key: es el display fisico (Pygame) que corre en la propia Pi.
+    - El resto exige ``X-API-Key == settings.admin_api_key``.
 
-    Se usa en los mutadores HMI (LED/button/display/red): en modo local no
-    exige nada; en modo protegido exige el header ``X-API-Key``.
+    Se usa en los mutadores HMI (LED/button/display/red).
 
     Raises:
         HTTPException 401: Si la key falta/no coincide, o si no hay key
             configurada estando en modo protegido.
     """
     if settings.security_mode == "local":
+        return None
+
+    if _is_loopback_client(request):
         return None
 
     if not settings.admin_api_key:

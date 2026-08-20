@@ -76,7 +76,7 @@ export type ClientMessage =
   | { type: "press_button"; version: string }
   | { type: "release_button"; version: string }
   | { type: "get_status"; version: string }
-  | { type: "display_command"; action: string; version: string }
+  | { type: "display_command"; action: DisplayAction; version: string }
   | { type: "subscribe"; topics: WsTopic[]; version: string };
 
 export type ServerMessage =
@@ -85,6 +85,6 @@ export type ServerMessage =
   | { type: "button_pressed"; data: ButtonState; timestamp: string; version: string; sequence: number | null }
   | { type: "button_released"; data: ButtonState; timestamp: string; version: string; sequence: number | null }
   | { type: "display_changed"; data: DisplayInfo; timestamp: string; version: string; sequence: number | null }
-  | { type: "display_command"; data: { action: string }; timestamp: string; version: string; sequence: number | null }
+  | { type: "display_command"; data: { action: DisplayAction }; timestamp: string; version: string; sequence: number | null }
   | { type: "display_settings_changed"; data: DisplaySettings; timestamp: string; version: string; sequence: number | null }
   | { type: "error"; data: { code: string; message: string }; timestamp: string; version: string; sequence: number | null };

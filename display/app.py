@@ -26,10 +26,13 @@ import argparse
 import json
 import logging
 import platform
+import queue
 import signal
 import sys
 import threading
 import time
+from collections.abc import Callable
+from pathlib import Path
 
 import requests
 
@@ -78,6 +81,18 @@ from display.ui.widgets import (  # noqa: E402
 )
 
 logger = logging.getLogger("rpi_hmi.display")
+
+
+def _load_version() -> str:
+    """Lee la version de la aplicacion desde VERSION (raiz del repo)."""
+    version_path = Path(__file__).resolve().parents[1] / "VERSION"
+    try:
+        return version_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "0.3.0"
+
+
+__version__ = _load_version()
 
 # Referencia global a la instancia activa para shutdown graceful por señales
 _app_instance: DisplayApp | None = None
@@ -166,6 +181,12 @@ class DisplayApp:
         self._ws_lock = threading.Lock()
         self._ws_dirty: bool = False  # WS thread signals new data available
 
+        # REST worker thread (peticiones HTTP no bloqueantes)
+        self._rest_queue: queue.Queue = queue.Queue()
+        self._rest_ui_queue: queue.Queue = queue.Queue()
+        self._rest_thread: threading.Thread | None = None
+        self._rest_stop = threading.Event()
+
     # ── Layout ──────────────────────────────────────────────────
 
     def _create_widgets(self) -> None:
@@ -181,7 +202,7 @@ class DisplayApp:
         margin = int(MARGIN * sy)
 
         # Header
-        self.header = HeaderWidget(0, 0, w, header_h, version="0.3.0")
+        self.header = HeaderWidget(0, 0, w, header_h, version=__version__)
 
         # Content area
         content_y = header_h + margin
@@ -292,17 +313,29 @@ class DisplayApp:
         self._fetch_network()
 
     def _fetch_network(self) -> None:
-        """Carga el estado de red actual desde el backend."""
-        data = self._api_get("/api/network")
-        if data is not None:
-            self.network_view.set_status(data)
-            self._redraw = True
+        """Carga el estado de red actual desde el backend (no bloqueante)."""
+        def apply(data: dict | None) -> None:
+            if data is not None:
+                self.network_view.set_status(data)
+                self._redraw = True
+
+        self._api_get("/api/network", on_result=apply)
 
     def _apply_network(self, payload: dict) -> None:
-        """Aplica la configuración de red (estática o DHCP)."""
+        """Aplica la configuracion de red (estatica o DHCP) en background."""
         mode = payload.get("mode")
+
+        def apply(result: dict | None) -> None:
+            if result is not None:
+                ok = result.get("success", False)
+                msg = result.get("message", "")
+                self.network_view.set_result(msg, error=not ok)
+            else:
+                self.network_view.set_result("No se pudo aplicar la configuracion", error=True)
+            self._redraw = True
+
         if mode == "static":
-            result = self._api_post_json(
+            self._api_post_json(
                 "/api/network/static",
                 {
                     "ip_address": payload["ip_address"],
@@ -310,17 +343,10 @@ class DisplayApp:
                     "gateway": payload["gateway"],
                     "dns": payload["dns"],
                 },
+                on_result=apply,
             )
         else:
-            result = self._api_post("/api/network/dhcp")
-
-        if result is not None:
-            ok = result.get("success", False)
-            msg = result.get("message", "")
-            self.network_view.set_result(msg, error=not ok)
-        else:
-            self.network_view.set_result("No se pudo aplicar la configuracion", error=True)
-        self._redraw = True
+            self._api_post("/api/network/dhcp", on_result=apply)
 
     def _show_font(self) -> None:
         """Muestra la configuracion de fuente y carga el estado actual."""
@@ -329,13 +355,15 @@ class DisplayApp:
         self._fetch_font_settings()
 
     def _fetch_font_settings(self) -> None:
-        """Carga los ajustes de fuente desde el backend y sincroniza la vista."""
-        data = self._api_get("/api/settings/display")
-        if data is not None:
-            family = data.get("font_family", "dejavu")
-            size = data.get("text_size", "medium")
-            self.font_view.set_selection(family, size)
-            self._redraw = True
+        """Carga los ajustes de fuente desde el backend (no bloqueante)."""
+        def apply(data: dict | None) -> None:
+            if data is not None:
+                family = data.get("font_family", "dejavu")
+                size = data.get("text_size", "medium")
+                self.font_view.set_selection(family, size)
+                self._redraw = True
+
+        self._api_get("/api/settings/display", on_result=apply)
 
     def _apply_font_settings(self, font_family: str, text_size: str) -> None:
         """Aplica y persiste los ajustes de fuente (desde display o web)."""
@@ -363,30 +391,98 @@ class DisplayApp:
 
     # ── Comunicacion con backend ────────────────────────────────
 
-    def _api_get(self, endpoint: str) -> dict | None:
-        """GET sincrono al backend REST."""
+    def _api_get(
+        self,
+        endpoint: str,
+        on_result: Callable[[dict | None], None] | None = None,
+    ) -> None:
+        """Encola un GET al backend REST (no bloqueante)."""
+        self._rest_queue.put(("get", endpoint, None, on_result))
+        self._start_rest_worker()
+
+    def _api_post(
+        self,
+        endpoint: str,
+        on_result: Callable[[dict | None], None] | None = None,
+    ) -> None:
+        """Encola un POST al backend REST (no bloqueante)."""
+        self._rest_queue.put(("post", endpoint, None, on_result))
+        self._start_rest_worker()
+
+    def _api_post_json(
+        self,
+        endpoint: str,
+        payload: dict,
+        on_result: Callable[[dict | None], None] | None = None,
+    ) -> None:
+        """Encola un POST con body JSON al backend REST (no bloqueante)."""
+        self._rest_queue.put(("post_json", endpoint, payload, on_result))
+        self._start_rest_worker()
+
+    def _start_rest_worker(self) -> None:
+        """Arranca el worker thread de REST si no esta activo."""
+        if self._rest_thread is not None and self._rest_thread.is_alive():
+            return
+        self._rest_stop.clear()
+        self._rest_thread = threading.Thread(
+            target=self._rest_worker_loop,
+            daemon=True,
+            name="display-rest",
+        )
+        self._rest_thread.start()
+        logger.info("REST worker thread iniciado")
+
+    def _rest_worker_loop(self) -> None:
+        """Bucle del worker que ejecuta peticiones REST en background."""
+        while not self._rest_stop.is_set():
+            try:
+                kind, endpoint, payload, on_result = self._rest_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                if kind == "get":
+                    result = self._request_get(endpoint)
+                elif kind == "post":
+                    result = self._request_post(endpoint)
+                else:
+                    result = self._request_post_json(endpoint, payload)
+            except Exception as exc:
+                logger.warning("REST worker error en %s: %s", endpoint, exc)
+                result = None
+            finally:
+                self._rest_queue.task_done()
+
+            if on_result is not None:
+                self._rest_ui_queue.put((on_result, result))
+
+    def _request_get(self, endpoint: str) -> dict | None:
+        """GET bloqueante ejecutado en el worker thread."""
         try:
             resp = requests.get(f"{self.api_url}{endpoint}", timeout=2)
             resp.raise_for_status()
-            self.backend_connected = True
+            with self._ws_lock:
+                self.backend_connected = True
             return resp.json()
         except requests.RequestException:
-            self.backend_connected = False
+            with self._ws_lock:
+                self.backend_connected = False
             return None
 
-    def _api_post(self, endpoint: str) -> dict | None:
-        """POST sincrono al backend REST."""
+    def _request_post(self, endpoint: str) -> dict | None:
+        """POST bloqueante ejecutado en el worker thread."""
         try:
             resp = requests.post(f"{self.api_url}{endpoint}", timeout=2)
             resp.raise_for_status()
-            self.backend_connected = True
+            with self._ws_lock:
+                self.backend_connected = True
             return resp.json()
         except requests.RequestException:
-            self.backend_connected = False
+            with self._ws_lock:
+                self.backend_connected = False
             return None
 
-    def _api_post_json(self, endpoint: str, payload: dict) -> dict | None:
-        """POST sincrono con body JSON al backend REST."""
+    def _request_post_json(self, endpoint: str, payload: dict) -> dict | None:
+        """POST JSON bloqueante ejecutado en el worker thread."""
         try:
             resp = requests.post(
                 f"{self.api_url}{endpoint}",
@@ -394,30 +490,56 @@ class DisplayApp:
                 timeout=5,
             )
             resp.raise_for_status()
-            self.backend_connected = True
+            with self._ws_lock:
+                self.backend_connected = True
             return resp.json()
         except requests.RequestException as exc:
-            self.backend_connected = False
+            with self._ws_lock:
+                self.backend_connected = False
             logger.warning("POST %s fallo: %s", endpoint, exc)
             return None
 
+    def _apply_rest_results(self) -> None:
+        """Aplica en el hilo principal los resultados pendientes del worker."""
+        while True:
+            try:
+                on_result, result = self._rest_ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                on_result(result)
+            except Exception as exc:
+                logger.warning("Error aplicando resultado REST: %s", exc)
+
     def _sync_state(self) -> None:
-        """Sincroniza el estado local con el backend via REST."""
-        data = self._api_get("/api/status")
-        if data is None:
-            return
-        led_data = data.get("led", {})
-        btn_data = data.get("button", {})
+        """Encola una sincronizacion del estado local con el backend via REST."""
 
-        self.led_on = led_data.get("state", self.led_on)
-        self.led_label = led_data.get("label", "APAGADO")
-        self.press_count = btn_data.get("press_count", self.press_count)
-        self.ws_connected = data.get("websocket_clients", 0) > 0
+        def apply(data: dict | None) -> None:
+            if data is None:
+                return
+            led_data = data.get("led", {})
+            btn_data = data.get("button", {})
 
-        # Actualizar widgets
-        self.led.on = self.led_on
-        self.led.label = self.led_label
-        self.button.press_count = self.press_count
+            new_led_on = led_data.get("state", self.led_on)
+            new_led_label = led_data.get("label", "APAGADO")
+            new_press_count = btn_data.get("press_count", self.press_count)
+            new_ws_connected = data.get("websocket_clients", 0) > 0
+
+            with self._ws_lock:
+                self.led_on = new_led_on
+                self.led_label = new_led_label
+                self.press_count = new_press_count
+                self.ws_connected = new_ws_connected
+
+            if self.led.on != new_led_on or self.led.label != new_led_label:
+                self.led.on = new_led_on
+                self.led.label = new_led_label
+                self._redraw = True
+            if self.button.press_count != new_press_count:
+                self.button.press_count = new_press_count
+                self._redraw = True
+
+        self._api_get("/api/status", on_result=apply)
 
     # ── WebSocket (background thread) ───────────────────────────
 
@@ -550,17 +672,21 @@ class DisplayApp:
         self._sync_state()
         self._last_sync = time.time()
 
-        # Cargar y aplicar ajustes de fuente desde el backend
-        try:
-            data = self._api_get("/api/settings/display")
-            if data is not None:
-                family = data.get("font_family", "dejavu")
-                size = data.get("text_size", "medium")
+        # Cargar y aplicar ajustes de fuente desde el backend (no bloqueante)
+        def _apply_loaded_font(data: dict | None) -> None:
+            if data is None:
+                return
+            family = data.get("font_family", "dejavu")
+            size = data.get("text_size", "medium")
+            try:
                 apply_font_settings(family, size)
-                self.font_view.set_selection(family, size)
-                logger.info("Ajustes de fuente aplicados: %s / %s", family, size)
-        except Exception as exc:
-            logger.warning("No se pudieron cargar ajustes de fuente: %s", exc)
+            except Exception as exc:
+                logger.warning("No se pudieron cargar ajustes de fuente: %s", exc)
+                return
+            self.font_view.set_selection(family, size)
+            logger.info("Ajustes de fuente aplicados: %s / %s", family, size)
+
+        self._api_get("/api/settings/display", on_result=_apply_loaded_font)
 
         # Auto-iniciar calibración táctil si no hay calibración guardada
         if self.touch and self.touch.available and not self.touch.has_calibration:
@@ -613,6 +739,9 @@ class DisplayApp:
                         self._on_release_button()
                     self._button_press_frame = -1
 
+            # ── Aplicar resultados de peticiones REST (worker) ──
+            self._apply_rest_results()
+
             # Consumir flag de redibujado establecido por callbacks
             if self._redraw:
                 dirty = True
@@ -628,18 +757,14 @@ class DisplayApp:
                 with self._ws_lock:
                     ws_ok = self.ws_connected
                 if not ws_ok:
-                    old_led = self.led_on
-                    old_count = self.press_count
                     self._sync_state()
-                    if old_led != self.led_on or old_count != self.press_count:
-                        dirty = True
                 self._last_sync = now
 
             # ── Actualizar status bar (solo en vista principal) ──
             if self.view == "main":
                 self.status_bar.time_str = time.strftime("%H:%M:%S")
-                self.status_bar.backend_connected = self.backend_connected
                 with self._ws_lock:
+                    self.status_bar.backend_connected = self.backend_connected
                     self.status_bar.ws_connected = self.ws_connected
                 self.status_bar.fps = self.screen.get_fps()
                 # Redibujar 1x por segundo para actualizar el reloj
@@ -784,10 +909,16 @@ class DisplayApp:
     def cleanup(self) -> None:
         """Limpia todos los recursos."""
         self.running = False
+        stop = getattr(self, "_rest_stop", None)
+        if stop is not None:
+            stop.set()
         logger.info("Cerrando display app...")
         if self.touch:
             self.touch.close()
         self.screen.cleanup()
+        rest_thread = getattr(self, "_rest_thread", None)
+        if rest_thread is not None:
+            rest_thread.join(timeout=1.0)
         logger.info("Display app cerrada")
 
 
@@ -880,7 +1011,7 @@ Ejemplos:
     signal.signal(signal.SIGTERM, lambda s, f: _signal_handler(s, f))
 
     logger.info("=" * 50)
-    logger.info("  RPi HMI — Display App Pygame DRM v0.3.0")
+    logger.info("  RPi HMI — Display App Pygame DRM v%s", __version__)
     logger.info("=" * 50)
 
     # Verificar que el backend esta accesible

@@ -268,3 +268,87 @@ describe("useWebSocket", () => {
     expect(typeof hookResult!.disconnect).toBe("function");
   });
 });
+
+// ── useConnectionMonitor Tests ─────────────────────────────────
+
+describe("useConnectionMonitor", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const mockStatus = {
+    led: { state: false, label: "APAGADO", gpio_pin: 17 },
+    button: { pressed: false, press_count: 0 },
+    display: null,
+    uptime_seconds: 123.4,
+    cpu_temp_celsius: null,
+    websocket_clients: 0,
+    timestamp: "2026-01-01T00:00:00Z",
+  };
+
+  it("no llama a getStatus cuando isConnected es true", async () => {
+    const { useConnectionMonitor } = await import("@/hooks/useConnectionMonitor");
+
+    const isConnected = vi.fn(() => true);
+    const getStatus = vi.fn().mockResolvedValue(mockStatus);
+    const onStatus = vi.fn();
+
+    const dispose = createRoot((disposer) => {
+      useConnectionMonitor({ isConnected, getStatus, onStatus });
+      return disposer;
+    });
+
+    await vi.advanceTimersByTimeAsync(10000);
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+
+    dispose();
+  });
+
+  it("llama a getStatus tras 5000ms y aplica onStatus", async () => {
+    const { useConnectionMonitor } = await import("@/hooks/useConnectionMonitor");
+
+    const isConnected = vi.fn(() => false);
+    const getStatus = vi.fn().mockResolvedValue(mockStatus);
+    const onStatus = vi.fn();
+
+    const dispose = createRoot((disposer) => {
+      useConnectionMonitor({ isConnected, getStatus, onStatus });
+      return disposer;
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(onStatus).toHaveBeenCalledTimes(1);
+    expect(onStatus).toHaveBeenCalledWith(mockStatus);
+
+    dispose();
+  });
+
+  it("limpia el intervalo al hacer dispose", async () => {
+    const { useConnectionMonitor } = await import("@/hooks/useConnectionMonitor");
+
+    const isConnected = vi.fn(() => false);
+    const getStatus = vi.fn().mockResolvedValue(mockStatus);
+    const onStatus = vi.fn();
+
+    const dispose = createRoot((disposer) => {
+      useConnectionMonitor({ isConnected, getStatus, onStatus });
+      return disposer;
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(getStatus).toHaveBeenCalledTimes(1);
+
+    dispose();
+
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(getStatus).toHaveBeenCalledTimes(1);
+  });
+});

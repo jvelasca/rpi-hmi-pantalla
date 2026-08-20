@@ -8,7 +8,7 @@
 - **Fase actual:** FASE FINAL — código cerrado (H1–H9) + **despliegue físico en la Pi completado (H6)**. Pendiente de cierre: validación H9 (watchdog) y firma del runbook.
 - **Última actualización:** 2026-08-20
 - **Commit base (restauración):** `d16f991` (HEAD actual `3cb1eb8`)
-- **Puerta de calidad actual:** pytest = 318 passed / 9 skipped · mypy = 0 · ruff = 0 · vitest = 16/16 · build OK · HIL en Pi = 5/5 passed
+- **Puerta de calidad actual:** pytest = 332 passed / 9 skipped · mypy = 0 · ruff = 0 · vitest = 26/26 · build OK · HIL en Pi = 5/5 passed
 
 ## Workstreams
 

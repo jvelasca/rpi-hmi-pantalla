@@ -47,8 +47,17 @@ export const ErrorDetailSchema = z.object({
   message: z.string(),
 });
 
+export const DisplayActionSchema = z.enum([
+  "screen_test",
+  "touch_calib",
+  "network",
+  "font",
+  "config",
+  "main",
+]);
+
 export const DisplayCommandDataSchema = z.object({
-  action: z.string(),
+  action: DisplayActionSchema,
 });
 
 // ── Mensajes Servidor -> Cliente ──────────────────────────────
@@ -79,7 +88,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("press_button"), version: z.string() }),
   z.object({ type: z.literal("release_button"), version: z.string() }),
   z.object({ type: z.literal("get_status"), version: z.string() }),
-  z.object({ type: z.literal("display_command"), action: z.string(), version: z.string() }),
+  z.object({ type: z.literal("display_command"), action: DisplayActionSchema, version: z.string() }),
   z.object({ type: z.literal("subscribe"), topics: z.array(WsTopicSchema), version: z.string() }),
 ]);
 

@@ -6,6 +6,7 @@
 import { createSignal } from "solid-js";
 import type {
   ButtonState,
+  DisplayAction,
   DisplaySettings,
   LedState,
   NetworkResult,
@@ -14,6 +15,15 @@ import type {
 } from "@/types/api";
 
 const BASE = "/api";
+
+// API key opcional (VITE_API_KEY). En SECURITY_MODE=protected el backend exige
+// X-API-Key en los endpoints mutadores (POST). Si no se configura, el frontend
+// funciona igual que antes (modo local / LAN de confianza).
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
+
+function authHeaders(): Record<string, string> {
+  return API_KEY ? { "X-API-Key": API_KEY } : {};
+}
 
 export function useApi() {
   const [error, setError] = createSignal<string | null>(null);
@@ -41,7 +51,11 @@ export function useApi() {
     try {
       const res = await fetch(`${BASE}${endpoint}`, {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(5000),
       });
@@ -76,7 +90,7 @@ export function useApi() {
   const getDisplaySettings = () => get<DisplaySettings>("/settings/display");
   const setDisplaySettings = (font_family: string, text_size: string) =>
     postJson<DisplaySettings>("/settings/display", { font_family, text_size });
-  const sendDisplayCommand = (action: string) =>
+  const sendDisplayCommand = (action: DisplayAction) =>
     postJson<{ success: boolean; action: string }>("/display/command", { action });
 
   return {

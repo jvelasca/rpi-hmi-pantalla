@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.app._version import __version__
 from backend.app.api import (
     admin_deploy_router,
     admin_ssh_router,
@@ -226,7 +227,7 @@ app = FastAPI(
         "Backend para panel de control HMI en Raspberry Pi. "
         "Controla GPIO, display fisico y expone API REST + WebSocket."
     ),
-    version="0.3.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url=_docs_url,
     redoc_url=_redoc_url,
@@ -276,7 +277,7 @@ else:
     async def root() -> JSONResponse:
         return JSONResponse(content={
             "message": "RPi HMI Backend",
-            "version": "0.3.0",
+            "version": __version__,
             "docs": "/docs" if settings.enable_docs else "deshabilitado",
             "api": "/api/status",
             "websocket": "/ws",

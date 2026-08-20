@@ -12,6 +12,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.app.models.hmi import DisplayAction
+
 # ── Enums ──────────────────────────────────────────────────────
 
 
@@ -78,7 +80,7 @@ class ClientMessage(BaseModel):
         Field(default=None, description="Topicos a suscribir (solo con 'subscribe')"),
     ]
     action: Annotated[
-        str | None,
+        DisplayAction | None,
         Field(default=None, description="Accion de vista (solo con 'display_command')"),
     ]
 
