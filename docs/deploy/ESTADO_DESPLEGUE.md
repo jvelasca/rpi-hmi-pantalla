@@ -5,10 +5,10 @@
 
 ## Estado general
 
-- **Fase actual:** FASE FINAL — código cerrado (H1–H5); queda **H6 (hardware)** y decisiones **H7/H8**.
+- **Fase actual:** FASE FINAL — código cerrado (H1–H9). Quedan **H6 (hardware)** y decisiones **H7/H8**.
 - **Última actualización:** 2026-08-20
-- **Commit base (restauración):** `d16f991` (HEAD actual `c2a3db1`)
-- **Baseline puerta de calidad:** pytest = 278 passed / 4 skipped · mypy = 0 · ruff = 0 · vitest = 16/16 · build OK
+- **Commit base (restauración):** `d16f991` (HEAD actual `52f46c4`)
+- **Puerta de calidad actual:** pytest = 315 passed / 9 skipped · mypy = 0 · ruff = 0 · vitest = 16/16 · build OK
 
 ## Workstreams
 
@@ -19,9 +19,10 @@
 | H3 | Red (validación) | P2 | ✅ completado | `handoffs/H3.md` | `d8ff3dd` |
 | H4 | CI/CD + dependencias | P2 | ✅ completado | `handoffs/H4.md` | `0802149` |
 | H5 | Docs/versión | P2/P3 | ✅ completado | `handoffs/H5.md` | `c2a3db1` |
-| H6 | Despliegue a la Pi (runbook) | P0 | ⏳ pendiente (requiere HW) | — | — |
+| H6 | Despliegue a la Pi (scripts + runbook + HIL) | P0 | ✅ código listo (ejecución en la Pi pendiente) | `handoffs/H6-deploy.md`, `handoffs/H6-hil.md` | `8203970`, `92fa837`, `52f46c4` |
 | H7 | Arquitectura mayor (HMI vs Admin) | P3 | ⛔ bloqueado (decisión usuario) | — | — |
-| H8 | Decisiones de producto | P3 | ⛔ bloqueado (decisión usuario) | — | — |
+| H8 | `startup_policy` (actuadores) | P3 | ✅ completado (semántica de botón: decisión usuario) | `handoffs/H8.md` | `64bbf14` |
+| H9 | Watchdog `sd_notify` | P3 | ✅ completado (validación en Pi pendiente) | `handoffs/H9.md` | `5381ceb` |
 
 Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqueado
 
@@ -37,6 +38,11 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | 6 | Touch: límites ABS reales vía `EVIOCGABS` (fcntl diferido, fallback `RAW_MAX=4096`) + `invert_x/y` aplicados | H2 | 2026-08-20 |
 | 7 | `bandit` usa `--severity-level medium`; B104 (bind 0.0.0.0) y B601 (paramiko exec_command) suprimidos con `# nosec` por ser decisiones documentadas en `docs/SECURITY.md` | H4 | 2026-08-20 |
 | 8 | `/32` en ethernet queda rechazado por la validación de red (IP=red=broadcast); política revisable | H3 | 2026-08-20 |
+| 9 | `RPI_HOST` sin default: los scripts de deploy exigen `RPI_HOST` en `.env` (eliminada IP hardcodeada `192.168.88.211`) | H6 | 2026-08-20 |
+| 10 | Deploy usa `{VENV_PY} -m pip` (eliminada dependencia del binario `pip3`) | H6 | 2026-08-20 |
+| 11 | `startup_policy` default = `restore` (conserva comportamiento actual); `off`/`safe` opt-in para actuadores físicos futuros | H8 | 2026-08-20 |
+| 12 | Watchdog `sd_notify` 100% stdlib (AF_UNIX con fallback si no existe en Windows); `Type=notify` + `WatchdogSec=30`; no-op sin systemd | H9 | 2026-08-20 |
+| 13 | Tests HIL marcados `@pytest.mark.hardware`, auto-skip salvo `RPI_HIL=1`; marker registrado en ambos `pyproject.toml` | H6 | 2026-08-20 |
 
 ## Gates
 
@@ -45,7 +51,8 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 | D1 (tras H1) | `pytest backend/tests/` + `mypy` + `ruff` verdes | ✅ (287 passed / 4 skipped) |
 | D2 (tras H2+H3+H4+H5) | pytest (backend+display) + mypy + ruff + vitest + build verdes | ✅ (303 passed / 4 skipped · mypy 0 · ruff 0 · vitest 16/16 · build OK) |
 | D3 (tras H4) | checks nuevos de `ci.yml` reproducibles localmente (bandit 0 medium+, pip-audit/npm audit en CI) | ✅ (bandit exit 0) |
-| D4 (tras H6) | servicios vivos en la Pi + HIL + runbook | ⏳ (HW) |
+| D2/D3 (tras H6+H8+H9) | pytest (backend+display) + mypy + ruff verdes | ✅ (315 passed / 9 skipped · mypy 0 · ruff 0) |
+| D4 (tras H6) | servicios vivos en la Pi + HIL + runbook firmado | ⏳ (HW) |
 
 ## Log de ejecución
 
@@ -53,13 +60,14 @@ Leyenda de estado: ⏳ pendiente · 🟡 en curso · ✅ completado · ⛔ bloqu
 - 2026-08-20 — `docs/deploy/INICIO.md` reescrito incorporando la 2ª auditoría externa (P0-P3, H1-H8, D1-D4).
 - 2026-08-20 — H1 ✅ (auth REST+WS unificada). Gate D1 verde.
 - 2026-08-20 — H2 ∥ H3 ∥ H4 ∥ H5 ✅ en paralelo. Gate D2+D3 verde.
-- 2026-08-20 — Commits: `1c5bcf1`(H1) · `2de825c`(docs) · `e6170de`(H2) · `d8ff3dd`(H3) · `0802149`(H4) · `c2a3db1`(H5).
+- 2026-08-20 — Commits H1–H5: `1c5bcf1` · `2de825c` · `e6170de` · `d8ff3dd` · `0802149` · `c2a3db1`.
+- 2026-08-20 — H6-deploy ∥ H6-hil ∥ H8 ∥ H9 ✅ en paralelo. Gate D2/D3 verde (315 passed / 9 skipped · mypy 0 · ruff 0).
+- 2026-08-20 — Commits H6–H9: `8203970`(H6-deploy) · `64bbf14`(H8) · `5381ceb`(H9) · `92fa837`(H6-hil) · `52f46c4`(runbook).
 
-## Pendientes tras esta fase (para H6/H7/H8 o auditoría futura)
+## Pendientes tras esta fase (para la Pi o decisión de usuario)
 
-- **H6 (hardware, requiere Pi):** sudoers, `.env` de producción, `VENV_PIP`, límites systemd, `/dev/mem`, smoke de endpoints protegidos, HIL, `docs/deploy/runbook.md`.
-- **H7:** separar HMI runtime de Admin service (`:8001` + firewall).
-- **H8:** `startup_policy: off/restore/safe` para futuros actuadores; semántica del botón.
-- **P3-5:** watchdog `sd_notify` (`READY=1`/`WATCHDOG=1`) + `Type=notify` + `WatchdogSec=30`.
-- **P3-6:** tests HIL (`@pytest.mark.hardware`).
+- **H6 (hardware, ejecución real en la Pi):** instalar sudoers, crear `.env` de producción, `systemd-analyze verify`, decidir `/dev/mem`, correr smoke (401/200) y HIL, firmar el runbook. Todo documentado en `docs/deploy/runbook.md`.
+- **H7:** separar HMI runtime de Admin service (`:8001` + firewall) — requiere decisión de producto.
+- **H8 (resto):** semántica del botón (qué acción dispara) — requiere decisión de producto.
+- **H9 (validación en Pi):** confirmar que `Type=notify` + `WatchdogSec=30` no producen falsos reinicios bajo carga real.
 - **Observación de producto:** el frontend web no tiene aún UI para enviar `X-API-Key` (ni por WS desde un navegador LAN ni por REST). En `protected`, el display local (loopback) y herramientas con header (curl/scripts) funcionan; la UI web desde LAN queda read-only hasta añadir un mecanismo de auth en el cliente.
