@@ -75,3 +75,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short --strict-markers"
+markers = [
+    "hardware: test que requiere Raspberry Pi fisica (HIL). Se salta en entornos sin hardware.",
+]

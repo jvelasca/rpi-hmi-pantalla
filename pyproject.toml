@@ -28,6 +28,9 @@ testpaths = ["backend/tests", "display/tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short --strict-markers"
 norecursedirs = ["legacy", ".venv", "venv", "node_modules", ".git", "__pycache__"]
+markers = [
+    "hardware: test que requiere Raspberry Pi fisica (HIL). Se salta en entornos sin hardware.",
+]
 
 [tool.ruff]
 target-version = "py311"
