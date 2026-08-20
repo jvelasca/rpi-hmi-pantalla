@@ -126,9 +126,10 @@ class TestRestApiIntegration:
         assert r.json()["press_count"] == 3
 
     def test_status_after_changes(self, client):
-        """Status refleja cambios en LED y button."""
-        client.post("/api/led/on")
+        """Status refleja cambios en LED y button (el press alterna el LED)."""
+        # El press del boton alterna el LED (off -> on) e incrementa el contador.
         client.post("/api/button/press")
+        client.post("/api/led/on")
 
         r = client.get("/api/status")
         data = r.json()

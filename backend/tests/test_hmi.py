@@ -112,6 +112,14 @@ class TestButton:
         assert r.json()["pressed"] is True
         assert r.json()["press_count"] == 1
 
+    def test_press_button_toggles_led(self, client):
+        """POST /api/button/press tambien alterna el LED."""
+        assert client.get("/api/led").json()["state"] is False
+        client.post("/api/button/press")
+        assert client.get("/api/led").json()["state"] is True
+        client.post("/api/button/press")
+        assert client.get("/api/led").json()["state"] is False
+
     def test_button_multi_press(self, client):
         """Multiples pulsaciones incrementan el contador."""
         for i in range(3):

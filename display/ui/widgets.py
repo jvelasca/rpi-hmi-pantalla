@@ -447,7 +447,7 @@ class ButtonWidget(Widget):
     """Boton circular interactivo con contador de pulsaciones."""
 
     def __init__(self, x: int, y: int, w: int, h: int,
-                 label: str = "BOTON") -> None:
+                 label: str = "BOTON TOGGLE LED") -> None:
         super().__init__(x, y, w, h)
         self.pressed: bool = False
         self.press_count: int = 0
@@ -512,13 +512,13 @@ class ButtonWidget(Widget):
             pygame.draw.circle(surface, BTN_PRESSED_BG, (cx, cy), r)
             pygame.draw.circle(surface, BTN_PRESSED_MID, (cx, cy), r - 3)
             btn_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
-            label = "PULSADO"
+            label = "ALTERNADO"
             color = BTN_PRESSED_TEXT
         else:
             pygame.draw.circle(surface, BTN_IDLE_BG, (cx, cy), r)
             pygame.draw.circle(surface, BTN_IDLE_MID, (cx, cy), r - 3)
             btn_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
-            label = "PULSAR"
+            label = "ALTERNAR"
             color = BUTTON_TEXT
 
         text_rect = _get_text_rect(btn_font, label)

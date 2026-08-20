@@ -1,5 +1,5 @@
 /**
- * ButtonPanel — Boton "PULSAR" con LED 2 (verde) y contador de pulsaciones.
+ * ButtonPanel — Boton "TOGGLE LED" con LED 2 (verde) y contador de pulsaciones.
  * Comportamiento momentaneo: el LED se enciende mientras se mantiene pulsado.
  */
 
@@ -15,7 +15,7 @@ interface ButtonPanelProps {
 export function ButtonPanel(props: ButtonPanelProps) {
   return (
     <div class="bg-[#1e1e3c] rounded-lg border border-[#323264] p-5 flex flex-col items-center gap-4 min-w-[200px]">
-      <h2 class="text-[#a0a0b4] text-sm font-medium">BOTON PULSAR</h2>
+      <h2 class="text-[#a0a0b4] text-sm font-medium">BOTON TOGGLE LED</h2>
 
       {/* LED 2 (verde) — refleja el estado del boton */}
       <div
@@ -73,7 +73,7 @@ export function ButtonPanel(props: ButtonPanelProps) {
             "text-green-200": props.button.pressed,
           }}
         >
-          {props.button.pressed ? "PULSADO" : "PULSAR"}
+          {props.button.pressed ? "ALTERNADO" : "ALTERNAR"}
         </span>
       </button>
 

@@ -195,7 +195,7 @@ class DisplayApp:
         # Panel Botón (derecha)
         btn_w = int(BTN_PANEL_W * sx)
         btn_x = w - btn_w - int(margin * sx)
-        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h, label="BOTON PULSAR")
+        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h, label="BOTON TOGGLE LED")
 
         # Footer
         self.status_bar = StatusBar(0, h - footer_h, w, footer_h)

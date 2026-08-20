@@ -127,6 +127,40 @@ class TestWebSocketEndpoint:
             assert msg["type"] == "button_pressed"
             assert msg["data"]["press_count"] == 2
 
+    def test_press_button_emits_led_changed_and_button_pressed(self, client):
+        """Press button emite led_changed (toggle) y button_pressed (contador).
+
+        El orden de ambos mensajes puede variar; se lee de forma robusta
+        hasta recibir los dos tipos.
+        """
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json(
+                {"version": "1.0", "type": "subscribe", "topics": ["led", "button"]}
+            )
+            _ = ws.receive_json()  # status_update inicial
+
+            ws.send_json({"version": "1.0", "type": "press_button"})
+
+            seen: set[str] = set()
+            led_state: bool | None = None
+            press_count: int | None = None
+            for _ in range(4):
+                msg = ws.receive_json()
+                mtype = msg["type"]
+                if mtype == "led_changed":
+                    seen.add("led_changed")
+                    led_state = msg["data"]["state"]
+                elif mtype == "button_pressed":
+                    seen.add("button_pressed")
+                    press_count = msg["data"]["press_count"]
+                if "led_changed" in seen and "button_pressed" in seen:
+                    break
+
+            assert "led_changed" in seen
+            assert "button_pressed" in seen
+            assert led_state is True
+            assert press_count == 1
+
     def test_subscribe_with_specific_topics(self, client):
         """subscribe con topics=["led"] solo recibe eventos de ese topico."""
         with client.websocket_connect("/ws") as ws:
