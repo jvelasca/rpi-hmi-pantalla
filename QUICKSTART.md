@@ -71,7 +71,7 @@ python diagnostics/gpio/blink_test.py led1 --times 3
 
 ```bash
 # En la Pi (SSH)
-ssh pi@192.168.1.X
+ssh pi@<IP_DE_LA_PI>
 
 # Setup
 cd /home/pi/Rpi_Pantalla_V1
@@ -85,8 +85,8 @@ python diagnostics/gpio/blink_test.py led1 --times 5
 # Iniciar servidor FastAPI
 python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 
-# Desde tu PC accede a: http://192.168.1.X:8000/health
-curl http://192.168.1.X:8000/health
+# Desde tu PC accede a: http://<IP_DE_LA_PI>:8000/health
+curl http://<IP_DE_LA_PI>:8000/health
 ```
 
 ## Code quality

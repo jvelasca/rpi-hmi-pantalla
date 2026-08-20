@@ -22,8 +22,8 @@
 | Backend | CORRIENDO (systemd) | FastAPI en :8000. `rpi-hmi-backend.service` enabled. Auto-start al boot. |
 | Display App Pygame | CORRIENDO (systemd) | `rpi-hmi-display.service` enabled. DRM/KMS 480x320 en TFT. Auto-start al boot. |
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
-| Frontend SolidJS | CORRIENDO | http://192.168.88.211:8000/. Servido por FastAPI desde frontend/dist/. |
-| Docs | OK | Swagger en http://192.168.88.211:8000/docs |
+| Frontend SolidJS | CORRIENDO | http://<IP_DE_LA_PI>:8000/. Servido por FastAPI desde frontend/dist/. |
+| Docs | OK | Swagger en http://<IP_DE_LA_PI>:8000/docs |
 | Tests | 103/103 pass | 77 backend + 26 display = 103 tests total |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
 
@@ -92,10 +92,10 @@ display/
 
 ```bash
 # Instalar dependencias en la Pi
-ssh pi@192.168.88.211 "source /home/pi/rpi_hmi/venv/bin/activate && pip install pygame evdev requests websocket-client"
+ssh pi@<IP_DE_LA_PI> "source /home/pi/rpi_hmi/venv/bin/activate && pip install pygame evdev requests websocket-client"
 
 # Ejecutar display app (con backend ya corriendo)
-ssh pi@192.168.88.211 "cd /home/pi/rpi_hmi && PYTHONPATH=/home/pi/rpi_hmi /home/pi/rpi_hmi/venv/bin/python3 display/app.py"
+ssh pi@<IP_DE_LA_PI> "cd /home/pi/rpi_hmi && PYTHONPATH=/home/pi/rpi_hmi /home/pi/rpi_hmi/venv/bin/python3 display/app.py"
 
 # Modo mock en PC (desarrollo)
 python display/app.py --mock
@@ -202,7 +202,7 @@ python scripts/deploy.py --hmi
 # Detiene lightdm, libera DRM, lanza la HMI en la TFT
 
 # Opcion 3: Script en la Pi
-ssh pi@192.168.88.211
+ssh pi@<IP_DE_LA_PI>
 cd /home/pi/rpi_hmi
 sudo ./scripts/start_hmi.sh
 
@@ -211,7 +211,7 @@ python display/app.py --mock --debug
 # O simplemente python display/app.py (auto-detecta Windows/Mac y activa mock)
 
 # Opcion 5: Mock en PC conectado al backend de la Pi
-python display/app.py --mock --api-url http://192.168.88.211:8000 --debug
+python display/app.py --mock --api-url http://<IP_DE_LA_PI>:8000 --debug
 ```
 
 ## Decisiones tomadas
@@ -226,7 +226,7 @@ python display/app.py --mock --api-url http://192.168.88.211:8000 --debug
 ## Configuracion activa
 
 ```env
-RPI_HOST=192.168.88.211
+RPI_HOST=<IP_DE_LA_PI>
 RPI_USER=pi
 RPI_PASSWORD=
 RPI_PORT=22
