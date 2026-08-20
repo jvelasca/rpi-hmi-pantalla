@@ -10,6 +10,7 @@ Ejecucion:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -31,6 +32,12 @@ from backend.app.api import (
 from backend.app.config import settings
 from backend.app.services.gpio_service import gpio_service
 from backend.app.services.state_manager import state_manager
+from backend.app.services.systemd_notify import (
+    notify_ready,
+    notify_stopping,
+    notify_watchdog,
+    watchdog_interval_usec,
+)
 
 logger = logging.getLogger("rpi_hmi.backend")
 
@@ -42,6 +49,21 @@ logging.basicConfig(
 )
 
 # ── Lifespan ──────────────────────────────────────────────────
+
+
+async def _watchdog_loop(interval_usec: int) -> None:
+    """Envia WATCHDOG=1 a systemd periodicamente (mitad de WatchdogSec)."""
+    interval_sec = interval_usec / 1_000_000
+    try:
+        while True:
+            await asyncio.sleep(interval_sec)
+            try:
+                notify_watchdog()
+            except Exception:
+                logger.exception("Error enviando WATCHDOG=1 a systemd")
+    except asyncio.CancelledError:
+        logger.info("Watchdog systemd detenido")
+        raise
 
 
 @asynccontextmanager
@@ -137,10 +159,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Persistencia SQLite no disponible: %s", exc)
 
+    # ── systemd sd_notify ─────────────────────────────────────
+    # No-op si no corre bajo systemd (Windows/CI/dev): notify_ready()
+    # retorna False sin error y watchdog_interval_usec() retorna None.
+    watchdog_task: asyncio.Task[None] | None = None
+    try:
+        notify_ready()
+        interval_usec = watchdog_interval_usec()
+        if interval_usec is not None:
+            watchdog_task = asyncio.create_task(_watchdog_loop(interval_usec))
+            logger.info(
+                "Watchdog systemd activado: WATCHDOG=1 cada %.1f s",
+                interval_usec / 1_000_000,
+            )
+    except Exception as exc:
+        logger.warning("sd_notify no disponible: %s", exc)
+
     yield  # ── App corriendo ──
 
     # Shutdown
     logger.info("Apagando servicios...")
+
+    # Detener watchdog systemd antes de cerrar servicios
+    if watchdog_task is not None:
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.warning("Error al cancelar watchdog systemd", exc_info=True)
+
+    try:
+        notify_stopping()
+    except Exception as exc:
+        logger.warning("No se pudo notificar STOPPING=1 a systemd: %s", exc)
 
     # Drain pending persistence tasks before closing DB
     try:

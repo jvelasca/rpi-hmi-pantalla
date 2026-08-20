@@ -5,7 +5,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
 User=pi
 Group=pi
 WorkingDirectory=/home/pi/rpi_hmi
@@ -14,6 +14,7 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/pi/rpi_hmi/venv/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
+WatchdogSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -46,14 +47,16 @@ LockPersonality=true
 ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /dev/mem /sys/class/gpio
 ReadOnlyPaths=/sys/class/thermal
 
-# ── Watchdog (MEJORA FUTURA, NO ACTIVAR AUN) ────────────────
-# NO anadir WatchdogSec= hasta implementar la notificacion real del
-# servicio mediante sd_notify (p. ej. la libreria `sdnotify` en Python
-# o WATCHDOG_USEC via sd_notify()). Sin un notificador activo, systemd
-# reiniciaria el servicio cada N segundos al no recibir WATCHDOG=1.
-#   WatchdogSec=30s
-#   ExecStart con soporte sd_notify: notificar READY=1 al arrancar y
-#   WATCHDOG=1 periodicamente (ver man sd_notify y systemd.service).
+# ── Watchdog (ACTIVO) ────────────────────────────────────────
+# El servicio notifica a systemd via sd_notify implementado en
+# backend/app/services/systemd_notify.py:
+#   - READY=1 al terminar el arranque (notify_ready).
+#   - WATCHDOG=1 periodicamente (notify_watchdog, cada WatchdogSec/2).
+#   - STOPPING=1 al apagar (notify_stopping).
+# Con Type=notify, systemd considera el arranque fallido si el proceso
+# no envia READY=1 en un plazo; con WatchdogSec=30 reinicia el servicio
+# si no recibe WATCHDOG=1 en 30 s. Sin systemd (dev/CI/Windows) el
+# modulo no hace nada (no-op).
 
 [Install]
 WantedBy=multi-user.target
