@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # sin stubs de PyYAML
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("backend.models.device")
@@ -55,7 +55,7 @@ class DeviceConfig(BaseModel):
     type: Annotated[DeviceType, Field(description="Tipo de dispositivo")]
     name: Annotated[str, Field(min_length=1, max_length=128, description="Nombre descriptivo")]
     pin: Annotated[PinMapping | None, Field(default=None, description="Mapeo de pines")]
-    kwargs: Annotated[dict, Field(default_factory=dict, description="Parametros adicionales")]
+    kwargs: Annotated[dict[str, Any], Field(default_factory=dict, description="Parametros adicionales")]
 
 
 def load_devices(path: str) -> dict[str, DeviceConfig]:
@@ -96,14 +96,14 @@ def load_devices(path: str) -> dict[str, DeviceConfig]:
         return result
 
     # Retrocompatibilidad con formato antiguo (dict con claves)
-    result: dict[str, DeviceConfig] = {}
+    legacy_result: dict[str, DeviceConfig] = {}
     for dev_id, cfg in raw_devices.items():
-        result[dev_id] = _migrate_old_format(dev_id, cfg)
-    logger.info("Dispositivos cargados (formato antiguo, migrado): %s", list(result.keys()))
-    return result
+        legacy_result[dev_id] = _migrate_old_format(dev_id, cfg)
+    logger.info("Dispositivos cargados (formato antiguo, migrado): %s", list(legacy_result.keys()))
+    return legacy_result
 
 
-def _migrate_old_format(dev_id: str, cfg: dict) -> DeviceConfig:
+def _migrate_old_format(dev_id: str, cfg: dict[str, Any]) -> DeviceConfig:
     """Convierte una entrada del formato antiguo al nuevo DeviceConfig.
 
     Formato antiguo:

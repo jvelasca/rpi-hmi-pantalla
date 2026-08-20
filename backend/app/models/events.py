@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -112,10 +112,7 @@ class ServerMessage(BaseModel):
         >>> ServerMessage(type="error", data={"code": "GPIO_BUSY", "message": "GPIO 17 ocupado"})
     """
 
-    version: Annotated[
-        str,
-        Field(default="1.0", description="Version del protocolo WebSocket"),
-    ]
+    version: str = Field(default="1.0", description="Version del protocolo WebSocket")
     type: Annotated[
         Literal[
             "status_update",
@@ -129,15 +126,11 @@ class ServerMessage(BaseModel):
         ],
         Field(description="Tipo de evento"),
     ]
-    data: Annotated[dict, Field(description="Payload del evento")]
-    sequence: Annotated[
-        int | None,
-        Field(default=None, ge=0, description="Contador secuencial de eventos (None para errores)"),
-    ]
-    timestamp: Annotated[
-        datetime,
-        Field(
-            default_factory=lambda: datetime.now(timezone.utc),
-            description="Timestamp UTC del evento",
-        ),
-    ]
+    data: Annotated[dict[str, Any], Field(description="Payload del evento")]
+    sequence: int | None = Field(
+        default=None, ge=0, description="Contador secuencial de eventos (None para errores)"
+    )
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp UTC del evento",
+    )

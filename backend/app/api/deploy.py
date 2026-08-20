@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import secrets as _secrets
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -116,7 +116,7 @@ class ScanResultResponse(BaseModel):
         count: Numero total de dispositivos encontrados.
     """
 
-    results: List[dict]
+    results: List[dict[str, Any]]
     count: int
 
 

@@ -28,7 +28,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
-import yaml  # noqa: F401 — kept for backward compat, unused after migration
+import yaml  # type: ignore[import-untyped]  # noqa: F401 — retrocompat, sin stubs de PyYAML
 
 from backend.app.models.device import DeviceConfig, load_devices as _load_devices  # noqa: F401
 

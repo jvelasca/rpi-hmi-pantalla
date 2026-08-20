@@ -27,7 +27,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Literal
 
 from backend.app.models.events import ServerMessage, SubscriptionTopic
 from backend.app.models.hmi import ButtonState, DisplayInfo, DisplaySettings, LedState, SystemStatus
@@ -50,7 +50,7 @@ class StateManager:
         self._start_time: float = time.monotonic()
         self._persistence: Any = None  # Persistence instance (seteado en set_persistence)
         self._sequence: int = 0  # Contador de eventos para ordenamiento WS
-        self._pending_persistence_tasks: set[asyncio.Task] = set()  # Track persistence tasks for drain
+        self._pending_persistence_tasks: set[asyncio.Task[Any]] = set()  # Track persistence tasks for drain
 
         # Cargar pin desde devices.yaml (fuente unica de verdad)
         pin = self._load_led_pin()
@@ -62,8 +62,8 @@ class StateManager:
         )
         self._subscribers: dict[str, set[Any]] = {}  # topic -> set(WebSocket)
         self._updater_callback: Any | None = None  # Callback para actualizar GPIO
-        self._broadcast_queues: dict[str, asyncio.Queue] = {}  # topic -> queue for serialized broadcasts
-        self._broadcast_workers: dict[str, asyncio.Task] = {}  # topic -> worker task
+        self._broadcast_queues: dict[str, asyncio.Queue[Any]] = {}  # topic -> queue for serialized broadcasts
+        self._broadcast_workers: dict[str, asyncio.Task[Any]] = {}  # topic -> worker task
 
     def set_persistence(self, persistence: Any) -> None:
         """Registra la capa de persistencia.
@@ -371,7 +371,11 @@ class StateManager:
         """Devuelve los ajustes visuales del display (thread-safe)."""
         return self.display_settings
 
-    def set_display_settings(self, font_family: str, text_size: str) -> DisplaySettings:
+    def set_display_settings(
+        self,
+        font_family: Literal["dejavu", "liberation"],
+        text_size: Literal["small", "medium", "large"],
+    ) -> DisplaySettings:
         """Actualiza y persiste los ajustes visuales del display.
 
         Args:
@@ -514,7 +518,7 @@ class StateManager:
 
     # ── Persistencia interna ───────────────────────────────────
 
-    def _schedule_persist(self, coro) -> None:
+    def _schedule_persist(self, coro: Any) -> None:
         """Schedule a persistence coroutine and track it for shutdown drain."""
         try:
             task = asyncio.create_task(coro)
@@ -548,7 +552,7 @@ class StateManager:
 
     # ── Event Log ──────────────────────────────────────────────
 
-    def _log_event(self, event_type: str, payload: dict | None = None) -> None:
+    def _log_event(self, event_type: str, payload: dict[str, Any] | None = None) -> None:
         """Registra un evento en el log historico de SQLite."""
         import json as _json
 

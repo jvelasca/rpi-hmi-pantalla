@@ -127,6 +127,10 @@ class DisplayApp:
         self._pending_font_family: str | None = None
         self._pending_text_size: str | None = None
 
+        # Feedback no-bloqueante del boton: frame actual y duracion en frames
+        self._button_press_frame: int = -1
+        self._button_press_duration: int = 2
+
         # Screen (se inicializa después de saber mock)
         self.screen = Screen(auto_detect=not mock, mock=mock)
 
@@ -237,6 +241,7 @@ class DisplayApp:
         """Callback: el usuario tocó el botón principal (down)."""
         logger.debug("Button press solicitado")
         self.button.pressed = True
+        self._button_press_frame = 0
         self._api_post("/api/button/press")
         self._sync_state()
         self._redraw = True
@@ -591,6 +596,14 @@ class DisplayApp:
             # ── Eventos touch (evdev) ──
             if self.touch and self.touch.available:
                 self.touch.poll()
+
+            # ── Feedback no-bloqueante del boton: auto-liberacion por frames ──
+            if self._button_press_frame >= 0:
+                self._button_press_frame += 1
+                if self._button_press_frame >= self._button_press_duration:
+                    if self.button.pressed:
+                        self._on_release_button()
+                    self._button_press_frame = -1
 
             # Consumir flag de redibujado establecido por callbacks
             if self._redraw:

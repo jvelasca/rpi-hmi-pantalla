@@ -181,6 +181,10 @@ class TestDisplayAppStateSync:
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
+        app._pending_display_action = None
+        app._pending_font_family = None
+        app._pending_text_size = None
+
         result = app._apply_ws_state()
         assert result is True
         assert app.led.on is True
@@ -208,6 +212,10 @@ class TestDisplayAppStateSync:
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
+        app._pending_display_action = None
+        app._pending_font_family = None
+        app._pending_text_size = None
+
         result = app._apply_ws_state()
         assert result is True
         assert app.button.press_count == 42
@@ -233,6 +241,10 @@ class TestDisplayAppStateSync:
         app.led.label = "APAGADO"
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
+
+        app._pending_display_action = None
+        app._pending_font_family = None
+        app._pending_text_size = None
 
         result = app._apply_ws_state()
         assert result is True
@@ -291,6 +303,7 @@ class TestDisplayAppStateSync:
         # Centro del boton
         cx = 260 + 90
         cy = 50 + 20 + (230 - 20) // 2 - 5
+        app.view = "main"
         app._handle_touch_down(cx, cy)
         assert len(pressed) == 1
         assert app.button.pressed is True

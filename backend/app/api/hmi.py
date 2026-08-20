@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -122,7 +123,7 @@ async def release_button() -> ButtonState:
 
 
 @router.get("/display/info")
-async def get_display_info() -> dict:
+async def get_display_info() -> dict[str, Any]:
     """Informacion del display fisico conectado.
 
     Returns:
@@ -158,7 +159,7 @@ async def set_display_settings(request: DisplaySettings) -> DisplaySettings:
 
 
 @router.post("/display/command")
-async def display_command(request: DisplayCommand) -> dict:
+async def display_command(request: DisplayCommand) -> dict[str, Any]:
     """Envia un comando de cambio de vista al display fisico.
 
     Permite que el panel web controle la vista mostrada en la pantalla

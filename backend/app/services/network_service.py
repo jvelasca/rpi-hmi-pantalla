@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any
+from typing import Any, Literal
 
 from backend.app.models.network import NetworkResult, NetworkStatus
 
@@ -69,7 +69,7 @@ class NetworkService:
         dar tiempo a que la respuesta HTTP se haya enviado.
         """
 
-        def _do():
+        def _do() -> None:
             time.sleep(_ACTIVATE_DELAY)
             logger.info("Re-activando conexion '%s'...", connection_name)
             code, out, err = self._run(
@@ -163,7 +163,7 @@ class NetworkService:
                 elif line.startswith("IP4.DNS[") and ":" in line:
                     dns = line.split(":", 1)[1].strip() or None
 
-        mode = "static" if method == "manual" else "dhcp"
+        mode: Literal["dhcp", "static"] = "static" if method == "manual" else "dhcp"
         return NetworkStatus(
             interface=device,
             connection_name=name,

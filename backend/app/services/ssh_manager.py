@@ -28,7 +28,7 @@ import socket
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("backend.services.ssh")
 
@@ -156,7 +156,12 @@ class SSHDriver(ABC):
         """Soporte para 'with SSHDriver(...) as ssh:'."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[object],
+    ) -> None:
         """Cierra la conexión automáticamente al salir del bloque with."""
         self.disconnect()
         return None  # No suprime excepciones
@@ -187,8 +192,8 @@ class ParamikoSSHDriver(SSHDriver):
         """Inicializa el driver sin conexión activa."""
         self.host: str = ""
         self.user: str = ""
-        self._client: Optional[object] = None  # paramiko.SSHClient
-        self._sftp: Optional[object] = None
+        self._client: Any = None  # paramiko.SSHClient (sin stubs de paramiko → Any)
+        self._sftp: Any = None  # paramiko.SFTPClient (sin stubs de paramiko → Any)
 
     def connect(
         self,
@@ -219,7 +224,7 @@ class ParamikoSSHDriver(SSHDriver):
             TimeoutError: Timeout agotado durante la conexión.
         """
         import os as _os
-        import paramiko
+        import paramiko  # type: ignore[import-untyped]  # paramiko no distribuye stubs de tipos
 
         self.host = host
         self.user = user

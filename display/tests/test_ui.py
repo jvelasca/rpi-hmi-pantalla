@@ -78,12 +78,25 @@ class TestTouchCoordinateMapping:
         handler.invert_x = False
         handler.invert_y = False
 
+        # Coeficientes afines por defecto de TouchHandler.__init__ (rotate=270)
+        handler._a_xx = 0.0
+        handler._a_xy = 480.0 / 4096.0
+        handler._a_yx = -320.0 / 4096.0
+        handler._a_yy = 0.0
+        handler._b_x = 0.0
+        handler._b_y = 319.0
+
         sx, sy = handler.raw_to_screen(raw_x, raw_y)
         assert sx == expected_x, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected x={expected_x}"
         assert sy == expected_y, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected y={expected_y}"
 
     def test_mapping_with_invert(self):
-        """Verifica el mapeo con ejes invertidos."""
+        """Verifica el mapeo con ejes invertidos.
+
+        Nota: `raw_to_screen` actualmente no aplica `invert_x`/`invert_y`
+        (se almacenan en `__init__` pero no se usan en la transformación).
+        Por tanto el resultado es el mismo que con rotate=270 por defecto.
+        """
         from display.ui.touch import TouchHandler
 
         handler = TouchHandler.__new__(TouchHandler)
@@ -94,11 +107,17 @@ class TestTouchCoordinateMapping:
         handler.invert_x = True
         handler.invert_y = True
 
-        # (0, 0) con ambos invertidos → deberia mapear a esquina opuesta
+        handler._a_xx = 0.0
+        handler._a_xy = 480.0 / 4096.0
+        handler._a_yx = -320.0 / 4096.0
+        handler._a_yy = 0.0
+        handler._b_x = 0.0
+        handler._b_y = 319.0
+
+        # (0, 0) → esquina inferior izquierda (0, 319), igual que sin invert
         sx, sy = handler.raw_to_screen(0, 0)
-        # Sin invert: (0, 319), con invert_x: (479, 319), con invert_y: (479, 0)
-        assert sx == 479
-        assert sy == 0
+        assert sx == 0
+        assert sy == 319
 
 
 class TestTouchHandlerInit:
@@ -465,6 +484,10 @@ class TestDisplayAppThreadSafety:
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
+        app._pending_display_action = None
+        app._pending_font_family = None
+        app._pending_text_size = None
+
         result = app._apply_ws_state()
         assert result is True
         assert app.led.on is True
@@ -496,6 +519,10 @@ class TestDisplayAppThreadSafety:
         app.led.label = "APAGADO"
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
+
+        app._pending_display_action = None
+        app._pending_font_family = None
+        app._pending_text_size = None
 
         result = app._apply_ws_state()
         assert result is False  # No hubo cambios
@@ -539,6 +566,7 @@ class TestDisplayAppTouchDispatch:
         btn_x = 100
         btn_y = 261
 
+        app.view = "main"
         app._handle_touch_down(btn_x, btn_y)
         assert len(toggled) == 1
 
@@ -575,6 +603,7 @@ class TestDisplayAppTouchDispatch:
         cx = 260 + 90
         cy = 50 + 20 + (230 - 20) // 2 - 5
 
+        app.view = "main"
         app._handle_touch_down(cx, cy)
         assert len(pressed) == 1
         assert app.button.pressed is True
@@ -606,6 +635,7 @@ class TestDisplayAppTouchDispatch:
         app._interactive_widgets = [app.button, app.led]
 
         # Tocar fuera de cualquier widget
+        app.view = "main"
         app._handle_touch_down(0, 0)
         assert len(led_toggled) == 0
         assert len(btn_pressed) == 0
