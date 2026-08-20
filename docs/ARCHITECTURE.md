@@ -1,4 +1,4 @@
-# RPi HMI — Arquitectura del Sistema (v0.3.0)
+# RPi HMI — Arquitectura del Sistema (v0.3.1)
 
 > **Estado:** Plan para implementacion  
 > **Ultima actualizacion:** 2026-08-11  

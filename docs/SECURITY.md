@@ -4,7 +4,7 @@
 > confianza. Este documento describe el modelo de amenazas asumido y la
 > política de seguridad explícita del backend.
 >
-> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.0
+> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.1
 
 ## 1. Modelo de amenazas
 
