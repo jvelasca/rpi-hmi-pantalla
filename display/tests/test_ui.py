@@ -90,13 +90,19 @@ class TestTouchCoordinateMapping:
         assert sx == expected_x, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected x={expected_x}"
         assert sy == expected_y, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected y={expected_y}"
 
-    def test_mapping_with_invert(self):
-        """Verifica el mapeo con ejes invertidos.
-
-        Nota: `raw_to_screen` actualmente no aplica `invert_x`/`invert_y`
-        (se almacenan en `__init__` pero no se usan en la transformación).
-        Por tanto el resultado es el mismo que con rotate=270 por defecto.
-        """
+    @pytest.mark.parametrize(
+        "raw_x, raw_y, expected_x, expected_y",
+        [
+            # (0, 0) raw → sin invert (0, 319); con invert_x + invert_y → (479, 0)
+            (0, 0, 479, 0),
+            # (4095, 4095) raw → sin invert (479, 0); con invert → (0, 319)
+            (4095, 4095, 0, 319),
+            # Centro (2048, 2048) → sin invert (240, 159); con invert → (239, 160)
+            (2048, 2048, 239, 160),
+        ],
+    )
+    def test_mapping_with_invert(self, raw_x, raw_y, expected_x, expected_y):
+        """Verifica el mapeo con ejes invertidos (invert_x/invert_y activos)."""
         from display.ui.touch import TouchHandler
 
         handler = TouchHandler.__new__(TouchHandler)
@@ -114,10 +120,9 @@ class TestTouchCoordinateMapping:
         handler._b_x = 0.0
         handler._b_y = 319.0
 
-        # (0, 0) → esquina inferior izquierda (0, 319), igual que sin invert
-        sx, sy = handler.raw_to_screen(0, 0)
-        assert sx == 0
-        assert sy == 319
+        sx, sy = handler.raw_to_screen(raw_x, raw_y)
+        assert sx == expected_x, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected x={expected_x}"
+        assert sy == expected_y, f"raw=({raw_x},{raw_y}) → screen=({sx},{sy}), expected y={expected_y}"
 
 
 class TestTouchHandlerInit:
@@ -135,6 +140,40 @@ class TestTouchHandlerInit:
         from display.ui.touch import TouchHandler
 
         handler = TouchHandler(device_path="/dev/input/nonexistent99")
+        assert not handler.available
+
+
+class TestReadAbsMax:
+    """Pruebas del helper defensivo _read_abs_max (fallback sin hardware)."""
+
+    def test_none_path_returns_none(self):
+        """device_path=None → None (no hay dispositivo que leer)."""
+        from display.ui.touch import _read_abs_max
+
+        assert _read_abs_max(None, 0) is None
+
+    def test_missing_device_returns_none(self):
+        """Dispositivo inexistente → None (fallback a RAW_MAX en __init__)."""
+        from display.ui.touch import _read_abs_max
+
+        assert _read_abs_max("/dev/input/nonexistent99", 0) is None
+
+    def test_no_fcntl_returns_none(self):
+        """Sin fcntl (Windows) el import diferido falla → None."""
+        from unittest.mock import patch
+
+        from display.ui.touch import _read_abs_max
+
+        with patch.dict(sys.modules, {"fcntl": None}):
+            assert _read_abs_max("/dev/input/event0", 0) is None
+
+    def test_init_falls_back_to_raw_max_without_device(self):
+        """TouchHandler sin hardware usa RAW_MAX para touch_max_x/touch_max_y."""
+        from display.ui.touch import RAW_MAX, TouchHandler
+
+        handler = TouchHandler(device_path="/dev/input/nonexistent99")
+        assert handler.touch_max_x == RAW_MAX
+        assert handler.touch_max_y == RAW_MAX
         assert not handler.available
 
 

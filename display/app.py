@@ -181,7 +181,7 @@ class DisplayApp:
         margin = int(MARGIN * sy)
 
         # Header
-        self.header = HeaderWidget(0, 0, w, header_h, version="v1.2")
+        self.header = HeaderWidget(0, 0, w, header_h, version="0.3.0")
 
         # Content area
         content_y = header_h + margin

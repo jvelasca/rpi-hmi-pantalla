@@ -104,7 +104,7 @@ class Screen:
         device: str = "/dev/dri/card0",
         fullscreen: bool = True,
         mock: bool = False,
-        allow_mock_fallback: bool = True,
+        allow_mock_fallback: bool = False,
     ) -> None:
         self.width = width
         self.height = height

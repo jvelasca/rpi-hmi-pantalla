@@ -66,6 +66,34 @@ def _find_touch_device() -> str | None:
     return None
 
 
+def _read_abs_max(device_path: str | None, axis: int) -> int | None:
+    """Lee el valor máximo de un eje ABS del dispositivo evdev vía EVIOCGABS.
+
+    Args:
+        device_path: ruta al dispositivo evdev (o None si no hay dispositivo).
+        axis: código del eje ABS (ABS_X=0, ABS_Y=1).
+
+    Returns:
+        El campo `maximum` de `struct input_absinfo`, o None si no se puede
+        leer (Windows sin `fcntl`, dispositivo inexistente, ioctl no soportado...).
+    """
+    if device_path is None:
+        return None
+    try:
+        import fcntl  # import diferido: no existe en Windows
+
+        # _IOR('E', 0x40 + axis, struct input_absinfo):
+        #   dir=2 (<<30) | type='E'=0x45 (<<8) | nr=0x40+axis | size=24 (<<16)
+        eviocgabs = (2 << 30) | (0x45 << 8) | (0x40 + axis) | (24 << 16)
+        # struct input_absinfo: value, minimum, maximum, fuzz, flat, resolution
+        with open(device_path, "rb") as f:
+            buf = fcntl.ioctl(f.fileno(), eviocgabs, b"\x00" * 24)
+        _value, _minimum, maximum, _fuzz, _flat, _resolution = struct.unpack("iiiiii", buf)
+        return maximum
+    except (ImportError, OSError, ValueError, struct.error):
+        return None
+
+
 def _default_calibration_path() -> Path:
     """Ruta del archivo de calibración (config/touch_calibration.json)."""
     return Path(__file__).resolve().parents[2] / "config" / "touch_calibration.json"
@@ -146,22 +174,37 @@ class TouchHandler:
         device_path: str | None = None,
         screen_width: int = 480,
         screen_height: int = 320,
-        touch_max_x: int = RAW_MAX,
-        touch_max_y: int = RAW_MAX,
+        touch_max_x: int | None = None,
+        touch_max_y: int | None = None,
         invert_x: bool = False,
         invert_y: bool = False,
         calibration_file: str | None = None,
     ) -> None:
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.touch_max_x = touch_max_x
-        self.touch_max_y = touch_max_y
         self.invert_x = invert_x
         self.invert_y = invert_y
         self.calibration_file = calibration_file or str(_default_calibration_path())
 
         self.device_path: str | None = None
         self._fd: int | None = None
+
+        # Resolver la ruta del dispositivo una sola vez (auto-detect si no se dio).
+        resolved_path = device_path or _find_touch_device()
+
+        # Límites ABS reales del panel: leerlos vía EVIOCGABS si es posible;
+        # si no (Windows sin fcntl / sin hardware / fallo), usar RAW_MAX.
+        if touch_max_x is None:
+            detected_max = _read_abs_max(resolved_path, ABS_X) if resolved_path else None
+            self.touch_max_x = detected_max if detected_max is not None else RAW_MAX
+        else:
+            self.touch_max_x = touch_max_x
+
+        if touch_max_y is None:
+            detected_max = _read_abs_max(resolved_path, ABS_Y) if resolved_path else None
+            self.touch_max_y = detected_max if detected_max is not None else RAW_MAX
+        else:
+            self.touch_max_y = touch_max_y
 
         # Estado actual del touch (coordenadas raw)
         self.x: int = 0
@@ -187,14 +230,17 @@ class TouchHandler:
         self._b_y = self.screen_height - 1
 
         self._load_calibration()
-        self._init_device(device_path)
+        self._init_device(resolved_path)
 
     # ── Inicialización ─────────────────────────────────────────
 
     def _init_device(self, device_path: str | None) -> None:
-        """Abre el dispositivo táctil en modo no bloqueante."""
-        path = device_path or _find_touch_device()
-        if path is None:
+        """Abre el dispositivo táctil en modo no bloqueante.
+
+        Recibe una ruta ya resuelta (la auto-detección se hace una única vez
+        en ``__init__`` para poder leer los límites ABS antes).
+        """
+        if device_path is None:
             logger.warning("Dispositivo táctil no encontrado")
             return
 
@@ -202,12 +248,12 @@ class TouchHandler:
             flags = os.O_RDONLY
             if hasattr(os, "O_NONBLOCK"):
                 flags |= os.O_NONBLOCK
-            fd = os.open(path, flags)
+            fd = os.open(device_path, flags)
             self._fd = fd
-            self.device_path = path
-            logger.info("Touch inicializado en %s", path)
+            self.device_path = device_path
+            logger.info("Touch inicializado en %s", device_path)
         except OSError as exc:
-            logger.warning("No se pudo abrir %s: %s", path, exc)
+            logger.warning("No se pudo abrir %s: %s", device_path, exc)
 
     @property
     def available(self) -> bool:
@@ -327,9 +373,14 @@ class TouchHandler:
     # ── Mapeo de coordenadas ───────────────────────────────────
 
     def raw_to_screen(self, raw_x: int, raw_y: int) -> tuple[int, int]:
-        """Aplica la transformación afín calibrada."""
+        """Aplica la transformación afín calibrada y la inversión de ejes."""
         sx = self._a_xx * raw_x + self._a_xy * raw_y + self._b_x
         sy = self._a_yx * raw_x + self._a_yy * raw_y + self._b_y
+
+        if self.invert_x:
+            sx = self.screen_width - 1 - sx
+        if self.invert_y:
+            sy = self.screen_height - 1 - sy
 
         sx = max(0, min(self.screen_width - 1, int(round(sx))))
         sy = max(0, min(self.screen_height - 1, int(round(sy))))
