@@ -20,8 +20,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from backend.app.api.deps import require_admin_api_key
 from backend.app.models.hmi import ButtonState, DisplayCommand, DisplaySettings, LedState, SystemStatus
 from backend.app.services.state_manager import state_manager
 
@@ -56,7 +57,7 @@ async def get_led() -> LedState:
     return state_manager.led
 
 
-@router.post("/led/toggle", response_model=LedState)
+@router.post("/led/toggle", response_model=LedState, dependencies=[Depends(require_admin_api_key)])
 async def toggle_led() -> LedState:
     """Alterna el estado del LED (ON <-> OFF).
 
@@ -66,7 +67,7 @@ async def toggle_led() -> LedState:
     return state_manager.toggle_led()
 
 
-@router.post("/led/on", response_model=LedState)
+@router.post("/led/on", response_model=LedState, dependencies=[Depends(require_admin_api_key)])
 async def led_on() -> LedState:
     """Enciende el LED.
 
@@ -76,7 +77,7 @@ async def led_on() -> LedState:
     return state_manager.set_led(True)
 
 
-@router.post("/led/off", response_model=LedState)
+@router.post("/led/off", response_model=LedState, dependencies=[Depends(require_admin_api_key)])
 async def led_off() -> LedState:
     """Apaga el LED.
 
@@ -99,7 +100,7 @@ async def get_button() -> ButtonState:
     return state_manager.button
 
 
-@router.post("/button/press", response_model=ButtonState)
+@router.post("/button/press", response_model=ButtonState, dependencies=[Depends(require_admin_api_key)])
 async def press_button() -> ButtonState:
     """Registra una pulsacion del boton (incrementa contador).
 
@@ -109,7 +110,7 @@ async def press_button() -> ButtonState:
     return state_manager.press_button()
 
 
-@router.post("/button/release", response_model=ButtonState)
+@router.post("/button/release", response_model=ButtonState, dependencies=[Depends(require_admin_api_key)])
 async def release_button() -> ButtonState:
     """Libera el boton.
 
@@ -158,7 +159,7 @@ async def set_display_settings(request: DisplaySettings) -> DisplaySettings:
 # ── Comando de vista al display ────────────────────────────────
 
 
-@router.post("/display/command")
+@router.post("/display/command", dependencies=[Depends(require_admin_api_key)])
 async def display_command(request: DisplayCommand) -> dict[str, Any]:
     """Envia un comando de cambio de vista al display fisico.
 

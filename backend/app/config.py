@@ -102,8 +102,8 @@ class Settings(BaseSettings):
 
         if self.enable_admin_api and not self.admin_api_key:
             logger.critical(
-                "ADMIN_API_KEY no configurada pero enable_admin_api=True. "
-                "Los endpoints /admin/* estan expuestos sin proteccion."
+                "ADMIN_API habilitada pero ADMIN_API_KEY no configurada: "
+                "los endpoints /admin/* estaran inaccesibles (503)."
             )
         elif self.admin_api_key == "cambia-esto-por-una-clave-segura":
             logger.critical(

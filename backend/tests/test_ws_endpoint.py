@@ -9,7 +9,11 @@ con @pytest.mark.asyncio en este contexto.
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
+from backend.app import config as config_module
+from backend.app.main import app
 from backend.app.services.state_manager import StateManager, state_manager
 
 
@@ -194,3 +198,46 @@ class TestWebSocketEndpoint:
         r = client.get("/api/status")
         assert r.status_code == 200
         assert r.json()["websocket_clients"] == 0
+
+
+# ── Autenticacion WebSocket (SECURITY_MODE) ────────────────────
+
+
+@pytest.fixture
+def protected_mode(monkeypatch):
+    """Activa SECURITY_MODE=protected con una ADMIN_API_KEY conocida."""
+    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
+    monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
+    return "test-key-123"
+
+
+class TestWebSocketAuth:
+    """Comportamiento de auth del endpoint /ws segun SECURITY_MODE."""
+
+    def test_local_mode_accepts_without_key(self, client):
+        """En local, WS acepta sin key (comportamiento existente)."""
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"version": "1.0", "type": "subscribe"})
+            data = ws.receive_json()
+            assert data["type"] == "status_update"
+
+    def test_protected_non_loopback_without_key_rejected(self, client, protected_mode):
+        """En protected, WS desde no-loopback sin key es rechazado (4401)."""
+        with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect("/ws"):
+            pass
+        assert exc_info.value.code == 4401
+
+    def test_protected_non_loopback_with_key_accepted(self, client, protected_mode):
+        """En protected, WS desde no-loopback con key correcta es aceptado."""
+        with client.websocket_connect("/ws", headers={"X-API-Key": protected_mode}) as ws:
+            ws.send_json({"version": "1.0", "type": "subscribe"})
+            data = ws.receive_json()
+            assert data["type"] == "status_update"
+
+    def test_protected_loopback_accepted_without_key(self, protected_mode):
+        """En protected, WS desde loopback (display local) es aceptado sin key."""
+        loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+        with loopback_client.websocket_connect("/ws") as ws:
+            ws.send_json({"version": "1.0", "type": "subscribe"})
+            data = ws.receive_json()
+            assert data["type"] == "status_update"

@@ -185,7 +185,7 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "X-API-Key"],
 )
 
 # Routers HMI (sin autenticacion, acceso LAN)

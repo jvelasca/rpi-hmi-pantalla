@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import logging
 
+from fastapi import HTTPException
+
 from backend.app.config import Settings
 
 # ── Helper: create a fresh Settings instance ───────────────────
@@ -61,7 +63,8 @@ class TestSettingsSecurity:
         """enable_admin_api=True sin admin_api_key debe loguear critical."""
         with caplog.at_level(logging.CRITICAL, logger="rpi_hmi.config"):
             _new_settings(enable_admin_api=True, admin_api_key="")
-        assert "ADMIN_API_KEY no configurada" in caplog.text
+        assert "ADMIN_API habilitada pero ADMIN_API_KEY no configurada" in caplog.text
+        assert "inaccesibles (503)" in caplog.text
 
     def test_model_post_init_warns_default_key(self, caplog):
         """admin_api_key con valor por defecto debe loguear critical."""
@@ -92,6 +95,27 @@ class TestSettingsSecurity:
         with caplog.at_level(logging.WARNING, logger="rpi_hmi.config"):
             _new_settings(enable_admin_api=False, admin_api_key="")
         assert "ADMIN_API_KEY" not in caplog.text
+
+
+# ── Dependencias de autenticacion ──────────────────────────────
+
+
+class TestAuthDependencies:
+    """Comportamiento de las dependencias de auth de deps.py."""
+
+    def test_require_admin_api_key_always_503_without_key(self, monkeypatch):
+        """require_admin_api_key_always devuelve 503 si admin_api_key esta vacia."""
+        import pytest
+
+        from backend.app import config as config_module
+        from backend.app.api.deps import require_admin_api_key_always
+
+        monkeypatch.setattr(config_module.settings, "admin_api_key", "")
+
+        with pytest.raises(HTTPException) as exc_info:
+            require_admin_api_key_always(api_key=None)
+
+        assert exc_info.value.status_code == 503
 
 
 # ── Env loading ────────────────────────────────────────────────

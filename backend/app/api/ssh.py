@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import secrets as _secrets
 
 from dotenv import load_dotenv as _load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.security import APIKeyHeader
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.app.api.deps import require_admin_api_key_always
 from backend.app.config import settings
 from backend.app.services.ssh_manager import ParamikoSSHDriver, SSHDriver, SSHResult
 
@@ -35,28 +34,6 @@ router = APIRouter(prefix="/admin/ssh", tags=["Admin/SSH"])
 
 # ── Estado global del driver SSH (singleton durante la vida del proceso) ──
 _ssh_driver: SSHDriver | None = None
-
-# ── Autenticacion por API Key ─────────────────────────────────────────────
-
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-def _verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
-    """Verifica que la API key proporcionada coincide con la configurada.
-
-    Raises:
-        HTTPException 401: Si la API key es invalida o falta.
-        HTTPException 503: Si no hay API key configurada en el servidor.
-    """
-    if not settings.admin_api_key:
-        logger.warning("ADMIN_API_KEY no configurada en .env")
-        raise HTTPException(
-            status_code=503,
-            detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
-        )
-    if not _secrets.compare_digest(api_key or "", settings.admin_api_key):
-        raise HTTPException(status_code=401, detail="API key invalida")
-
 
 # ── Modelos Pydantic ──────────────────────────────────────────────────────
 
@@ -162,7 +139,11 @@ def get_ssh_driver() -> SSHDriver | None:
 # Todos los endpoints requieren API key
 
 
-@router.post("/connect", response_model=SSHMessageResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/connect",
+    response_model=SSHMessageResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def ssh_connect(req: SSHConnectRequest) -> SSHMessageResponse:
     """Establece una conexion SSH con la Raspberry Pi.
 
@@ -205,7 +186,11 @@ def ssh_connect(req: SSHConnectRequest) -> SSHMessageResponse:
         raise HTTPException(status_code=500, detail=f"Error interno: {exc}") from exc
 
 
-@router.post("/disconnect", response_model=SSHMessageResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/disconnect",
+    response_model=SSHMessageResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def ssh_disconnect() -> SSHMessageResponse:
     """Cierra la conexion SSH activa. Requiere autenticacion."""
     global _ssh_driver
@@ -218,7 +203,11 @@ def ssh_disconnect() -> SSHMessageResponse:
     return SSHMessageResponse(message="No habia conexion activa", success=True)
 
 
-@router.get("/status", response_model=SSHStatusResponse, dependencies=[Depends(_verify_api_key)])
+@router.get(
+    "/status",
+    response_model=SSHStatusResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def ssh_status(driver: SSHDriver | None = Depends(get_ssh_driver)) -> SSHStatusResponse:  # noqa: B008
     """Devuelve el estado actual de la conexion SSH. Requiere autenticacion.
 
@@ -232,7 +221,11 @@ def ssh_status(driver: SSHDriver | None = Depends(get_ssh_driver)) -> SSHStatusR
     return SSHStatusResponse(connected=True, host=host, user=user)
 
 
-@router.post("/execute", response_model=SSHResultResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/execute",
+    response_model=SSHResultResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def ssh_execute(
     req: SSHExecuteRequest,
     driver: SSHDriver | None = Depends(get_ssh_driver),  # noqa: B008

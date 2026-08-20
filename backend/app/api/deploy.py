@@ -21,36 +21,18 @@ TODOS los endpoints requieren autenticacion via header X-API-Key.
 from __future__ import annotations
 
 import logging
-import secrets as _secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.security import APIKeyHeader
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.app.config import settings
+from backend.app.api.deps import require_admin_api_key_always
 from backend.app.services.deploy_service import DeployService, ScanResult
 from backend.app.services.ssh_manager import SSHDriver
 
 logger = logging.getLogger("backend.api.deploy")
 
 router = APIRouter(prefix="/admin/deploy", tags=["Admin/Deploy"])
-
-
-# ── Autenticacion por API Key ─────────────────────────────────────────────
-
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-def _verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
-    """Verifica que la API key proporcionada coincide con la configurada."""
-    if not settings.admin_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
-        )
-    if not _secrets.compare_digest(api_key or "", settings.admin_api_key):
-        raise HTTPException(status_code=401, detail="API key invalida")
 
 
 # ── Dependencia: obtener driver SSH del modulo ssh ────────────────────────
@@ -137,7 +119,7 @@ class HealthCheckResponse(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
 
-@router.get("/scan", response_model=ScanResultResponse, dependencies=[Depends(_verify_api_key)])
+@router.get("/scan", response_model=ScanResultResponse, dependencies=[Depends(require_admin_api_key_always)])
 def deploy_scan() -> ScanResultResponse:
     """Escanea la red local en busca de dispositivos Raspberry Pi.
 
@@ -162,7 +144,11 @@ def deploy_scan() -> ScanResultResponse:
     return ScanResultResponse(results=results, count=len(results))
 
 
-@router.post("/setup", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/setup",
+    response_model=DeployResultResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:  # noqa: B008
     """Configura el entorno Python en la Raspberry Pi. Requiere autenticacion.
 
@@ -188,7 +174,11 @@ def deploy_setup(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRes
     )
 
 
-@router.post("/app", response_model=DeployResultResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/app",
+    response_model=DeployResultResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultResponse:  # noqa: B008
     """Despliega los archivos de la aplicacion en la Raspberry Pi. Requiere autenticacion.
 
@@ -214,7 +204,11 @@ def deploy_app(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployResultRespo
     )
 
 
-@router.get("/diagnostics", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
+@router.get(
+    "/diagnostics",
+    response_model=DeployStatusResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Ejecuta el script de diagnostico en la Raspberry Pi. Requiere autenticacion.
 
@@ -234,7 +228,11 @@ def deploy_diagnostics(driver: SSHDriver = Depends(get_ssh_driver)) -> DeploySta
     )
 
 
-@router.get("/health", response_model=HealthCheckResponse, dependencies=[Depends(_verify_api_key)])
+@router.get(
+    "/health",
+    response_model=HealthCheckResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckResponse:  # noqa: B008
     """Verifica que el backend FastAPI responde en la Raspberry Pi. Requiere autenticacion.
 
@@ -252,7 +250,11 @@ def deploy_health(driver: SSHDriver = Depends(get_ssh_driver)) -> HealthCheckRes
     )
 
 
-@router.post("/start", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/start",
+    response_model=DeployStatusResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Inicia el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 
@@ -272,7 +274,11 @@ def deploy_start(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusRes
     )
 
 
-@router.post("/stop", response_model=DeployStatusResponse, dependencies=[Depends(_verify_api_key)])
+@router.post(
+    "/stop",
+    response_model=DeployStatusResponse,
+    dependencies=[Depends(require_admin_api_key_always)],
+)
 def deploy_stop(driver: SSHDriver = Depends(get_ssh_driver)) -> DeployStatusResponse:  # noqa: B008
     """Detiene el backend FastAPI en la Raspberry Pi. Requiere autenticacion.
 

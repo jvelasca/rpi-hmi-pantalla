@@ -6,9 +6,14 @@ Valida:
 - Las operaciones de toggle son idempotentes
 - POST /api/led/on y /api/led/off mutan el estado correctamente
 - GET /api/status incluye todos los subsistemas
+- En SECURITY_MODE=protected, los mutadores exigen X-API-Key
 """
 
 from __future__ import annotations
+
+import pytest
+
+from backend.app import config as config_module
 
 # ── Health Check ──────────────────────────────────────────────
 
@@ -145,3 +150,39 @@ class TestStatus:
         r = client.get("/api/status")
         assert r.json()["led"]["state"] is True
         assert r.json()["led"]["label"] == "ENCENDIDO"
+
+
+# ── Auth en modo protected ────────────────────────────────────
+
+
+@pytest.fixture
+def protected_mode(monkeypatch):
+    """Activa SECURITY_MODE=protected con una ADMIN_API_KEY conocida."""
+    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
+    monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
+    return "test-key-123"
+
+
+class TestProtectedHmi:
+    """Mutadores HMI exigen X-API-Key en SECURITY_MODE=protected."""
+
+    def test_led_on_without_key_returns_401(self, client, protected_mode):
+        """POST /api/led/on en protected sin key -> 401."""
+        r = client.post("/api/led/on")
+        assert r.status_code == 401
+
+    def test_led_on_with_key_returns_200(self, client, protected_mode):
+        """POST /api/led/on en protected con key correcta -> 200."""
+        r = client.post("/api/led/on", headers={"X-API-Key": protected_mode})
+        assert r.status_code == 200
+        assert r.json()["state"] is True
+
+    def test_led_on_with_wrong_key_returns_401(self, client, protected_mode):
+        """POST /api/led/on en protected con key incorrecta -> 401."""
+        r = client.post("/api/led/on", headers={"X-API-Key": "wrong-key"})
+        assert r.status_code == 401
+
+    def test_get_led_remains_public_in_protected(self, client, protected_mode):
+        """Los GET de solo lectura siguen siendo publicos en protected."""
+        r = client.get("/api/led")
+        assert r.status_code == 200

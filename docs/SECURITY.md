@@ -35,8 +35,8 @@
 | Clase | Endpoints | Autenticación |
 |---|---|---|
 | **PUBLIC** | `GET /health`, `GET /health/live`, `GET /health/ready` | Ninguna |
-| **LOCAL (HMI)** | `GET /api/status`, `GET /api/led`, `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `GET /api/button`, `POST /api/button/press`, `POST /api/button/release`, `WS /ws`, `GET /api/network` | Ninguna (LAN de confianza) |
-| **PROTECTED** | `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **solo si** `SECURITY_MODE=protected` |
+| **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET|POST /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
+| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **solo si** `SECURITY_MODE=protected` |
 | **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
 
 Notas:
@@ -44,11 +44,22 @@ Notas:
 - Los routers `/admin/*` solo se registran cuando `ENABLE_ADMIN_API=true`
   (deshabilitada por defecto). Si está deshabilitada, las rutas `/admin/*`
   no existen (responden 404).
-- Además de los listados, también son **LOCAL** (sin auth) los endpoints HMI de
-  solo visualización/ajustes: `GET /api/display/info`, `GET|POST /api/settings/display`
-  y `POST /api/display/command`.
+- Los endpoints HMI de solo lectura/ajuste (`GET /api/*`, `GET|POST
+  /api/settings/display`) y `GET /api/network` son públicos a propósito.
+- `POST /api/settings/display` (ajustes visuales) se deja **sin auth por ahora**:
+  lo usa el display local (Pygame) para ajustar fuente/tamaño de texto. Se
+  revisará en una auditoría posterior.
 - `GET /api/network` es público a propósito (solo lectura); los `POST` que mutan
   la red son los que exigen auth en modo `protected`.
+
+### Exención de loopback para `WS /ws`
+
+El display físico (Pygame) se conecta a `ws://localhost:8000/ws` desde la propia
+Pi. En `SECURITY_MODE=protected`, las conexiones WebSocket cuyo host de cliente
+sea `127.0.0.1`, `::1` o `localhost` se aceptan **sin** `X-API-Key` (display local
+de confianza). El resto de clientes deben enviar el header `X-API-Key` igual a
+`ADMIN_API_KEY`; si no lo envían, el handshake se rechaza con close code `4401`
+(no se llama a `accept()`).
 
 ---
 
@@ -56,8 +67,9 @@ Notas:
 
 - **`SECURITY_MODE`** — `local` | `protected` (default **`local`**):
   - `local`: HMI de prototipo doméstico. Ningún endpoint exige `X-API-Key`.
-  - `protected`: los endpoints **PROTECTED** (que mutan la red) exigen el header
-    `X-API-Key` igual a `ADMIN_API_KEY`. Usa el comparador `secrets.compare_digest`
+  - `protected`: los endpoints **PROTECTED** (que mutan hardware/red) y `WS /ws`
+    (para clientes no-loopback) exigen el header `X-API-Key` igual a
+    `ADMIN_API_KEY`. Usa el comparador `secrets.compare_digest`
     (ver `backend/app/api/deps.py`).
 - **`ADMIN_API_KEY`** — clave compartida enviada como `X-API-Key`. Protege:
   - los endpoints **PROTECTED** cuando `SECURITY_MODE=protected`, y
@@ -69,6 +81,13 @@ Notas:
   ```
 - **`ENABLE_ADMIN_API`** — `bool` (default **`false`**): habilita los routers
   `/admin/*`. Debe permanecer `false` en producción.
+
+Dependencias de auth (ver `backend/app/api/deps.py`):
+
+- `require_admin_api_key` — respeta `SECURITY_MODE` (en `local` no exige nada; en
+  `protected` exige `X-API-Key`). Se usa en los mutadores HMI y de red.
+- `require_admin_api_key_always` — exige `X-API-Key` **siempre**; si
+  `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
 
 Ejemplo de `.env`:
 

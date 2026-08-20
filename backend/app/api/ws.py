@@ -27,9 +27,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import secrets as _secrets
+from collections.abc import Mapping
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.app.config import settings
 from backend.app.models.events import ClientMessage, ServerMessage
 from backend.app.services.state_manager import state_manager
 
@@ -40,6 +43,26 @@ router = APIRouter()
 # Version de protocolo soportada
 SUPPORTED_VERSION = "1.0"
 
+# Hosts de loopback considerados de confianza en modo ``protected``.
+# El display fisico (Pygame) se conecta a ws://localhost:8000/ws desde la
+# propia Pi, por lo que estas conexiones no requieren X-API-Key.
+_LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
+
+
+def _is_loopback(host: str | None) -> bool:
+    """Devuelve True si el host del cliente es loopback (display local)."""
+    return (host or "").lower() in _LOOPBACK_HOSTS
+
+
+def _extract_api_key(headers: object) -> str | None:
+    """Lee ``X-API-Key`` de los headers del handshake (case-insensitive)."""
+    if not isinstance(headers, Mapping):
+        return None
+    for key, value in headers.items():
+        if str(key).lower() == "x-api-key":
+            return str(value)
+    return None
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -48,12 +71,30 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     Maneja la conexion, suscripcion, recepcion de comandos
     y desconexion limpia.
 
+    Autenticacion:
+    - ``SECURITY_MODE == "local"``: acepta a todos.
+    - ``SECURITY_MODE == "protected"``: acepta conexiones desde loopback
+      (display local de confianza); el resto debe enviar ``X-API-Key``
+      igual a ``settings.admin_api_key``.
+
     Valida la version del protocolo: rechaza mensajes con
     version != "1.0" enviando PROTOCOL_VERSION_MISMATCH.
 
     Args:
         websocket: Conexion WebSocket entrante.
     """
+    if settings.security_mode == "protected":
+        client_host = websocket.client.host if websocket.client else None
+        if not _is_loopback(client_host):
+            api_key = _extract_api_key(websocket.headers)
+            if not api_key or not _secrets.compare_digest(api_key, settings.admin_api_key or ""):
+                logger.warning(
+                    "WS rechazado por auth fallida (host=%s)",
+                    client_host,
+                )
+                await websocket.close(code=4401)
+                return
+
     await websocket.accept()
     logger.info("Cliente WS conectado")
 
