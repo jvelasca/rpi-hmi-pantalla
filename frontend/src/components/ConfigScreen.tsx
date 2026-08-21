@@ -1,6 +1,7 @@
 /**
  * ConfigScreen — Modal de configuracion con opciones de diagnostico.
- * Muestra tres botones: Prueba de Pantalla, Calibracion Tactil, Volver.
+ * Muestra los accesos a: Prueba de Pantalla, Calibracion Tactil,
+ * Configurar IP, Texto y Fuente, Contrasena y Volver.
  */
 
 interface ConfigScreenProps {
@@ -8,6 +9,7 @@ interface ConfigScreenProps {
   onTouchCalibration: () => void;
   onNetwork: () => void;
   onFont: () => void;
+  onSecurity: () => void;
   onBack: () => void;
 }
 
@@ -160,6 +162,40 @@ export function ConfigScreen(props: ConfigScreenProps) {
               </div>
               <div class="text-gray-500 text-xs mt-0.5">
                 Elegir fuente y tamano de texto
+              </div>
+            </div>
+          </button>
+
+          {/* Contrasena */}
+          <button
+            onClick={props.onSecurity}
+            class="flex items-center gap-4 px-6 py-4 rounded-xl
+                   bg-[#1a1a3e] hover:bg-[#2a2a5e] active:bg-[#e94560]/20
+                   border border-[#2a2a5e] hover:border-[#e94560]/50
+                   transition-all duration-200
+                   focus:outline-none focus:ring-2 focus:ring-[#e94560]/50
+                   group"
+          >
+            {/* Icono candado */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-7 h-7 text-[#ff6b8a] group-hover:text-[#ff8fa6] transition-colors shrink-0"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <div class="text-left">
+              <div class="text-gray-200 text-sm font-semibold group-hover:text-white transition-colors">
+                Contrasena
+              </div>
+              <div class="text-gray-500 text-xs mt-0.5">
+                Activar, desactivar o cambiar la clave
               </div>
             </div>
           </button>

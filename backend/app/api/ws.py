@@ -43,6 +43,7 @@ from backend.app.api.auth import get_session_token_from_headers, session_manager
 from backend.app.api.deps import is_loopback_host
 from backend.app.config import settings
 from backend.app.models.events import ClientMessage, ServerMessage
+from backend.app.services.security_manager import security_manager
 from backend.app.services.state_manager import state_manager
 
 logger = logging.getLogger(__name__)
@@ -105,9 +106,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     y desconexion limpia.
 
     Autenticacion:
-    - ``SECURITY_MODE == "local"``: acepta a todos.
-    - ``SECURITY_MODE == "protected"``: acepta conexiones desde loopback
-      (display local de confianza); el resto debe autenticarse con
+    - ``security_manager.is_enabled() == False``: acepta a todos.
+    - ``security_manager.is_enabled() == True``: acepta conexiones desde
+      loopback (display local de confianza); el resto debe autenticarse con
       ``settings.admin_api_key`` via header ``X-API-Key``, subprotocolo
       ``Sec-WebSocket-Protocol``, query param ``?token=`` o una cookie de
       sesion valida emitida por ``POST /api/auth/login`` (navegador).
@@ -118,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     Args:
         websocket: Conexion WebSocket entrante.
     """
-    if settings.security_mode == "protected":
+    if security_manager.is_enabled():
         client_host = websocket.client.host if websocket.client else None
         session_ok = session_manager.is_valid(
             get_session_token_from_headers(websocket.headers)

@@ -29,6 +29,7 @@ from fastapi.security import APIKeyHeader
 
 from backend.app.api.auth import get_session_token_from_cookies, session_manager
 from backend.app.config import settings
+from backend.app.services.security_manager import security_manager
 
 logger = logging.getLogger("backend.api.deps")
 
@@ -63,36 +64,39 @@ def require_admin_api_key(
     request: Request,
     api_key: str | None = Security(_api_key_header),
 ) -> None:
-    """Exige autenticacion unicamente en modo ``protected``, salvo loopback.
+    """Exige autenticacion solo si la contraseña del panel está activada.
 
-    En ``SECURITY_MODE == "local"`` no exige autenticacion y retorna ``None``.
-    En ``SECURITY_MODE == "protected"``:
+    Si ``security_manager.is_enabled()`` es False no exige autenticacion y
+    retorna ``None`` (equivale al antiguo ``SECURITY_MODE=local``). Si está
+    activada (equivale a ``protected``):
     - Las peticiones desde loopback (127.0.0.1 / ::1 / localhost) se aceptan
       sin credenciales: es el display fisico (Pygame) que corre en la propia Pi.
-    - El resto debe autenticarse con ``X-API-Key`` (scripts/M2M) o con una
-      cookie de sesion valida (navegador).
+    - La cookie de sesion valida se comprueba ANTES del chequeo de
+      ``ADMIN_API_KEY`` vacía: el panel web debe funcionar aunque
+      ``ADMIN_API_KEY`` esté vacía.
+    - El resto debe autenticarse con ``X-API-Key`` (scripts/M2M).
 
     Se usa en los mutadores HMI (LED/button/display/red).
 
     Raises:
         HTTPException 401: Si no hay credencial valida, o si no hay key
-            configurada estando en modo protegido.
+            configurada estando activada la seguridad.
     """
-    if settings.security_mode == "local":
+    if not security_manager.is_enabled():
         return None
 
     if _is_loopback_client(request):
         return None
 
+    if _has_valid_session(request):
+        return None
+
     if not settings.admin_api_key:
-        logger.critical("SECURITY_MODE=protected pero ADMIN_API_KEY vacia")
+        logger.critical("Seguridad del panel activada pero ADMIN_API_KEY vacia")
         raise HTTPException(
             status_code=401,
             detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
         )
-
-    if _has_valid_session(request):
-        return None
 
     _require_matching_key(api_key)
 

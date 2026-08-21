@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import config as config_module
 from backend.app.main import app
+from backend.app.services.security_manager import security_manager
 
 # ── Health Check ──────────────────────────────────────────────
 
@@ -167,9 +168,10 @@ class TestStatus:
 
 @pytest.fixture
 def protected_mode(monkeypatch):
-    """Activa SECURITY_MODE=protected con una ADMIN_API_KEY conocida."""
+    """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
     monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
+    security_manager.reset()  # enabled=True (security_mode=protected) + hash "1234"
     return "test-key-123"
 
 

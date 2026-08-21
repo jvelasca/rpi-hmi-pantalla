@@ -157,10 +157,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Inicializar persistencia SQLite
     try:
         from backend.app.services.persistence import get_persistence
+        from backend.app.services.security_manager import security_manager
 
         db = await get_persistence(settings.db_path)
         state_manager.set_persistence(db)
         await state_manager.restore_from_db()
+        await security_manager.load(db)
         logger.info("Persistencia SQLite inicializada en %s", settings.db_path)
     except Exception as exc:
         logger.warning("Persistencia SQLite no disponible: %s", exc)

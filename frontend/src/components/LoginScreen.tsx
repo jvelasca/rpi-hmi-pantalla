@@ -1,9 +1,9 @@
 /**
  * LoginScreen — Pantalla de autenticacion del panel web.
  *
- * Se muestra en SECURITY_MODE=protected cuando el backend rechaza la
- * peticion (401) o el WebSocket (4401) por no tener una cookie de sesion
- * valida. La clave introducida se envia a POST /api/auth/login y no se
+ * Se muestra cuando la contrasena del panel esta activada y el backend rechaza
+ * la peticion (401) o el WebSocket (4401) por no tener una cookie de sesion
+ * valida. La contrasena introducida se envia a POST /api/auth/login y no se
  * guarda en el navegador: el backend responde con una cookie HttpOnly.
  */
 
@@ -11,20 +11,20 @@ import { createSignal } from "solid-js";
 
 interface LoginScreenProps {
   error: string | null;
-  onLogin: (apiKey: string) => Promise<void>;
+  onLogin: (password: string) => Promise<void>;
 }
 
 export function LoginScreen(props: LoginScreenProps) {
-  const [apiKey, setApiKey] = createSignal("");
+  const [password, setPassword] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
   async function submit(e: Event) {
     e.preventDefault();
-    if (!apiKey() || busy()) return;
+    if (!password() || busy()) return;
     setBusy(true);
     try {
-      await props.onLogin(apiKey());
-      setApiKey("");
+      await props.onLogin(password());
+      setPassword("");
     } finally {
       setBusy(false);
     }
@@ -56,14 +56,14 @@ export function LoginScreen(props: LoginScreenProps) {
         </div>
 
         <p class="text-gray-500 text-xs text-center mb-8">
-          Introduce la clave de administracion para controlar el HMI.
+          Introduce la contrasena para controlar el HMI.
         </p>
 
         <input
           type="password"
-          value={apiKey()}
-          onInput={(e) => setApiKey(e.currentTarget.value)}
-          placeholder="Clave de administracion"
+          value={password()}
+          onInput={(e) => setPassword(e.currentTarget.value)}
+          placeholder="Contrasena"
           autocomplete="current-password"
           class="w-full px-4 py-3 rounded-xl bg-[#141428] border border-[#2a2a5e]
                  text-gray-200 placeholder-gray-600 text-sm
@@ -77,7 +77,7 @@ export function LoginScreen(props: LoginScreenProps) {
 
         <button
           type="submit"
-          disabled={busy() || !apiKey()}
+          disabled={busy() || !password()}
           class="w-full mt-6 px-6 py-3 rounded-xl font-semibold text-sm tracking-wider
                  bg-[#e94560] hover:bg-[#ff5f78] text-white
                  disabled:opacity-40 disabled:cursor-not-allowed

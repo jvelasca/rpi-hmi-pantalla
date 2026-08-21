@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from backend.app.main import app
+from backend.app.services.security_manager import security_manager
 from backend.app.services.state_manager import StateManager, state_manager
 
 
@@ -36,3 +37,16 @@ def reset_state():
     state_manager.set_led(False)
     StateManager.__init__(state_manager)  # type: ignore
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_security():
+    """Resetea el SecurityManager a defaults antes de cada test.
+
+    Garantiza que ningún test herede el estado runtime (enabled/contraseña)
+    de un test anterior. Los tests ``protected_mode`` vuelven a activarlo
+    explícitamente tras este reset.
+    """
+    security_manager.reset()
+    yield
+    security_manager.reset()

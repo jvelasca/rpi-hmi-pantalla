@@ -17,9 +17,17 @@ import { ScreenTest } from "@/components/ScreenTest";
 import { TouchCalibration } from "@/components/TouchCalibration";
 import { NetworkConfig } from "@/components/NetworkConfig";
 import { FontSettings } from "@/components/FontSettings";
+import { SecuritySettings } from "@/components/SecuritySettings";
 import type { LedState, ButtonState, DisplayAction, ServerMessage } from "@/types/api";
 
-type View = "main" | "config" | "screenTest" | "touchCalibration" | "network" | "font";
+type View =
+  | "main"
+  | "config"
+  | "screenTest"
+  | "touchCalibration"
+  | "network"
+  | "font"
+  | "security";
 
 export function App() {
   // ── Estado ──────────────────────────────────────────
@@ -61,15 +69,15 @@ export function App() {
     }
   });
 
-  async function handleLogin(apiKey: string) {
+  async function handleLogin(password: string) {
     setLoginError(null);
-    const result = await api.login(apiKey);
+    const result = await api.login(password);
     if (result?.authenticated) {
       setAuthenticated(true);
       setSecurityMode("protected");
       ws.reconnect();
     } else {
-      setLoginError("Clave incorrecta");
+      setLoginError("Contrasena incorrecta");
     }
   }
 
@@ -173,6 +181,10 @@ export function App() {
     commandDisplay("font");
   }
 
+  function goSecurity() {
+    setView("security");
+  }
+
   function goBackToMain() {
     setView("main");
     commandDisplay("main");
@@ -203,6 +215,10 @@ export function App() {
           <FontSettings onBack={() => setView("config")} />
         </Show>
 
+        <Show when={view() === "security"}>
+          <SecuritySettings onBack={() => setView("config")} />
+        </Show>
+
         <Show when={view() === "main" || view() === "config"}>
           <Header
             connected={ws.connected()}
@@ -230,6 +246,7 @@ export function App() {
               onTouchCalibration={goTouchCalibration}
               onNetwork={goNetwork}
               onFont={goFont}
+              onSecurity={goSecurity}
               onBack={goBackToMain}
             />
           </Show>

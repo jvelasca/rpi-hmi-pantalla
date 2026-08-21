@@ -7,13 +7,18 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-21 (cierre de V1 — Fases 1-5 completadas)
+- **Fecha:** 2026-08-21 (Fase 6 — gestión de contraseña del panel web)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
-- **Branch:** main · HEAD `881ec1a` (working tree con Fases 1-5, sin commit) · Versión `0.3.2`
-- **Trabajo actual:** Cierre de V1 completado: plan `docs/PLAN_CIERRE_V1.md` ejecutado en 5 fases.
-  - Fase 1 (auth session-cookie) · Fase 2 (docs) · Fase 3 (limpieza) · Fase 4 (hardening) · Fase 5 (verificación + bump 0.3.2).
-  - Verificación final: pytest 353 passed / 9 skipped · 26 vitest (verde) · ruff/mypy/bandit verdes.
-  - Siguiente: deploy físico a la Pi + commit final (hilo principal/orquestador).
+- **Branch:** main · HEAD `881ec1a` (working tree con Fases 1-6, sin commit) · Versión `0.3.3`
+- **Trabajo actual:** Fase 6 completada: menú "Contraseña" en Configuración para activar/desactivar
+  y cambiar la contraseña del panel web (default de fábrica `1234`, persistida en SQLite con hash
+  PBKDF2 stdlib, separada de `ADMIN_API_KEY`). Nuevo `SecurityManager` (flag runtime
+  `is_enabled()` que reemplaza a `settings.security_mode` en deps/ws/auth-status) y endpoints
+  `GET/POST /api/auth/security` + `POST /api/auth/password`. Bump de versión 0.3.2 → 0.3.3.
+  - Fase 1 (auth session-cookie) · Fase 2 (docs) · Fase 3 (limpieza) · Fase 4 (hardening) ·
+    Fase 5 (verificación + bump 0.3.2) · Fase 6 (contraseña panel + bump 0.3.3).
+  - Verificación Fase 6: pytest 369 passed / 9 skipped · 27 vitest (verde) · ruff verde · build verde.
+  - Siguiente: auditoría final del usuario + deploy físico a la Pi + commit (orquestador).
 
 ## Estado actual
 

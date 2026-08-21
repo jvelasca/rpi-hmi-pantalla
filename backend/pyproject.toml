@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpi-hmi-backend"
-version = "0.3.2"
+version = "0.3.3"
 description = "Backend FastAPI para panel HMI industrial en Raspberry Pi"
 readme = "README.md"
 license = {text = "MIT"}

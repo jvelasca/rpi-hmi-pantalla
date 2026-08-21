@@ -3,12 +3,15 @@
 Sustituye la exposicion de ``ADMIN_API_KEY`` en el bundle del navegador
 (antiguo ``VITE_API_KEY``) por un flujo de login explicito:
 
-1. ``POST /api/auth/login`` recibe la ``ADMIN_API_KEY`` en el body JSON, la
-   valida con ``secrets.compare_digest`` y emite una cookie de sesion HttpOnly.
+1. ``POST /api/auth/login`` recibe la contraseña del panel en el body JSON, la
+   valida contra ``security_manager.verify_password`` (PBKDF2 persistido) y
+   emite una cookie de sesion HttpOnly.
 2. ``POST /api/auth/logout`` revoca la sesion en memoria y borra la cookie.
 3. Las dependencias de auth (``deps.py``) y el handshake WebSocket (``ws.py``)
    aceptan, ademas de ``X-API-Key`` (scripts/M2M), una cookie de sesion valida
    (navegador).
+4. ``GET/POST /api/auth/security`` y ``POST /api/auth/password`` gestionan la
+   contraseña del panel (activar/desactivar/cambiar), persistida en SQLite.
 
 La sesion es **en memoria** (dict ``token -> expiracion``). El token esta
 firmado con HMAC-SHA256 (stdlib ``hmac`` + ``secrets``) usando una clave de
@@ -43,6 +46,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
+from backend.app.models.security import (
+    ChangePasswordRequest,
+    SecurityStatus,
+    SecurityToggleRequest,
+)
+from backend.app.services.security_manager import security_manager
 
 logger = logging.getLogger(__name__)
 
@@ -312,23 +321,24 @@ def _request_is_https(request: Request) -> bool:
 
 
 class LoginRequest(BaseModel):
-    """Body de ``POST /api/auth/login``: la clave de administracion."""
+    """Body de ``POST /api/auth/login``: la contraseña del panel web."""
 
-    api_key: str = Field(..., description="ADMIN_API_KEY del backend")
+    password: str = Field(..., min_length=1, description="Contraseña del panel web")
 
 
 @router.post("/login")
 async def login(request: Request, body: LoginRequest) -> JSONResponse:
-    """Valida ``ADMIN_API_KEY`` y emite la cookie de sesion HttpOnly.
+    """Valida la contraseña del panel y emite la cookie de sesión HttpOnly.
 
-    Aplica rate-limiting por IP (ventana fija) contando solo intentos fallidos:
-    superado ``LOGIN_MAX_ATTEMPTS`` dentro de ``LOGIN_WINDOW_SECONDS`` devuelve
-    429; un login correcto reinicia el contador. Compara la clave con
-    ``secrets.compare_digest`` para evitar timing attacks. Si la clave no
-    coincide (o no esta configurada) devuelve 401.
+    Valida ``body.password`` contra ``security_manager.verify_password``
+    (contraseña persistida en SQLite, por defecto ``1234``), no contra
+    ``settings.admin_api_key``. Aplica rate-limiting por IP (ventana fija)
+    contando solo intentos fallidos: superado ``LOGIN_MAX_ATTEMPTS`` dentro de
+    ``LOGIN_WINDOW_SECONDS`` devuelve 429; un login correcto reinicia el
+    contador. La comparación es en tiempo constante (PBKDF2 + compare_digest).
 
     Returns:
-        JSON ``{"authenticated": true}`` y cabecera ``Set-Cookie`` con la sesion.
+        JSON ``{"authenticated": true}`` y cabecera ``Set-Cookie`` con la sesión.
         En caso de bloqueo por rate-limit, ``429`` con ``{"detail": ...}``.
     """
     ip = _client_ip(request)
@@ -339,12 +349,10 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:
             content={"detail": "Demasiados intentos fallidos. Intenta de nuevo mas tarde."},
         )
 
-    if not settings.admin_api_key or not _secrets.compare_digest(
-        body.api_key, settings.admin_api_key
-    ):
+    if not security_manager.verify_password(body.password):
         rate_limiter.register_failure(ip)
-        logger.warning("Login rechazado (api_key invalida) desde %s", request.client)
-        return JSONResponse(status_code=401, content={"detail": "Clave invalida"})
+        logger.warning("Login rechazado (contraseña inválida) desde %s", ip)
+        return JSONResponse(status_code=401, content={"detail": "Contraseña inválida"})
 
     rate_limiter.reset(ip)
     token = session_manager.issue()
@@ -387,17 +395,120 @@ async def logout(request: Request) -> JSONResponse:
 async def auth_status(request: Request) -> JSONResponse:
     """Estado de autenticacion publico para que el frontend decida mostrar login.
 
-    No revela la clave; solo indica el ``SECURITY_MODE`` y si la peticion trae
-    una cookie de sesion valida.
+    No revela la contraseña; solo indica el ``security_mode`` (derivado del flag
+    runtime ``security_manager.is_enabled()``) y si la peticion trae una cookie
+    de sesion valida.
 
     Returns:
         JSON ``{"security_mode": ..., "authenticated": ...}``.
     """
     token = get_session_token_from_cookies(request.headers.get("cookie"))
+    enabled = security_manager.is_enabled()
     return JSONResponse(
         content={
-            "security_mode": settings.security_mode,
-            "authenticated": settings.security_mode == "local"
-            or session_manager.is_valid(token),
+            "security_mode": "protected" if enabled else "local",
+            "authenticated": (not enabled) or session_manager.is_valid(token),
         }
     )
+
+
+def _authorize_security_change(request: Request, current: str | None) -> bool:
+    """Decide si una petición de cambio de seguridad está autorizada.
+
+    Permite el cambio si se cumple **alguna** de estas condiciones:
+    (a) la petición trae una cookie de sesión válida, (b) la cabecera
+    ``X-API-Key`` coincide con ``settings.admin_api_key`` (solo si está
+    configurada), o (c) ``current`` verifica contra la contraseña almacenada.
+
+    Args:
+        request: Petición HTTP entrante.
+        current: Contraseña actual proporcionada (puede ser ``None``).
+
+    Returns:
+        True si la petición está autorizada; False en caso contrario.
+    """
+    token = get_session_token_from_cookies(request.headers.get("cookie"))
+    if session_manager.is_valid(token):
+        return True
+
+    api_key = request.headers.get("x-api-key")
+    if settings.admin_api_key and api_key and _secrets.compare_digest(
+        api_key, settings.admin_api_key
+    ):
+        return True
+
+    return current is not None and security_manager.verify_password(current)
+
+
+@router.get("/security")
+async def get_security() -> SecurityStatus:
+    """Devuelve el estado público de la seguridad del panel web.
+
+    Returns:
+        ``SecurityStatus`` con ``enabled`` e ``is_default``.
+    """
+    return SecurityStatus(
+        enabled=security_manager.is_enabled(),
+        is_default=security_manager.is_default_password(),
+    )
+
+
+@router.post("/security")
+async def set_security(request: Request, body: SecurityToggleRequest) -> JSONResponse:
+    """Activa/desactiva la contraseña del panel web.
+
+    La autorización usa ``_authorize_security_change`` (cookie de sesión,
+    ``X-API-Key`` o ``current``). Aplica rate-limit sobre los fallos.
+
+    Returns:
+        ``SecurityStatus`` actualizado, o ``401``/``429`` según corresponda.
+    """
+    ip = _client_ip(request)
+    if rate_limiter.is_blocked(ip):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Demasiados intentos fallidos. Intenta de nuevo mas tarde."},
+        )
+
+    if not _authorize_security_change(request, body.current):
+        rate_limiter.register_failure(ip)
+        logger.warning("Cambio de seguridad rechazado desde %s", ip)
+        return JSONResponse(status_code=401, content={"detail": "No autorizado"})
+
+    rate_limiter.reset(ip)
+    await security_manager.set_enabled(body.enabled)
+    return JSONResponse(
+        content={
+            "enabled": security_manager.is_enabled(),
+            "is_default": security_manager.is_default_password(),
+        }
+    )
+
+
+@router.post("/password")
+async def change_password(request: Request, body: ChangePasswordRequest) -> JSONResponse:
+    """Cambia la contraseña del panel web y revoca todas las sesiones.
+
+    Requiere que ``current`` verifique contra la contraseña almacenada
+    (siempre). Al éxito, persiste la nueva contraseña y llama a
+    ``session_manager.clear()`` para forzar re-login. Aplica rate-limit.
+
+    Returns:
+        JSON ``{"success": true}``, o ``401``/``429`` según corresponda.
+    """
+    ip = _client_ip(request)
+    if rate_limiter.is_blocked(ip):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Demasiados intentos fallidos. Intenta de nuevo mas tarde."},
+        )
+
+    if not security_manager.verify_password(body.current):
+        rate_limiter.register_failure(ip)
+        logger.warning("Cambio de contraseña rechazado (current inválido) desde %s", ip)
+        return JSONResponse(status_code=401, content={"detail": "Contraseña actual incorrecta"})
+
+    rate_limiter.reset(ip)
+    await security_manager.set_password(body.new)
+    session_manager.clear()
+    return JSONResponse(content={"success": True})

@@ -26,22 +26,22 @@ class TestMigrationRunner:
 
     @pytest.mark.asyncio
     async def test_init_applies_all_migrations_on_new_db(self):
-        """En BD nueva, `init()` aplica todas las migraciones y deja version 2."""
+        """En BD nueva, `init()` aplica todas las migraciones y deja version 3."""
         db = Persistence(":memory:")
         await db.init()
         try:
-            assert await db.get_schema_version() == 2
+            assert await db.get_schema_version() == 3
         finally:
             await db.close()
 
     @pytest.mark.asyncio
     async def test_init_is_idempotent(self):
-        """Llamar `init()` dos veces no lanza error y mantiene la version en 2."""
+        """Llamar `init()` dos veces no lanza error y mantiene la version en 3."""
         db = Persistence(":memory:")
         await db.init()
         try:
             await db.init()
-            assert await db.get_schema_version() == 2
+            assert await db.get_schema_version() == 3
         finally:
             await db.close()
 
@@ -108,7 +108,7 @@ class TestLegacyDatabase:
         `init()` detecta las tablas legacy y ejecuta las migraciones idempotentes:
         `_migration_001` usa `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE`,
         por lo que NO pierde la fila guardada y ademas crea `display_settings`
-        (tabla posterior al esquema legacy de 3 tablas). La version final es 2.
+        (tabla posterior al esquema legacy de 3 tablas). La version final es 3.
         """
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -156,8 +156,8 @@ class TestLegacyDatabase:
                     "font_family": "dejavu",
                     "text_size": "medium",
                 }
-                # (c) Version final 2 tras aplicar migraciones 001 y 002.
-                assert await db.get_schema_version() == 2
+                # (c) Version final 3 tras aplicar migraciones 001-003.
+                assert await db.get_schema_version() == 3
             finally:
                 await db.close()
         finally:

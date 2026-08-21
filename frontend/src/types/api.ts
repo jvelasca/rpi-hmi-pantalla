@@ -67,6 +67,12 @@ export type DisplayAction =
   | "config"
   | "main";
 
+/** Estado de seguridad del panel web (GET /api/auth/security) */
+export interface SecurityStatus {
+  enabled: boolean; // contraseña del panel activada
+  is_default: boolean; // la contraseña es la de fabrica (1234)
+}
+
 // ── WebSocket messages ──────────────────────────────
 
 export type WsTopic = "led" | "button" | "display" | "system";

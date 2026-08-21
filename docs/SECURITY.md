@@ -4,7 +4,7 @@
 > confianza. Este documento describe el modelo de amenazas asumido y la
 > política de seguridad explícita del backend.
 >
-> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.2
+> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.3
 
 ## 1. Modelo de amenazas
 
@@ -35,7 +35,8 @@
 | Clase | Endpoints | Autenticación |
 |---|---|---|
 | **PUBLIC** | `GET /health`, `GET /health/live`, `GET /health/ready`, `GET /api/auth/status` | Ninguna |
-| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | `POST /api/auth/login` valida `ADMIN_API_KEY` (body JSON) y emite cookie de sesión; `logout` revoca la sesión |
+| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | `POST /api/auth/login` valida la **contraseña del panel** (body JSON) y emite cookie de sesión; `logout` revoca la sesión |
+| **SECURITY** | `GET /api/auth/security`, `POST /api/auth/security`, `POST /api/auth/password` | `GET` es público; los `POST` exigen cookie de sesión, `X-API-Key` o la contraseña actual (`current`) |
 | **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
 | **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **o** cookie de sesión, **solo si** `SECURITY_MODE=protected` (loopback exento) |
 | **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **o** cookie de sesión, **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
@@ -56,6 +57,9 @@ Notas:
   en memoria por IP de cliente, contando solo intentos fallidos. Superado
   `LOGIN_MAX_ATTEMPTS` dentro de `LOGIN_WINDOW_SECONDS` responde **429**; un login
   correcto reinicia el contador de esa IP (ver §3).
+- Los `POST /api/auth/security` y `POST /api/auth/password` reutilizan el mismo
+  rate-limiter de fallos de login, para frenar brute-force sobre los cambios de
+  seguridad.
 
 ### Exención de loopback (REST + WS)
 
@@ -73,10 +77,11 @@ El resto de clientes deben autenticarse con `ADMIN_API_KEY` **o** con una
 cookie de sesión válida:
 
 - **Navegador (panel web)**: inicia sesión en `POST /api/auth/login` con la
-  `ADMIN_API_KEY` en el body JSON. El backend responde con una cookie de sesión
+  **contraseña del panel** en el body JSON (por defecto `1234`, gestionable
+  desde la UI). El backend responde con una cookie de sesión
   `HttpOnly; SameSite=Strict` (nombre `rpi_hmi_session`). A partir de ahí, el
   navegador envía la cookie automáticamente en REST (fetch) y WS (handshake),
-  sin que la clave llegue nunca al JS del bundle. `POST /api/auth/logout`
+  sin que la contraseña llegue nunca al JS del bundle. `POST /api/auth/logout`
   revoca la sesión.
 - **Scripts / M2M**: header `X-API-Key` en REST; en WS, header `X-API-Key`,
   subprotocolo `Sec-WebSocket-Protocol` (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`)
@@ -101,16 +106,23 @@ cookie de sesión válida:
 ## 3. Variables de configuración
 
 - **`SECURITY_MODE`** — `local` | `protected` (default **`local`**):
+  - Es el **valor inicial** del flag runtime `security_manager.is_enabled()`.
+    Tras el arranque, la activación de la contraseña del panel es cambiable en
+    caliente desde la UI y se persiste en SQLite (tabla `security_settings`).
   - `local`: HMI de prototipo doméstico. Ningún endpoint exige `X-API-Key`.
   - `protected`: los endpoints **PROTECTED** (que mutan hardware/red) y `WS /ws`
     (para clientes no-loopback) exigen el header `X-API-Key` igual a
-    `ADMIN_API_KEY`. Usa el comparador `secrets.compare_digest`
-    (ver `backend/app/api/deps.py`).
-- **`ADMIN_API_KEY`** — clave compartida enviada como `X-API-Key`. Protege:
-  - los endpoints **PROTECTED** cuando `SECURITY_MODE=protected`, y
+    `ADMIN_API_KEY` **o** una cookie de sesión válida (ver §9).
+- **Contraseña del panel web** — persistida en SQLite con hash PBKDF2-HMAC-SHA256
+  (stdlib). Valor de fábrica `1234`. Se gestiona desde la UI (Configuración →
+  Contraseña) vía `/api/auth/security` y `/api/auth/password`, sin tocar
+  `ADMIN_API_KEY`.
+- **`ADMIN_API_KEY`** — clave compartida M2M enviada como `X-API-Key`. Protege:
+  - los endpoints **PROTECTED** cuando la contraseña del panel está activada, y
   - los endpoints **ADMIN** (`/admin/*`) **siempre**.
-  Si está vacía, `config.py` registra un `CRITICAL` al arrancar. Genera una clave
-  segura con:
+  Ya **no** es la credencial de login del panel web (ahora se usa la contraseña
+  del panel). Si está vacía, `config.py` registra un `CRITICAL` al arrancar.
+  Genera una clave segura con:
   ```bash
   python -c "import secrets; print(secrets.token_urlsafe(32))"
   ```
@@ -247,3 +259,46 @@ segura (32+ caracteres) en el `.env` del backend. El panel web pedirá esa clave
 entrar (`POST /api/auth/login`) y operará con una cookie de sesión HttpOnly; los
 scripts/M2M usan `X-API-Key`. Ya no es necesario (ni recomendable) compilar el
 frontend con `VITE_API_KEY`.
+
+---
+
+## 9. Contraseña del panel web (persistida)
+
+A partir de la versión 0.3.3 (FASE 6), el login del panel web **ya no usa
+`ADMIN_API_KEY`**. En su lugar se introduce una **contraseña de panel** con
+estado de activación propio, gestionable en caliente desde la UI y persistida
+en SQLite:
+
+- **Contraseña de fábrica**: `1234` (se recomienda cambiarla).
+- **Persistencia**: tabla `security_settings` (`password_hash`,
+  `password_enabled`, `updated_at`), migración `_migration_003`.
+- **Hashing**: PBKDF2-HMAC-SHA256 con salt aleatorio (120k iteraciones,
+  stdlib `hashlib` + `secrets`), comparación con `hmac.compare_digest`.
+  Formato: `pbkdf2_sha256$<iter>$<salt_b64>$<hash_b64>` (base64url). Ver
+  `backend/app/services/password_hash.py`.
+- **Runtime**: `security_manager` (singleton en
+  `backend/app/services/security_manager.py`) mantiene la cache en memoria.
+  `is_enabled()` reemplaza al antiguo `SECURITY_MODE` en `deps.py`, `ws.py` y
+  `auth.py/status`.
+
+### Endpoints
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/auth/security` | Estado público `{enabled, is_default}` |
+| `POST` | `/api/auth/security` | Activa/desactiva (`{enabled, current?}`) |
+| `POST` | `/api/auth/password` | Cambia contraseña (`{current, new}`) |
+
+Autorización de los `POST` (helper `_authorize_security_change`): se permite si
+(a) hay cookie de sesión válida, (b) `X-API-Key` coincide con `ADMIN_API_KEY`
+(si está configurada) o (c) `current` verifica contra la contraseña almacenada.
+`POST /api/auth/password` exige **siempre** que `current` verifique y, al éxito,
+revoca todas las sesiones (`session_manager.clear()`).
+
+### `require_admin_api_key` (mutadores HMI)
+
+El chequeo de la cookie de sesión se realiza **antes** del chequeo de
+`ADMIN_API_KEY` vacía, de modo que el panel web funciona aunque `ADMIN_API_KEY`
+no esté configurada (solo se exige `ADMIN_API_KEY` para el path `X-API-Key`).
+`require_admin_api_key_always` (para `/admin/*`) mantiene su semántica
+(`ADMIN_API_KEY` + sesión).

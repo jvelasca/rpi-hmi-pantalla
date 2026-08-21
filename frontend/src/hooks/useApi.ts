@@ -15,6 +15,7 @@ import type {
   LedState,
   NetworkResult,
   NetworkStatus,
+  SecurityStatus,
   SystemStatus,
 } from "@/types/api";
 
@@ -97,9 +98,15 @@ export function useApi() {
     postJson<{ success: boolean; action: string }>("/display/command", { action });
 
   const getAuthStatus = () => get<AuthStatus>("/auth/status");
-  const login = (api_key: string) =>
-    postJson<{ authenticated: boolean }>("/auth/login", { api_key });
+  const login = (password: string) =>
+    postJson<{ authenticated: boolean }>("/auth/login", { password });
   const logout = () => postJson<{ authenticated: boolean }>("/auth/logout");
+
+  const getSecurity = () => get<SecurityStatus>("/auth/security");
+  const setSecurityEnabled = (enabled: boolean, current?: string) =>
+    postJson<SecurityStatus>("/auth/security", { enabled, current: current ?? null });
+  const changePassword = (current: string, next: string) =>
+    postJson<{ success: boolean }>("/auth/password", { current, new: next });
 
   return {
     error,
@@ -121,5 +128,8 @@ export function useApi() {
     getAuthStatus,
     login,
     logout,
+    getSecurity,
+    setSecurityEnabled,
+    changePassword,
   };
 }

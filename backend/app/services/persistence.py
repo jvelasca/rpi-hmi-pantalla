@@ -46,6 +46,7 @@ class Persistence:
     _MIGRATIONS: list[tuple[int, str, str]] = [
         (1, "schema_inicial", "_migration_001"),
         (2, "indice_event_log", "_migration_002"),
+        (3, "security_settings", "_migration_003"),
     ]
 
     def __init__(self, db_path: str) -> None:
@@ -168,6 +169,38 @@ class Persistence:
             "CREATE INDEX IF NOT EXISTS idx_event_log_timestamp ON event_log (timestamp)"
         )
 
+    async def _migration_003(self) -> None:
+        """Crea la tabla ``security_settings`` y siembra la fila inicial.
+
+        Guarda el hash PBKDF2 de la contraseña del panel y el flag de
+        activación. La fila inicial usa la contraseña de fábrica (``1234``)
+        y ``password_enabled=1`` solo si ``settings.security_mode`` es
+        ``protected`` (equivale al estado previo a la migración).
+        """
+        assert self._conn is not None
+        # Import dentro del método para evitar imports circulares al
+        # cargar el módulo (config/security no dependen de persistence).
+        from backend.app.config import settings
+        from backend.app.services.password_hash import DEFAULT_PASSWORD, hash_password
+
+        await self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS security_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                password_hash TEXT NOT NULL,
+                password_enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        default_hash = hash_password(DEFAULT_PASSWORD)
+        enabled = 1 if settings.security_mode == "protected" else 0
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO security_settings "
+            "(id, password_hash, password_enabled, updated_at) "
+            "VALUES (1, ?, ?, datetime('now'))",
+            (default_hash, enabled),
+        )
+
     async def close(self) -> None:
         """Cierra la conexion a la BD."""
         if self._conn:
@@ -277,6 +310,53 @@ class Persistence:
             (font_family, text_size, datetime.now(UTC).isoformat()),
         )
         await self._conn.commit()
+
+    # ── Security Settings ───────────────────────────────────────
+
+    async def get_security_settings(self) -> dict[str, object]:
+        """Recupera los ajustes de seguridad del panel web desde la BD.
+
+        Returns:
+            Dict con ``password_hash`` (str) y ``password_enabled`` (bool).
+            Si no hay fila (o la BD no está inicializada), devuelve los
+            defaults: hash de ``1234`` y el flag según ``settings.security_mode``.
+        """
+        if not self._conn:
+            return self._default_security_settings()
+        cursor = await self._conn.execute(
+            "SELECT password_hash, password_enabled FROM security_settings WHERE id = 1"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return self._default_security_settings()
+        return {"password_hash": str(row[0]), "password_enabled": bool(row[1])}
+
+    async def save_security_settings(self, password_hash: str, password_enabled: bool) -> None:
+        """Guarda los ajustes de seguridad del panel web en la BD.
+
+        Args:
+            password_hash: Hash PBKDF2 de la contraseña del panel.
+            password_enabled: Flag de contraseña activada/desactivada.
+        """
+        if not self._conn:
+            return
+        await self._conn.execute(
+            "UPDATE security_settings SET password_hash = ?, password_enabled = ?, "
+            "updated_at = ? WHERE id = 1",
+            (password_hash, 1 if password_enabled else 0, datetime.now(UTC).isoformat()),
+        )
+        await self._conn.commit()
+
+    @staticmethod
+    def _default_security_settings() -> dict[str, object]:
+        """Devuelve los defaults de seguridad (hash de ``1234`` + flag inicial)."""
+        from backend.app.config import settings
+        from backend.app.services.password_hash import DEFAULT_PASSWORD, hash_password
+
+        return {
+            "password_hash": hash_password(DEFAULT_PASSWORD),
+            "password_enabled": settings.security_mode == "protected",
+        }
 
     # ── Event Log ──────────────────────────────────────────────
 

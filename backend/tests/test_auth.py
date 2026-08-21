@@ -1,10 +1,11 @@
 """Tests del flujo de autenticacion por session-cookie HttpOnly.
 
 Cubre:
-- Login (clave correcta/incorrecta) y logout.
+- Login (contraseña correcta/incorrecta) y logout.
 - La cookie de sesion se emite con HttpOnly y SameSite=Strict.
-- En SECURITY_MODE=protected, los mutadores REST y el WS aceptan la cookie
-  (navegador) ademas de X-API-Key (M2M), con loopback exento.
+- Con la contraseña del panel activada (antes SECURITY_MODE=protected), los
+  mutadores REST y el WS aceptan la cookie (navegador) ademas de X-API-Key
+  (M2M), con loopback exento.
 - La cookie malformada/alterada se rechaza.
 """
 
@@ -17,15 +18,18 @@ from starlette.websockets import WebSocketDisconnect
 from backend.app import config as config_module
 from backend.app.api.auth import SESSION_COOKIE_NAME, rate_limiter, session_manager
 from backend.app.main import app
+from backend.app.services.password_hash import DEFAULT_PASSWORD
+from backend.app.services.security_manager import security_manager
 
 ADMIN_KEY = "test-key-123"
 
 
 @pytest.fixture
 def protected_mode(monkeypatch):
-    """Activa SECURITY_MODE=protected con una ADMIN_API_KEY conocida."""
+    """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
     monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", ADMIN_KEY)
+    security_manager.reset()  # enabled=True (security_mode=protected) + hash "1234"
     return ADMIN_KEY
 
 
@@ -39,9 +43,9 @@ def clear_sessions():
     rate_limiter.clear()
 
 
-def _login(client: TestClient, api_key: str = ADMIN_KEY) -> str:
+def _login(client: TestClient, password: str = DEFAULT_PASSWORD) -> str:
     """Realiza login y devuelve el valor de la cookie de sesion."""
-    r = client.post("/api/auth/login", json={"api_key": api_key})
+    r = client.post("/api/auth/login", json={"password": password})
     assert r.status_code == 200, r.text
     token = r.cookies.get(SESSION_COOKIE_NAME)
     assert token
@@ -53,7 +57,7 @@ class TestLoginLogout:
 
     def test_login_sets_httponly_cookie(self, client, protected_mode):
         """Login correcto emite cookie HttpOnly y SameSite=Strict."""
-        r = client.post("/api/auth/login", json={"api_key": ADMIN_KEY})
+        r = client.post("/api/auth/login", json={"password": DEFAULT_PASSWORD})
         assert r.status_code == 200
         assert r.json()["authenticated"] is True
 
@@ -62,16 +66,16 @@ class TestLoginLogout:
         assert "httponly" in set_cookie
         assert "samesite=strict" in set_cookie
 
-    def test_login_wrong_key_returns_401(self, client, protected_mode):
-        """Login con clave incorrecta -> 401 sin cookie."""
-        r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+    def test_login_wrong_password_returns_401(self, client, protected_mode):
+        """Login con contraseña incorrecta -> 401 sin cookie."""
+        r = client.post("/api/auth/login", json={"password": "wrong-key"})
         assert r.status_code == 401
         assert SESSION_COOKIE_NAME not in r.headers.get("set-cookie", "")
 
-    def test_login_empty_key_returns_401(self, client, protected_mode):
-        """Login con clave vacia -> 401."""
-        r = client.post("/api/auth/login", json={"api_key": ""})
-        assert r.status_code == 401
+    def test_login_empty_password_returns_422(self, client, protected_mode):
+        """Login con contraseña vacía -> 422 (min_length=1)."""
+        r = client.post("/api/auth/login", json={"password": ""})
+        assert r.status_code == 422
 
     def test_logout_revokes_session(self, client, protected_mode):
         """Tras logout la cookie queda invalidada."""
@@ -101,10 +105,13 @@ class TestLoginLogout:
         r = client.get("/api/auth/status")
         assert r.json()["authenticated"] is True
 
-    def test_login_unavailable_without_admin_key(self, client):
-        """Sin ADMIN_API_KEY configurada, el login devuelve 401."""
-        r = client.post("/api/auth/login", json={"api_key": "cualquiera"})
-        assert r.status_code == 401
+    def test_login_works_without_admin_key(self, client, monkeypatch):
+        """El login no depende de ADMIN_API_KEY (usa la contraseña del panel)."""
+        monkeypatch.setattr(config_module.settings, "security_mode", "protected")
+        monkeypatch.setattr(config_module.settings, "admin_api_key", "")
+        security_manager.reset()
+        r = client.post("/api/auth/login", json={"password": DEFAULT_PASSWORD})
+        assert r.status_code == 200
 
 
 class TestLoginRateLimit:
@@ -113,14 +120,14 @@ class TestLoginRateLimit:
     def _fail(self, client: TestClient, n: int) -> None:
         """Realiza ``n`` logins fallidos y verifica que devuelven 401."""
         for _ in range(n):
-            r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+            r = client.post("/api/auth/login", json={"password": "wrong-key"})
             assert r.status_code == 401
 
     def test_too_many_failures_returns_429(self, client, protected_mode):
         """Superado el limite de fallos, el siguiente intento devuelve 429."""
         max_attempts = rate_limiter.max_attempts
         self._fail(client, max_attempts)
-        r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+        r = client.post("/api/auth/login", json={"password": "wrong-key"})
         assert r.status_code == 429
         assert "detail" in r.json()
 
@@ -129,12 +136,12 @@ class TestLoginRateLimit:
         max_attempts = rate_limiter.max_attempts
         self._fail(client, max_attempts - 1)
 
-        r = client.post("/api/auth/login", json={"api_key": ADMIN_KEY})
+        r = client.post("/api/auth/login", json={"password": DEFAULT_PASSWORD})
         assert r.status_code == 200
 
         # Tras el reset, una ventana nueva admite max_attempts fallos sin 429.
         self._fail(client, max_attempts)
-        r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+        r = client.post("/api/auth/login", json={"password": "wrong-key"})
         assert r.status_code == 429
 
     def test_window_expired_allows_retry(self, client, protected_mode, monkeypatch):
@@ -145,19 +152,19 @@ class TestLoginRateLimit:
         monkeypatch.setattr(rate_limiter, "_clock", lambda: now[0])
 
         self._fail(client, max_attempts)
-        r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+        r = client.post("/api/auth/login", json={"password": "wrong-key"})
         assert r.status_code == 429
 
         # Avanzar el reloj mas alla de la ventana para poder reintentar.
         now[0] += window_seconds + 1
-        r = client.post("/api/auth/login", json={"api_key": "wrong-key"})
+        r = client.post("/api/auth/login", json={"password": "wrong-key"})
         assert r.status_code == 401
 
-    def test_correct_key_not_blocked_after_failures(self, client, protected_mode):
-        """El limite no rompe el flujo normal con la clave correcta."""
+    def test_correct_password_not_blocked_after_failures(self, client, protected_mode):
+        """El limite no rompe el flujo normal con la contraseña correcta."""
         max_attempts = rate_limiter.max_attempts
         self._fail(client, max_attempts - 1)
-        r = client.post("/api/auth/login", json={"api_key": ADMIN_KEY})
+        r = client.post("/api/auth/login", json={"password": DEFAULT_PASSWORD})
         assert r.status_code == 200
         assert r.json()["authenticated"] is True
 

@@ -34,6 +34,12 @@ describe("Component exports", () => {
     expect(typeof mod.ConnectionStatus).toBe("function");
   });
 
+  it("@/components/SecuritySettings imports", async () => {
+    const mod = await import("@/components/SecuritySettings");
+    expect(mod.SecuritySettings).toBeDefined();
+    expect(typeof mod.SecuritySettings).toBe("function");
+  });
+
   it("@/types/api types import", async () => {
     const mod = await import("@/types/api");
     expect(mod).toBeDefined();
