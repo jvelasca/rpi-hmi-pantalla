@@ -3,7 +3,7 @@
 > Documento de gobernanza. Toda la ejecución de refactorización/corrección del
 > proyecto **debe** respetar estas premisas. Ningún subagente puede saltárselas.
 >
-> Fecha: 2026-08-21 · Versión del proyecto: 0.3.4 (objetivo: 0.4.0) · Estado: V1 no en producción
+> Fecha: 2026-08-21 · Versión del proyecto: 0.4.0 · Estado: refactor Fase 8 COMPLETADO (pendiente HIL en Pi real)
 
 ---
 
@@ -104,6 +104,11 @@
 - Ejecución por **fases**: F0 baseline/gobernanza → F1 LED → F2 UI → F3
   fail-closed → F4 docs/SECURITY_MODE → F5 Ñ+limpieza → F6 versión+cierre.
   Una fase = un subagente; el orquestador revisa entre fases.
+- **Estado: COMPLETADO (F0-F6).** Todas las fases del refactor a 0.4.0 están
+  ejecutadas y verificadas. F6 (bump a 0.4.0 + verificación final) parte del
+  commit `cf18dd0` y queda pendiente de commit por el orquestador. Pendiente:
+  **HIL en Raspberry Pi real** (apagado brusco, SQLite corrupta, touch, DRM,
+  login/logout...).
 
 ---
 

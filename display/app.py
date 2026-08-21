@@ -90,7 +90,7 @@ def _load_version() -> str:
     try:
         return version_path.read_text(encoding="utf-8").strip()
     except OSError:
-        return "0.3.4"
+        return "0.4.0"
 
 
 __version__ = _load_version()

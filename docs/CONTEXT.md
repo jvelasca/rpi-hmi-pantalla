@@ -7,28 +7,19 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-21 (Fase 7 — cierre de seguridad + GPIO20/21 + display)
+- **Fecha:** 2026-08-21 (Fase 8 — refactor F0-F6 completado · bump a 0.4.0 + verificación final)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
-- **Branch:** main · Versión `0.3.4`
-- **Trabajo actual:** Fase 7 completada, atendiendo a la auditoría externa y a la petición del
-  usuario:
-  - **7a (seguridad):** contraseña del panel **OFF por defecto** (migración 004 resetea
-    `password_enabled` a 0; `SecurityManager` arranca en `False` y el estado real se
-    persiste en SQLite). **Forzar cambio de `1234` antes de activar** (`POST /api/auth/security`
-    → `409` si `is_default`; mínimo de contraseña subido de 4 a **8** caracteres). WS **sin
-    `?token=`** (solo `X-API-Key` / `Sec-WebSocket-Protocol` / cookie). `credentials: "include"`
-    en `fetch()`.
-  - **7b (GPIO):** `led1` pasa de virtual a **GPIO 20** (LED botón On/Off); nuevo dispositivo
-    `led_button` en **GPIO 21** (LED del pulsador, se enciende al pulsar) con nuevo callback
-    `set_updater_button` en `StateManager`.
-  - **7c (display físico):** nueva vista `"security"` en Pygame con menú "Contraseña" en el
-    overlay de CONFIGURACION, teclado numérico en pantalla, activar/desactivar y cambio de
-    contraseña (validación en cliente: bloqueo con `is_default` y mínimo 8).
-  - Fases previas: F1 auth session-cookie · F2 docs · F3 limpieza · F4 hardening ·
+- **Branch:** main · Versión `0.4.0`
+- **Trabajo actual:** Fase 8 (refactor a 0.4.0) COMPLETADA (F0-F6):
+  - F0 baseline/gobernanza · F1 separación de LEDs (GPIO 20/21) · F2 UI · F3 fail-closed
+    (SQLite) · F4 drift documental (SECURITY_MODE) · F5 ortografía Ñ + limpieza ·
+    F6 bump 0.4.0 + verificación final + cierre.
+  - Verificación Fase 8 (F6): pytest 393 passed / 9 skipped · vitest 27 passed ·
+    ruff verde · mypy verde (31 ficheros) · build verde · bandit/pip-audit/npm-audit sin
+    hallazgos.
+  - Histórico (cierre V1): F1 auth session-cookie · F2 docs · F3 limpieza · F4 hardening ·
     F5 verificación (0.3.2) · F6 contraseña panel (0.3.3) · F7 cierre (0.3.4).
-  - Verificación Fase 7: pytest backend 312 passed / 7 skipped · display 79 passed / 2 skipped ·
-    27 vitest · ruff verde · build verde.
-  - Siguiente: deploy físico a la Pi + commit/push (orquestador).
+  - Siguiente: HIL en Raspberry Pi real (apagado brusco, SQLite corrupta, touch, DRM, login/logout...).
 
 ## Estado actual
 
@@ -41,7 +32,7 @@
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
 | Frontend SolidJS | CORRIENDO | http://<IP_DE_LA_PI>:8000/. Servido por FastAPI desde frontend/dist/. |
 | Docs | OK | Swagger en http://<IP_DE_LA_PI>:8000/docs |
-| Tests | 391 pytest + 27 vitest | 312 backend + 79 display passed / 9 skipped · 27 vitest (frontend) |
+| Tests | 393 pytest + 27 vitest | 393 passed / 9 skipped (pytest backend+display) · 27 vitest (frontend) |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
 
 ## Fase 1: COMPLETADA

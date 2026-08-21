@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpi-hmi"
-version = "0.3.4"
+version = "0.4.0"
 description = "Raspberry Pi HMI — Panel de control táctil industrial"
 readme = "README.md"
 license = {text = "MIT"}
