@@ -3,7 +3,7 @@
 > Documento de gobernanza. Toda la ejecución de refactorización/corrección del
 > proyecto **debe** respetar estas premisas. Ningún subagente puede saltárselas.
 >
-> Fecha: 2026-08-20 · Versión del proyecto: 0.3.1 · Estado: V1 no en producción
+> Fecha: 2026-08-21 · Versión del proyecto: 0.3.4 (objetivo: 0.4.0) · Estado: V1 no en producción
 
 ---
 
@@ -62,8 +62,13 @@
 - Para cada cambio se crean o actualizan **tests** (pytest backend/display, vitest
   frontend) y/o **scripts de verificación** reproducibles.
 - Ninguna fase se da por cerrada sin su verificación ejecutada y documentada.
-- Los gates globales son: `pytest`, `ruff`, `mypy`, `bandit`, `pip-audit`,
-  `npm test`, `npm run build`, `npm audit`.
+- Los gates globales (alcance real del CI, ver `.github/workflows/ci.yml`) son:
+  - `pytest backend/tests/ display/tests/`
+  - `ruff check backend/ display/ scripts/ --config backend/pyproject.toml`
+  - `mypy app/` (solo `backend/app/`, con `--config-file backend/pyproject.toml`)
+  - `bandit -r backend/app display --exclude backend/tests,display/tests -q --severity-level medium`
+  - `pip-audit`
+  - `npm run test`, `npm run build`, `npm audit --audit-level=high`
 
 ## 7. Libertad de refactorización (preservando la idea del proyecto)
 
@@ -79,6 +84,27 @@
   documentación obsoleta que ya no refleje el estado real del proyecto.
 - Antes de eliminar se verifica que nada lo importa/referencia (grep + tests + CI).
 
+## 9. Trabajo actual (refactor Fase 8 — objetivo 0.4.0)
+
+- Aprobado por el usuario el plan de refactorización/corrección derivado de la
+  auditoría externa (2026-08-21) y de sus propias observaciones. Versión objetivo:
+  **0.4.0**.
+- Correcciones en alcance (detalle en `docs/audits/auditoria-externa-2026-08-21.md`):
+  1. **P0 — Separar los dos LEDs**: el pulsador solo actúa sobre su LED (GPIO 21)
+     y el botón On/Off solo sobre el suyo (GPIO 20). El On/Off pasa a ser
+     **interruptor** (no botón de apagar).
+  2. **P1 — Fail-closed de seguridad**: si SQLite falla en arranque, el backend
+     NO debe entrar en READY (systemd reinicia) y `SecurityManager` debe fallar
+     **cerrado** en sistemas ya configurados (nunca arrancar desprotegido).
+  3. **P1 — Drift documental**: corregir contrato de login (`{"password"}`) y
+     eliminar el concepto legacy `SECURITY_MODE`.
+  4. **P2 — Ortografía**: "contraseña" con Ñ (no "contrasena").
+  5. **P2 — Limpieza**: código y documentos obsoletos (p. ej. `diagnostics/`,
+     scripts legacy, handoffs antiguos).
+- Ejecución por **fases**: F0 baseline/gobernanza → F1 LED → F2 UI → F3
+  fail-closed → F4 docs/SECURITY_MODE → F5 Ñ+limpieza → F6 versión+cierre.
+  Una fase = un subagente; el orquestador revisa entre fases.
+
 ---
 
 ## Plantilla de documento de cierre (handoff)
@@ -87,7 +113,7 @@
 # FASE <X> — <título> — CIERRE
 
 - Rama/base: <ref git>
-- Versión: <0.3.x>
+- Versión: <0.4.x>
 - Resumen: <1-2 líneas>
 
 ## Cambios
