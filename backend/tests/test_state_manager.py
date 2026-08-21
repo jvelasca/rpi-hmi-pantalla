@@ -227,6 +227,30 @@ class TestUpdaterCallback:
         state_manager.set_led(True)
         assert len(called) == 1
 
+    def test_set_updater_button_invoked_on_press_and_release(self):
+        """set_updater_button registra un callback invocado en press/release."""
+        calls: list[tuple[str, bool]] = []
+
+        def cb(device: str, pressed: bool) -> None:
+            calls.append((device, pressed))
+
+        state_manager.set_updater_button(cb)
+        assert state_manager._updater_button_callback is not None
+
+        state_manager.press_button()
+        state_manager.release_button()
+
+        assert calls == [("button", True), ("button", False)]
+
+    def test_updater_button_callback_error_is_silent(self):
+        """Error en callback del LED del pulsador no propaga excepcion."""
+        def failing_cb(device: str, pressed: bool) -> None:
+            raise RuntimeError("GPIO no disponible")
+
+        state_manager.set_updater_button(failing_cb)
+        result = state_manager.press_button()
+        assert result.pressed is True
+
     def test_updater_callback_error_is_silent(self):
         """Error en callback GPIO no propaga excepcion."""
         def failing_cb(device: str, state: object) -> None:
@@ -261,6 +285,24 @@ class TestStateManagerLoadPinEdgeCases:
         pin = StateManager._load_led_pin()
         # Debe devolver un valor (0 como fallback)
         assert isinstance(pin, int)
+
+    def test_devices_yaml_has_two_physical_leds(self):
+        """devices.yaml define el LED (GPIO 20) y el LED del pulsador (GPIO 21)."""
+        from pathlib import Path
+
+        from backend.app.services.gpio_service import load_devices
+
+        devices_path = (
+            Path(__file__).resolve().parents[2] / "backend" / "config" / "devices.yaml"
+        )
+        devices = load_devices(str(devices_path))
+
+        led = devices["led1"]
+        led_button = devices["led_button"]
+        assert led.pin is not None and led.pin.bcm == 20
+        assert led.kwargs.get("role") == "led"
+        assert led_button.pin is not None and led_button.pin.bcm == 21
+        assert led_button.kwargs.get("role") == "button_led"
 
 
 # ── Concurrency Tests ──────────────────────────────────────────
@@ -413,6 +455,7 @@ class TestStartupPolicy:
     async def test_policy_safe_restores_virtual_led(self, monkeypatch):
         """'safe' restaura cuando el LED es virtual (pin 0)."""
         sm = self._make_manager(monkeypatch, "safe")
+        sm._load_led_pin = lambda: 0  # type: ignore[method-assign]
         await sm.restore_from_db()
         assert sm.led.state is True
 

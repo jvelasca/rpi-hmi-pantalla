@@ -60,6 +60,14 @@ export function SecuritySettings(props: SecuritySettingsProps) {
       return;
     }
 
+    // No se permite activar la proteccion con la contrasena de fabrica.
+    if (target && status()?.is_default) {
+      setError(
+        "Debes cambiar la contrasena de fabrica (1234) antes de activar la proteccion.",
+      );
+      return;
+    }
+
     setToggling(true);
     const r = await api.setSecurityEnabled(target, currentForToggle() || undefined);
     setToggling(false);
@@ -79,8 +87,8 @@ export function SecuritySettings(props: SecuritySettingsProps) {
       setError("Introduce la contrasena actual");
       return;
     }
-    if (newPwd().length < 4) {
-      setError("La nueva contrasena debe tener al menos 4 caracteres");
+    if (newPwd().length < 8) {
+      setError("La nueva contrasena debe tener al menos 8 caracteres");
       return;
     }
     if (newPwd() !== confirmPwd()) {
@@ -207,7 +215,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
                 label="Nueva contrasena"
                 value={newPwd()}
                 onChange={setNewPwd}
-                placeholder="Minimo 4 caracteres"
+                placeholder="Minimo 8 caracteres"
                 type="password"
               />
               <Field

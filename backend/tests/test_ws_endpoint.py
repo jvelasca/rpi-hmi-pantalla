@@ -8,6 +8,8 @@ con @pytest.mark.asyncio en este contexto.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -243,7 +245,8 @@ def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
     monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
-    security_manager.reset()  # enabled=True (security_mode=protected) + hash "1234"
+    security_manager.reset()  # enabled=False + hash "1234"
+    asyncio.run(security_manager.set_enabled(True))
     return "test-key-123"
 
 
@@ -290,9 +293,11 @@ class TestWebSocketAuth:
             data = ws.receive_json()
             assert data["type"] == "status_update"
 
-    def test_protected_non_loopback_with_query_token_accepted(self, client, protected_mode):
-        """En protected, WS desde no-loopback con key via ?token= es aceptado."""
-        with client.websocket_connect(f"/ws?token={protected_mode}") as ws:
-            ws.send_json({"version": "1.0", "type": "subscribe"})
-            data = ws.receive_json()
-            assert data["type"] == "status_update"
+    def test_protected_non_loopback_with_query_token_rejected(self, client, protected_mode):
+        """En protected, WS desde no-loopback con key via ?token= ya no autentica
+        (el query param dejó de ser fuente de credencial) -> 4401."""
+        with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect(
+            f"/ws?token={protected_mode}"
+        ):
+            pass
+        assert exc_info.value.code == 4401

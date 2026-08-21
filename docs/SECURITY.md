@@ -4,7 +4,7 @@
 > confianza. Este documento describe el modelo de amenazas asumido y la
 > política de seguridad explícita del backend.
 >
-> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.3
+> Última revisión: 2026-08-21 · Versión del proyecto: 0.3.4
 
 ## 1. Modelo de amenazas
 
@@ -18,7 +18,7 @@
 
 | Activo | Riesgo si se compromete |
 |---|---|
-| Estado del hardware (LED virtual y, si se configura, GPIO físico) | Manipulación del HMI |
+| Estado del hardware (LED físico en GPIO20/21) | Manipulación del HMI |
 | Configuración de red de la Pi (`nmcli`) | Pérdida de acceso (IP rota) |
 | Acceso SSH remoto y despliegue (`/admin/*`) | Control total de la Pi |
 
@@ -83,10 +83,11 @@ cookie de sesión válida:
   navegador envía la cookie automáticamente en REST (fetch) y WS (handshake),
   sin que la contraseña llegue nunca al JS del bundle. `POST /api/auth/logout`
   revoca la sesión.
-- **Scripts / M2M**: header `X-API-Key` en REST; en WS, header `X-API-Key`,
-  subprotocolo `Sec-WebSocket-Protocol` (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`)
-  o query param `?token=`. Si no se autentica, el handshake se rechaza con
-  close code `4401` (no se llama a `accept()`).
+- **Scripts / M2M**: header `X-API-Key` en REST; en WS, header `X-API-Key` o
+  subprotocolo `Sec-WebSocket-Protocol` (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`).
+  El query param `?token=` **ya no** es una fuente de credencial. Si no se
+  autentica, el handshake se rechaza con close code `4401` (no se llama a
+  `accept()`).
 
 ### Modelo de sesión (cookie HttpOnly)
 
@@ -106,17 +107,23 @@ cookie de sesión válida:
 ## 3. Variables de configuración
 
 - **`SECURITY_MODE`** — `local` | `protected` (default **`local`**):
-  - Es el **valor inicial** del flag runtime `security_manager.is_enabled()`.
-    Tras el arranque, la activación de la contraseña del panel es cambiable en
-    caliente desde la UI y se persiste en SQLite (tabla `security_settings`).
+  - Quedó como variable **legacy/de compatibilidad** para otros subsistemas,
+    pero **ya no gobierna** el estado runtime de la contraseña del panel. El
+    estado por defecto de `security_manager.is_enabled()` es **`False`**
+    (contraseña **OFF** al arrancar), y se persiste en SQLite (tabla
+    `security_settings`) como `password_enabled=0`. La activación se hace en
+    caliente desde la UI.
   - `local`: HMI de prototipo doméstico. Ningún endpoint exige `X-API-Key`.
-  - `protected`: los endpoints **PROTECTED** (que mutan hardware/red) y `WS /ws`
-    (para clientes no-loopback) exigen el header `X-API-Key` igual a
-    `ADMIN_API_KEY` **o** una cookie de sesión válida (ver §9).
+  - `protected`: (semántica histórica) los endpoints **PROTECTED** (que mutan
+    hardware/red) y `WS /ws` (para clientes no-loopback) exigen el header
+    `X-API-Key` igual a `ADMIN_API_KEY` **o** una cookie de sesión válida
+    (ver §9).
 - **Contraseña del panel web** — persistida en SQLite con hash PBKDF2-HMAC-SHA256
   (stdlib). Valor de fábrica `1234`. Se gestiona desde la UI (Configuración →
   Contraseña) vía `/api/auth/security` y `/api/auth/password`, sin tocar
-  `ADMIN_API_KEY`.
+  `ADMIN_API_KEY`. Para **activar** la protección primero hay que cambiar la
+  contraseña de fábrica por una personalizada (mínimo 8 caracteres); el
+  backend responde `409` si se intenta activar manteniendo `1234`.
 - **`ADMIN_API_KEY`** — clave compartida M2M enviada como `X-API-Key`. Protege:
   - los endpoints **PROTECTED** cuando la contraseña del panel está activada, y
   - los endpoints **ADMIN** (`/admin/*`) **siempre**.
@@ -198,12 +205,11 @@ Política explícita de qué ocurre con el estado del dispositivo en cada moment
 | **Fallo del backend** | No hay reset a un valor "seguro": el LED **conserva su último estado**. El estado lógico ya quedó persistido en SQLite en cada cambio, por lo que al reiniciar el backend se restaura. El display (Pygame) y el frontend web mantienen su última vista conocida. |
 | **Apagado limpio** | En el shutdown del lifespan: `flush_pending_tasks()` drena las escrituras de persistencia pendientes, `close_persistence()` cierra SQLite y `gpio_service.cleanup()` libera los pines GPIO configurados. |
 
-> **Nota pragmática**: el LED es actualmente **virtual** (`pin: null`,
-> `virtual: true` en `backend/config/devices.yaml`). Por tanto, "el LED conserva
-> su último estado" se refiere al estado lógico (persistido y renderizado), no a
-> un pin físico. Si en el futuro se mapea un LED a un GPIO real, ese pin
-> conservará el último nivel de salida hasta que el backend se reinicie y
-> restaure el estado desde SQLite.
+> **Nota pragmática**: los LEDs son físicos (GPIO 20 para el LED principal y
+> GPIO 21 para el LED del pulsador, en `backend/config/devices.yaml`). Por tanto,
+> "el LED conserva su último estado" se refiere tanto al estado lógico
+> (persistido y renderizado) como al nivel de salida del pin, que conserva su
+> último valor hasta que el backend se reinicie y restaure el estado desde SQLite.
 
 ---
 
@@ -224,17 +230,16 @@ Hallazgos y decisiones aplicados durante la primera instalación física (H6).
 
 ### Reducción de superficie de privilegios: sin `/dev/mem`
 
-El LED es **virtual** (`pin: null` en `backend/config/devices.yaml`), por lo que el
-backend no necesita acceso a memoria física. En `config/systemd/rpi-hmi-backend.service`
+Los LEDs son físicos (GPIO 20 y GPIO 21 en `backend/config/devices.yaml`). El
+backend accede a GPIO vía `/dev/gpiomem`; en `config/systemd/rpi-hmi-backend.service`
 se retiró `/dev/mem` de `ReadWritePaths`, quedando:
 
 ```ini
 ReadWritePaths=/home/pi/rpi_hmi/data /home/pi/rpi_hmi/backend/config /dev/gpiomem /sys/class/gpio
 ```
 
-`/dev/gpiomem` se conserva para el acceso a GPIO real cuando se configure un actuador
-físico. Si en el futuro se mapea un LED a un pin GPIO, las librerías (`gpiozero`/
-`libgpiod`) usan `/dev/gpiomem` y **no** requieren `/dev/mem`.
+`/dev/gpiomem` se conserva para el acceso a GPIO real (`gpiozero`/`libgpiod` usa
+`/dev/gpiomem` y **no** requiere `/dev/mem`).
 
 ### `SupplementaryGroups` separado por espacios
 
@@ -252,13 +257,15 @@ errores de `visudo -c` y `systemd-analyze verify` provocados por el carácter `\
 
 La Pi quedó desplegada con `SECURITY_MODE=local` (prototipo doméstico en LAN de
 confianza). La exención de loopback se extiende a REST **y** WS, por lo que
-`SECURITY_MODE=protected` es compatible con el HMI táctil: el display local (loopback)
-muta LED/button/display sin credenciales, mientras el resto de la LAN debe autenticarse.
-Para activarlo en producción, establece `SECURITY_MODE=protected` y una `ADMIN_API_KEY`
-segura (32+ caracteres) en el `.env` del backend. El panel web pedirá esa clave al
-entrar (`POST /api/auth/login`) y operará con una cookie de sesión HttpOnly; los
-scripts/M2M usan `X-API-Key`. Ya no es necesario (ni recomendable) compilar el
-frontend con `VITE_API_KEY`.
+el HMI táctil local (loopback) muta LED/button/display sin credenciales.
+
+Desde la FASE 7, la contraseña del panel está **desactivada por defecto** y
+`SECURITY_MODE` ya no la gobierna. Para proteger el panel: (1) cambia la
+contraseña de fábrica (`1234`) por una personalizada (mínimo 8 caracteres) y
+(2) actívala desde la UI (Configuración → Contraseña). El panel web pedirá
+login al entrar (`POST /api/auth/login`) y operará con una cookie de sesión
+HttpOnly; los scripts/M2M usan `X-API-Key`. Ya no es necesario (ni
+recomendable) compilar el frontend con `VITE_API_KEY`.
 
 ---
 
@@ -267,33 +274,42 @@ frontend con `VITE_API_KEY`.
 A partir de la versión 0.3.3 (FASE 6), el login del panel web **ya no usa
 `ADMIN_API_KEY`**. En su lugar se introduce una **contraseña de panel** con
 estado de activación propio, gestionable en caliente desde la UI y persistida
-en SQLite:
+en SQLite. La contraseña está **desactivada por defecto** (la web no pide
+login al cargar).
 
 - **Contraseña de fábrica**: `1234` (se recomienda cambiarla).
+- **Mínimo de la nueva contraseña**: 8 caracteres.
 - **Persistencia**: tabla `security_settings` (`password_hash`,
-  `password_enabled`, `updated_at`), migración `_migration_003`.
+  `password_enabled`, `updated_at`), migraciones `_migration_003` (crea y
+  siembra `password_enabled=0`) y `_migration_004` (fuerza
+  `password_enabled=0` en instalaciones previas).
 - **Hashing**: PBKDF2-HMAC-SHA256 con salt aleatorio (120k iteraciones,
   stdlib `hashlib` + `secrets`), comparación con `hmac.compare_digest`.
   Formato: `pbkdf2_sha256$<iter>$<salt_b64>$<hash_b64>` (base64url). Ver
   `backend/app/services/password_hash.py`.
 - **Runtime**: `security_manager` (singleton en
   `backend/app/services/security_manager.py`) mantiene la cache en memoria.
-  `is_enabled()` reemplaza al antiguo `SECURITY_MODE` en `deps.py`, `ws.py` y
-  `auth.py/status`.
+  `is_enabled()` parte de `False`; `SECURITY_MODE` ya no lo gobierna. Se usa
+  en `deps.py`, `ws.py` y `auth.py/status`.
 
 ### Endpoints
 
 | Método | Ruta | Descripción |
 |---|---|---|
 | `GET` | `/api/auth/security` | Estado público `{enabled, is_default}` |
-| `POST` | `/api/auth/security` | Activa/desactiva (`{enabled, current?}`) |
-| `POST` | `/api/auth/password` | Cambia contraseña (`{current, new}`) |
+| `POST` | `/api/auth/security` | Activa/desactiva (`{enabled, current?}`). Si se intenta activar con la contraseña de fábrica, responde `409` |
+| `POST` | `/api/auth/password` | Cambia contraseña (`{current, new}`); `new` con mínimo 8 caracteres (si no, `422`) |
 
 Autorización de los `POST` (helper `_authorize_security_change`): se permite si
 (a) hay cookie de sesión válida, (b) `X-API-Key` coincide con `ADMIN_API_KEY`
 (si está configurada) o (c) `current` verifica contra la contraseña almacenada.
 `POST /api/auth/password` exige **siempre** que `current` verifique y, al éxito,
 revoca todas las sesiones (`session_manager.clear()`).
+
+Activación forzada: `POST /api/auth/security` con `enabled=true` devuelve
+`409` mientras `security_manager.is_default_password()` sea cierto (es decir,
+mientras la contraseña siga siendo `1234`). El usuario debe cambiar la
+contraseña primero.
 
 ### `require_admin_api_key` (mutadores HMI)
 

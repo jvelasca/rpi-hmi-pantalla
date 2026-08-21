@@ -92,6 +92,7 @@ OPTION_ICON_MONITOR = (0, 200, 255) # cyan
 OPTION_ICON_TOUCH = (255, 180, 0)   # naranja
 OPTION_ICON_NETWORK = (255, 184, 74)  # ambar
 OPTION_ICON_FONT = (190, 130, 255)  # violeta
+OPTION_ICON_LOCK = (255, 130, 170)  # rosa (contrasena)
 OPTION_ICON_BACK = (160, 160, 180)  # gris claro
 
 # ── Screen test ─────────────────────────────────────────────

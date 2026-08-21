@@ -56,6 +56,7 @@ describe("useApi", () => {
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/status");
     expect(opts.headers).toEqual({ Accept: "application/json" });
+    expect(opts.credentials).toBe("include");
   });
 
   it("toggleLed llama a POST /api/led/toggle", async () => {
@@ -82,6 +83,7 @@ describe("useApi", () => {
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/led/toggle");
     expect(opts.method).toBe("POST");
+    expect(opts.credentials).toBe("include");
   });
 
   it("pressButton llama a POST /api/button/press", async () => {

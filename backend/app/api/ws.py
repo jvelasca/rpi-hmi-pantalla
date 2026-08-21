@@ -34,7 +34,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import secrets as _secrets
-import urllib.parse
 from collections.abc import Mapping
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -77,7 +76,8 @@ def _extract_api_key_candidates(websocket: WebSocket) -> list[str]:
     Fuentes soportadas (en orden de prioridad):
     1. Header ``X-API-Key`` (clientes no navegador).
     2. Subprotocolos ``Sec-WebSocket-Protocol`` (navegador: subprotocolo).
-    3. Query param ``?token=`` (fallback explicito).
+
+    El query param ``?token=`` ya **no** se acepta como credencial.
 
     Returns:
         Lista de cadenas candidatas (puede incluir vacias).
@@ -90,10 +90,6 @@ def _extract_api_key_candidates(websocket: WebSocket) -> list[str]:
 
     for proto in websocket.scope.get("subprotocols") or []:
         candidates.append(str(proto))
-
-    query = websocket.scope.get("query_string", b"")
-    parsed = urllib.parse.parse_qs(query.decode("utf-8"))
-    candidates.extend(parsed.get("token", []))
 
     return candidates
 
@@ -110,8 +106,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - ``security_manager.is_enabled() == True``: acepta conexiones desde
       loopback (display local de confianza); el resto debe autenticarse con
       ``settings.admin_api_key`` via header ``X-API-Key``, subprotocolo
-      ``Sec-WebSocket-Protocol``, query param ``?token=`` o una cookie de
-      sesion valida emitida por ``POST /api/auth/login`` (navegador).
+      ``Sec-WebSocket-Protocol`` o una cookie de sesion valida emitida por
+      ``POST /api/auth/login`` (navegador). El query param ``?token=`` ya no
+      es una fuente de autenticación.
 
     Valida la version del protocolo: rechaza mensajes con
     version != "1.0" enviando PROTOCOL_VERSION_MISMATCH.

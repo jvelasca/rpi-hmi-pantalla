@@ -41,6 +41,7 @@ export function useApi() {
     try {
       const res = await fetch(`${BASE}${endpoint}`, {
         headers: { Accept: "application/json" },
+        credentials: "include",
         signal: AbortSignal.timeout(3000),
       });
       return await handle<T>(res);
@@ -63,6 +64,7 @@ export function useApi() {
           "Content-Type": "application/json",
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        credentials: "include",
         signal: AbortSignal.timeout(5000),
       });
       return await handle<T>(res);

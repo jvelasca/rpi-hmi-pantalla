@@ -64,7 +64,8 @@ class StateManager:
         self._display_settings: DisplaySettings = DisplaySettings(
             font_family="dejavu", text_size="medium"
         )
-        self._updater_callback: Any | None = None  # Callback para actualizar GPIO
+        self._updater_callback: Any | None = None  # Callback para actualizar GPIO (LED)
+        self._updater_button_callback: Any | None = None  # Callback para actualizar GPIO (LED pulsador)
 
     def set_persistence(self, persistence: Any) -> None:
         """Registra la capa de persistencia.
@@ -343,6 +344,13 @@ class StateManager:
             )
             new_state = self._button_state
 
+        # Notificar a la HAL para actualizar el GPIO del LED del pulsador
+        if self._updater_button_callback:
+            try:
+                self._updater_button_callback("button", True)
+            except Exception:
+                logger.exception("Error en callback GPIO para LED del pulsador")
+
         # Persistir
         self._persist_button(new_state.press_count)
 
@@ -365,6 +373,13 @@ class StateManager:
                 press_count=self._button_state.press_count,
             )
             new_state = self._button_state
+
+        # Notificar a la HAL para actualizar el GPIO del LED del pulsador
+        if self._updater_button_callback:
+            try:
+                self._updater_button_callback("button", False)
+            except Exception:
+                logger.exception("Error en callback GPIO para LED del pulsador")
 
         msg = ServerMessage(type="button_released", data=new_state.model_dump(mode="json"), sequence=seq)
         self._hub.schedule_broadcast(msg)
@@ -531,6 +546,14 @@ class StateManager:
             callback: Funcion con firma callback(device: str, state: LedState).
         """
         self._updater_callback = callback
+
+    def set_updater_button(self, callback: Any) -> None:
+        """Registra un callback llamado cuando cambia el estado del pulsador.
+
+        Args:
+            callback: Funcion con firma callback(device: str, pressed: bool).
+        """
+        self._updater_button_callback = callback
 
     def _apply_hardware_state(self) -> None:
         """Aplica el estado logico actual al GPIO fisico.

@@ -68,6 +68,7 @@ from display.ui.theme import (
     OPTION_BG,
     OPTION_ICON_BACK,
     OPTION_ICON_FONT,
+    OPTION_ICON_LOCK,
     OPTION_ICON_MONITOR,
     OPTION_ICON_NETWORK,
     OPTION_ICON_TOUCH,
@@ -650,11 +651,12 @@ _ICON_MONITOR = "□"    # monitor
 _ICON_TOUCH = "◎"      # touch target
 _ICON_NETWORK = "⇄"    # network
 _ICON_FONT = "A"       # text/font
+_ICON_LOCK = "*"       # contrasena (candado simple, compatible con bitmap)
 _ICON_BACK = "←"       # back arrow
 
 
 class ConfigOverlay(Widget):
-    """Overlay de pantalla completa con 5 botones de opción."""
+    """Overlay de pantalla completa con 6 botones de opción."""
 
     def __init__(self, w: int, h: int) -> None:
         super().__init__(0, 0, w, h)
@@ -662,26 +664,30 @@ class ConfigOverlay(Widget):
         self._on_touch_calib: callable | None = None
         self._on_network: callable | None = None
         self._on_font: callable | None = None
+        self._on_security: callable | None = None
         self._on_back: callable | None = None
 
         btn_h = 40
         gap = 6
         btn_w = w - 60
-        n = 5
+        n = 6
         start_y = (h - (btn_h + gap) * n) // 2 + 16
         self._btn_screen = pygame.Rect((w - btn_w) // 2, start_y, btn_w, btn_h)
         self._btn_calib = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap), btn_w, btn_h)
         self._btn_network = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 2, btn_w, btn_h)
         self._btn_font = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 3, btn_w, btn_h)
-        self._btn_back = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 4, btn_w, btn_h)
+        self._btn_security = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 4, btn_w, btn_h)
+        self._btn_back = pygame.Rect((w - btn_w) // 2, start_y + (btn_h + gap) * 5, btn_w, btn_h)
 
     def set_callbacks(self, screen_test: callable, touch_calib: callable,
-                      network: callable, font: callable, back: callable) -> None:
-        """Registra los callbacks de las 5 opciones del overlay de configuracion."""
+                      network: callable, font: callable, security: callable,
+                      back: callable) -> None:
+        """Registra los callbacks de las 6 opciones del overlay de configuracion."""
         self._on_screen_test = screen_test
         self._on_touch_calib = touch_calib
         self._on_network = network
         self._on_font = font
+        self._on_security = security
         self._on_back = back
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -699,11 +705,12 @@ class ConfigOverlay(Widget):
         title_y = 8
         _render_text(surface, title_font, title_text, OVERLAY_TITLE, title_x, title_y)
 
-        # Draw 5 option buttons
+        # Draw 6 option buttons
         self._draw_option(surface, self._btn_screen, "Prueba de Pantalla", _ICON_MONITOR, OPTION_ICON_MONITOR)
         self._draw_option(surface, self._btn_calib, "Calibracion Tactil", _ICON_TOUCH, OPTION_ICON_TOUCH)
         self._draw_option(surface, self._btn_network, "Configurar IP", _ICON_NETWORK, OPTION_ICON_NETWORK)
         self._draw_option(surface, self._btn_font, "Texto y Fuente", _ICON_FONT, OPTION_ICON_FONT)
+        self._draw_option(surface, self._btn_security, "Contrasena", _ICON_LOCK, OPTION_ICON_LOCK)
         self._draw_option(surface, self._btn_back, "Volver", _ICON_BACK, OPTION_ICON_BACK)
 
     def _draw_option(self, surface: pygame.Surface, rect: pygame.Rect,
@@ -741,6 +748,10 @@ class ConfigOverlay(Widget):
         if self._btn_font.collidepoint(screen_x, screen_y):
             if self._on_font:
                 self._on_font()
+            return True
+        if self._btn_security.collidepoint(screen_x, screen_y):
+            if self._on_security:
+                self._on_security()
             return True
         if self._btn_back.collidepoint(screen_x, screen_y):
             if self._on_back:
@@ -1398,3 +1409,251 @@ class FontSettingsView(Widget):
                 self._on_back()
             return True
         return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# SecuritySettingsView — Gestion de contrasena (FASE 7c)
+# ═══════════════════════════════════════════════════════════════
+
+_FIELD_LABELS = {"current": "ACTUAL", "new": "NUEVA", "confirm": "CONFIRMAR"}
+_KEY_ROWS = [
+    ["1", "2", "3", "BORRAR"],
+    ["4", "5", "6", "LIMPIAR"],
+    ["7", "8", "9", "0"],
+]
+
+
+class SecuritySettingsView(Widget):
+    """Vista de gestion de contrasena apta para pantalla tactil.
+
+    Permite ver el estado de la proteccion por contrasena (activada/desactivada
+    y de fabrica/personalizada), activar/desactivar la proteccion y cambiar la
+    contrasena usando un teclado numerico en pantalla (0-9 + BORRAR + LIMPIAR).
+
+    Limitacion: desde la pantalla fisica solo se pueden introducir contraseñas
+    numericas; para contraseñas alfanumericas usar el panel web.
+    """
+
+    _MAX_LEN = 16
+
+    def __init__(self, w: int, h: int) -> None:
+        super().__init__(0, 0, w, h)
+        self._enabled: bool = False
+        self._is_default: bool = True
+        self.current: str = ""
+        self.new: str = ""
+        self.confirm: str = ""
+        self._active_field: str = "current"
+        self._result: str = ""
+        self._result_error: bool = False
+        self._on_toggle: callable | None = None
+        self._on_change: callable | None = None
+        self._on_back: callable | None = None
+
+        # ── Hit regions ──
+        self._field_rects: dict[str, pygame.Rect] = {
+            "current": pygame.Rect(12, 54, 300, 30),
+            "new": pygame.Rect(12, 92, 300, 30),
+            "confirm": pygame.Rect(12, 130, 300, 30),
+        }
+        self._toggle_rect = pygame.Rect(320, 54, 148, 30)
+        self._change_rect = pygame.Rect(320, 92, 148, 68)
+        self._back_rect = pygame.Rect(12, 284, 456, 30)
+
+        # Teclado numerico (4 columnas x 3 filas)
+        self._key_rects: list[tuple[pygame.Rect, str]] = []
+        key_x = 12
+        key_y = 168
+        cell_w = 108
+        cell_h = 28
+        gap = 6
+        for row, keys in enumerate(_KEY_ROWS):
+            for col, key in enumerate(keys):
+                rect = pygame.Rect(
+                    key_x + col * (cell_w + gap),
+                    key_y + row * (cell_h + gap),
+                    cell_w,
+                    cell_h,
+                )
+                self._key_rects.append((rect, key))
+
+    def set_on_toggle(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar ACTIVAR/DESACTIVAR (enabled, current)."""
+        self._on_toggle = callback
+
+    def set_on_change(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar CAMBIAR (current, new)."""
+        self._on_change = callback
+
+    def set_on_back(self, callback: callable) -> None:
+        """Registra el callback invocado al tocar VOLVER."""
+        self._on_back = callback
+
+    def set_status(self, data: dict) -> None:
+        """Actualiza el estado mostrado (enabled, is_default)."""
+        self._enabled = bool(data.get("enabled", False))
+        self._is_default = bool(data.get("is_default", False))
+
+    def set_result(self, message: str, error: bool = False) -> None:
+        """Muestra un mensaje de resultado (exito o error)."""
+        self._result = message
+        self._result_error = error
+
+    def clear_fields(self) -> None:
+        """Vacia los campos editables y devuelve el foco al campo actual."""
+        self.current = ""
+        self.new = ""
+        self.confirm = ""
+        self._active_field = "current"
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """Dibuja la vista de gestion de contrasena con teclado numerico."""
+        if not self.visible:
+            return
+        pygame.draw.rect(surface, NETWORK_BG, self.rect)
+
+        # Titulo
+        title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
+        title_text = "CONTRASENA"
+        title_r = _get_text_rect(title_font, title_text)
+        _render_text(surface, title_font, title_text, NETWORK_ACCENT,
+                     (self.rect.width - title_r.width) // 2, 4)
+
+        # Estado
+        info_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        proteccion = "ACTIVADA" if self._enabled else "DESACTIVADA"
+        contrasena = "DE FABRICA (1234)" if self._is_default else "PERSONALIZADA"
+        _render_text(surface, info_font, f"Proteccion: {proteccion}", NETWORK_DIM, 12, 26)
+        _render_text(surface, info_font, f"Contrasena: {contrasena}", NETWORK_DIM, 12, 40)
+
+        # Campos editables
+        for key, rect in self._field_rects.items():
+            self._draw_field(surface, rect, key)
+
+        # Botones de accion
+        self._draw_action_btn(surface, self._toggle_rect,
+                              "DESACTIVAR" if self._enabled else "ACTIVAR")
+        self._draw_action_btn(surface, self._change_rect, "CAMBIAR")
+
+        # Teclado numerico
+        for rect, key in self._key_rects:
+            self._draw_key(surface, rect, key)
+
+        # Resultado
+        if self._result:
+            res_font = _get_font(FONT_BOLD, FONT_SIZE_SMALL)
+            res_color = ERROR if self._result_error else SUCCESS
+            res_r = _get_text_rect(res_font, self._result)
+            _render_text(surface, res_font, self._result, res_color,
+                         (self.rect.width - res_r.width) // 2, 268)
+
+        # Volver
+        pygame.draw.rect(surface, OPTION_BG, self._back_rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, self._back_rect, 1)
+        back_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        back_text = "VOLVER"
+        back_r = _get_text_rect(back_font, back_text)
+        _render_text(surface, back_font, back_text, TEXT_SECONDARY,
+                     self._back_rect.x + (self._back_rect.width - back_r.width) // 2,
+                     self._back_rect.y + (self._back_rect.height - back_r.height) // 2)
+
+    def _draw_field(self, surface: pygame.Surface, rect: pygame.Rect, key: str) -> None:
+        """Dibuja un campo editable con su etiqueta y valor enmascarado."""
+        active = key == self._active_field
+        border = NETWORK_ACTIVE if active else NETWORK_FIELD_BORDER
+        pygame.draw.rect(surface, NETWORK_FIELD_BG, rect)
+        pygame.draw.rect(surface, border, rect, 2 if active else 1)
+
+        label_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
+        label_r = _get_text_rect(label_font, _FIELD_LABELS[key])
+        _render_text(surface, label_font, _FIELD_LABELS[key], TEXT_SECONDARY,
+                     rect.x + 8, rect.centery - label_r.height // 2)
+
+        value = getattr(self, key)
+        val_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        display = "*" * len(value)
+        val_r = _get_text_rect(val_font, display)
+        _render_text(surface, val_font, display, NETWORK_TEXT,
+                     rect.x + 90, rect.centery - val_r.height // 2)
+
+    def _draw_action_btn(self, surface: pygame.Surface, rect: pygame.Rect,
+                         label: str) -> None:
+        """Dibuja un boton de accion (ACTIVAR/DESACTIVAR o CAMBIAR)."""
+        pygame.draw.rect(surface, NETWORK_ACCENT, rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, rect, 2)
+        font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        text_r = _get_text_rect(font, label)
+        _render_text(surface, font, label, (255, 255, 255),
+                     rect.x + (rect.width - text_r.width) // 2,
+                     rect.y + (rect.height - text_r.height) // 2)
+
+    def _draw_key(self, surface: pygame.Surface, rect: pygame.Rect, key: str) -> None:
+        """Dibuja una tecla del teclado numerico."""
+        pygame.draw.rect(surface, NETWORK_STEP_BG, rect)
+        pygame.draw.rect(surface, NETWORK_FIELD_BORDER, rect, 1)
+        font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
+        text_r = _get_text_rect(font, key)
+        _render_text(surface, font, key, NETWORK_TEXT,
+                     rect.x + (rect.width - text_r.width) // 2,
+                     rect.y + (rect.height - text_r.height) // 2)
+
+    def on_touch(self, screen_x: int, screen_y: int) -> bool:
+        """Maneja la interaccion: campos, teclado, toggle, cambiar y volver."""
+        for key, rect in self._field_rects.items():
+            if rect.collidepoint(screen_x, screen_y):
+                self._active_field = key
+                return True
+        for rect, key in self._key_rects:
+            if rect.collidepoint(screen_x, screen_y):
+                self._handle_key(key)
+                return True
+        if self._toggle_rect.collidepoint(screen_x, screen_y):
+            self._handle_toggle()
+            return True
+        if self._change_rect.collidepoint(screen_x, screen_y):
+            self._handle_change()
+            return True
+        if self._back_rect.collidepoint(screen_x, screen_y):
+            if self._on_back:
+                self._on_back()
+            return True
+        return False
+
+    def _handle_key(self, key: str) -> None:
+        """Aplica una tecla del keypad al campo activo (digito/BORRAR/LIMPIAR)."""
+        value = getattr(self, self._active_field)
+        if key == "BORRAR":
+            setattr(self, self._active_field, value[:-1])
+        elif key == "LIMPIAR":
+            setattr(self, self._active_field, "")
+        elif len(value) < self._MAX_LEN:
+            setattr(self, self._active_field, value + key)
+
+    def _handle_toggle(self) -> None:
+        """Valida y lanza el callback de activar/desactivar la proteccion."""
+        target = not self._enabled
+        if target and self._is_default:
+            self.set_result(
+                "Debes cambiar la contraseña de fábrica (1234) antes de activar",
+                error=True,
+            )
+            return
+        if not self.current:
+            self.set_result("Introduce la contraseña actual", error=True)
+            return
+        if self._on_toggle:
+            self._on_toggle(target, self.current)
+
+    def _handle_change(self) -> None:
+        """Valida y lanza el callback de cambio de contrasena."""
+        if not self.current:
+            self.set_result("Introduce la contraseña actual", error=True)
+            return
+        if len(self.new) < 8:
+            self.set_result("La nueva contraseña debe tener al menos 8 caracteres", error=True)
+            return
+        if self.new != self.confirm:
+            self.set_result("Las contraseñas no coinciden", error=True)
+            return
+        if self._on_change:
+            self._on_change(self.current, self.new)

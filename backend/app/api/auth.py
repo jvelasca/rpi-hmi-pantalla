@@ -460,8 +460,13 @@ async def set_security(request: Request, body: SecurityToggleRequest) -> JSONRes
     La autorización usa ``_authorize_security_change`` (cookie de sesión,
     ``X-API-Key`` o ``current``). Aplica rate-limit sobre los fallos.
 
+    Si se intenta **activar** la protección con la contraseña de fábrica
+    (``1234``) aún sin cambiar, devuelve ``409``: el usuario debe establecer
+    una contraseña personalizada antes de activar.
+
     Returns:
-        ``SecurityStatus`` actualizado, o ``401``/``429`` según corresponda.
+        ``SecurityStatus`` actualizado, o ``401``/``409``/``429`` según
+        corresponda.
     """
     ip = _client_ip(request)
     if rate_limiter.is_blocked(ip):
@@ -474,6 +479,17 @@ async def set_security(request: Request, body: SecurityToggleRequest) -> JSONRes
         rate_limiter.register_failure(ip)
         logger.warning("Cambio de seguridad rechazado desde %s", ip)
         return JSONResponse(status_code=401, content={"detail": "No autorizado"})
+
+    if body.enabled and security_manager.is_default_password():
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": (
+                    "Debes cambiar la contraseña de fábrica (1234) "
+                    "antes de activar la protección."
+                )
+            },
+        )
 
     rate_limiter.reset(ip)
     await security_manager.set_enabled(body.enabled)

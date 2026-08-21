@@ -909,3 +909,197 @@ class TestThemeConstants:
 
         assert BASE_WIDTH == 480
         assert BASE_HEIGHT == 320
+
+
+# ═══════════════════════════════════════════════════════════════
+# SecuritySettingsView (FASE 7c)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestSecuritySettingsView:
+    """Pruebas de la vista de gestion de contrasena con teclado numerico."""
+
+    def _key_rect(self, view, key: str):
+        """Devuelve el rect de la tecla del keypad por su etiqueta."""
+        for rect, k in view._key_rects:
+            if k == key:
+                return rect
+        raise AssertionError(f"Tecla no encontrada: {key}")
+
+    def test_initial_state(self):
+        """Estado inicial: desactivada, de fabrica, campo actual activo."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        assert view._enabled is False
+        assert view._is_default is True
+        assert view._active_field == "current"
+        assert view.current == ""
+        assert view.new == ""
+        assert view.confirm == ""
+
+    def test_set_status_updates_flags(self):
+        """set_status refleja enabled e is_default del dict."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.set_status({"enabled": True, "is_default": False})
+        assert view._enabled is True
+        assert view._is_default is False
+
+    def test_keypad_writes_to_active_field(self):
+        """Las teclas de digito se escriben en el campo activo (current por defecto)."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        for digit in ("1", "2", "3"):
+            rect = self._key_rect(view, digit)
+            view.on_touch(rect.centerx, rect.centery)
+        assert view.current == "123"
+
+    def test_field_selection_changes_active_field(self):
+        """Tocar un campo lo selecciona; el keypad escribe ahi."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        new_rect = view._field_rects["new"]
+        view.on_touch(new_rect.centerx, new_rect.centery)
+        assert view._active_field == "new"
+        for digit in ("4", "5"):
+            rect = self._key_rect(view, digit)
+            view.on_touch(rect.centerx, rect.centery)
+        assert view.new == "45"
+        assert view.current == ""
+
+    def test_borrar_removes_last_digit(self):
+        """BORRAR quita el ultimo digito del campo activo."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.current = "1234"
+        rect = self._key_rect(view, "BORRAR")
+        view.on_touch(rect.centerx, rect.centery)
+        assert view.current == "123"
+
+    def test_limpiar_empties_field(self):
+        """LIMPIAR vacia el campo activo."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.current = "1234"
+        rect = self._key_rect(view, "LIMPIAR")
+        view.on_touch(rect.centerx, rect.centery)
+        assert view.current == ""
+
+    def test_keypad_max_length(self):
+        """El campo activo no supera la longitud maxima (16)."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        for _ in range(20):
+            rect = self._key_rect(view, "9")
+            view.on_touch(rect.centerx, rect.centery)
+        assert len(view.current) == 16
+
+    def test_change_requires_min_8_chars(self):
+        """CAMBIAR no llama al callback si la nueva tiene menos de 8 caracteres."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        changed = []
+        view.set_on_change(lambda current, new: changed.append((current, new)))
+        view.current = "1234"
+        view.new = "1234567"
+        view.confirm = "1234567"
+        view.on_touch(view._change_rect.centerx, view._change_rect.centery)
+        assert changed == []
+        assert view._result_error is True
+
+    def test_change_requires_matching_confirm(self):
+        """CAMBIAR exige que nueva y confirmar coincidan."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        changed = []
+        view.set_on_change(lambda current, new: changed.append((current, new)))
+        view.current = "1234"
+        view.new = "12345678"
+        view.confirm = "87654321"
+        view.on_touch(view._change_rect.centerx, view._change_rect.centery)
+        assert changed == []
+
+    def test_change_callback(self):
+        """CAMBIAR valido invoca el callback con (current, new)."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        changed = []
+        view.set_on_change(lambda current, new: changed.append((current, new)))
+        view.current = "1234"
+        view.new = "12345678"
+        view.confirm = "12345678"
+        view.on_touch(view._change_rect.centerx, view._change_rect.centery)
+        assert changed == [("1234", "12345678")]
+
+    def test_toggle_blocks_activation_when_default(self):
+        """Activar con contrasena de fabrica se bloquea en cliente (sin callback)."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.set_status({"enabled": False, "is_default": True})
+        toggled = []
+        view.set_on_toggle(lambda enabled, current: toggled.append((enabled, current)))
+        view.current = "1234"
+        view.on_touch(view._toggle_rect.centerx, view._toggle_rect.centery)
+        assert toggled == []
+        assert view._result_error is True
+        assert "fábrica" in view._result
+
+    def test_toggle_requires_current(self):
+        """El toggle exige contrasena actual aunque no sea de fabrica."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.set_status({"enabled": False, "is_default": False})
+        toggled = []
+        view.set_on_toggle(lambda enabled, current: toggled.append((enabled, current)))
+        view.current = ""
+        view.on_touch(view._toggle_rect.centerx, view._toggle_rect.centery)
+        assert toggled == []
+
+    def test_toggle_callback(self):
+        """Toggle valido invoca el callback con (target, current)."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.set_status({"enabled": False, "is_default": False})
+        toggled = []
+        view.set_on_toggle(lambda enabled, current: toggled.append((enabled, current)))
+        view.current = "1234"
+        view.on_touch(view._toggle_rect.centerx, view._toggle_rect.centery)
+        assert toggled == [(True, "1234")]
+
+    def test_back_callback(self):
+        """VOLVER invoca el callback de retroceso."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        backed = []
+        view.set_on_back(lambda: backed.append(True))
+        view.on_touch(view._back_rect.centerx, view._back_rect.centery)
+        assert backed == [True]
+
+    def test_draw_renders_without_crash(self, surface):
+        """draw() no debe lanzar excepciones en estados exitoso y de error."""
+        from display.ui.widgets import SecuritySettingsView
+
+        view = SecuritySettingsView(480, 320)
+        view.set_status({"enabled": True, "is_default": False})
+        view.current = "1234"
+        view.new = "12345678"
+        view.confirm = "12345678"
+        view.set_result("Contrasena actualizada")
+        view.draw(surface)
+
+        view.set_result("Debes cambiar la contraseña de fábrica (1234) antes de activar", error=True)
+        view.draw(surface)

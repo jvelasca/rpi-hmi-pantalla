@@ -75,6 +75,7 @@ from display.ui.widgets import (  # noqa: E402
     LedIndicator,
     NetworkConfigView,
     ScreenTestView,
+    SecuritySettingsView,
     StatusBar,
     TouchCalibrationView,
     apply_font_settings,
@@ -89,7 +90,7 @@ def _load_version() -> str:
     try:
         return version_path.read_text(encoding="utf-8").strip()
     except OSError:
-        return "0.3.3"
+        return "0.3.4"
 
 
 __version__ = _load_version()
@@ -131,7 +132,7 @@ class DisplayApp:
         self._sync_interval: float = 3.0  # Solo como fallback cuando WS cae
 
         # V1.1: sistema de vistas
-        # "main" | "config" | "screen_test" | "touch_calib" | "network" | "font"
+        # "main" | "config" | "screen_test" | "touch_calib" | "network" | "font" | "security"
         self.view: str = "main"
 
         # Control de redibujado (event-driven) y calibración
@@ -230,6 +231,7 @@ class DisplayApp:
         self.touch_calib_view = TouchCalibrationView(w, h)
         self.network_view = NetworkConfigView(w, h)
         self.font_view = FontSettingsView(w, h)
+        self.security_view = SecuritySettingsView(w, h)
 
         # Conectar callbacks
         self.led.set_on_toggle(self._on_toggle_led)
@@ -241,6 +243,7 @@ class DisplayApp:
             self._show_touch_calib,
             self._show_network,
             self._show_font,
+            self._show_security,
             self._show_main,
         )
         self.screen_test_view.set_on_exit(self._show_config)
@@ -248,6 +251,9 @@ class DisplayApp:
         self.network_view.set_on_back(self._show_config)
         self.font_view.set_on_change(self._apply_font_settings)
         self.font_view.set_on_back(self._show_config)
+        self.security_view.set_on_back(self._show_config)
+        self.security_view.set_on_toggle(self._toggle_security)
+        self.security_view.set_on_change(self._change_password)
 
         # Lista de widgets interactivos (orden de hit-test) — vista principal
         self._interactive_widgets = [self.button, self.led, self.config_btn]
@@ -374,6 +380,63 @@ class DisplayApp:
             {"font_family": font_family, "text_size": text_size},
         )
         self._redraw = True
+
+    def _show_security(self) -> None:
+        """Muestra la configuracion de contrasena y carga el estado actual."""
+        self.security_view.set_result("")
+        self.view = "security"
+        self._redraw = True
+        self._fetch_security()
+
+    def _fetch_security(self) -> None:
+        """Carga el estado de seguridad actual desde el backend (no bloqueante)."""
+        def apply(data: dict | None) -> None:
+            if data is not None:
+                self.security_view.set_status(data)
+                self._redraw = True
+
+        self._api_get("/api/auth/security", on_result=apply)
+
+    def _toggle_security(self, enabled: bool, current: str) -> None:
+        """Activa o desactiva la proteccion por contrasena en background."""
+        def apply(result: dict | None) -> None:
+            if result is not None:
+                self.security_view.set_status(result)
+                self.security_view.set_result(
+                    "Proteccion activada" if enabled else "Proteccion desactivada",
+                )
+                self.security_view.clear_fields()
+                self._fetch_security()
+            else:
+                self.security_view.set_result(
+                    "No se pudo aplicar (contraseña actual incorrecta)", error=True
+                )
+            self._redraw = True
+
+        self._api_post_json(
+            "/api/auth/security",
+            {"enabled": enabled, "current": current},
+            on_result=apply,
+        )
+
+    def _change_password(self, current: str, new: str) -> None:
+        """Cambia la contrasena del panel en background."""
+        def apply(result: dict | None) -> None:
+            if result is not None:
+                self.security_view.set_result("Contrasena actualizada")
+                self.security_view.clear_fields()
+                self._fetch_security()
+            else:
+                self.security_view.set_result(
+                    "No se pudo cambiar (contraseña actual incorrecta)", error=True
+                )
+            self._redraw = True
+
+        self._api_post_json(
+            "/api/auth/password",
+            {"current": current, "new": new},
+            on_result=apply,
+        )
 
     def _register_calib_tap(self, raw_x: int, raw_y: int) -> None:
         """Registra un toque de calibración usando coordenadas RAW."""
@@ -643,6 +706,8 @@ class DisplayApp:
             self.network_view.draw(surface)
         elif self.view == "font":
             self.font_view.draw(surface)
+        elif self.view == "security":
+            self.security_view.draw(surface)
 
     # ── Bucle principal ─────────────────────────────────────────
 
@@ -805,6 +870,8 @@ class DisplayApp:
             self.network_view.on_touch(screen_x, screen_y)
         elif self.view == "font":
             self.font_view.on_touch(screen_x, screen_y)
+        elif self.view == "security":
+            self.security_view.on_touch(screen_x, screen_y)
         elif self.view == "touch_calib":
             # Solo se alcanza en modo mock (mouse): simula raw con pantalla
             self._register_calib_tap(screen_x, screen_y)
@@ -894,6 +961,7 @@ class DisplayApp:
             "touch_calib": self._show_touch_calib,
             "network": self._show_network,
             "font": self._show_font,
+            "security": self._show_security,
             "config": self._show_config,
             "main": self._show_main,
         }

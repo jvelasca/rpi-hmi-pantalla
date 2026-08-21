@@ -40,8 +40,8 @@ class ChangePasswordRequest(BaseModel):
 
     Attributes:
         current: Contraseña actual (obligatoria, siempre se verifica).
-        new: Nueva contraseña (mínimo 4 caracteres).
+        new: Nueva contraseña (mínimo 8 caracteres).
     """
 
     current: str = Field(description="Contraseña actual")
-    new: str = Field(min_length=4, description="Nueva contraseña (mín. 4 caracteres)")
+    new: str = Field(min_length=8, description="Nueva contraseña (mín. 8 caracteres)")

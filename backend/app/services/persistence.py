@@ -47,6 +47,7 @@ class Persistence:
         (1, "schema_inicial", "_migration_001"),
         (2, "indice_event_log", "_migration_002"),
         (3, "security_settings", "_migration_003"),
+        (4, "reset_password_enabled", "_migration_004"),
     ]
 
     def __init__(self, db_path: str) -> None:
@@ -174,13 +175,12 @@ class Persistence:
 
         Guarda el hash PBKDF2 de la contraseña del panel y el flag de
         activación. La fila inicial usa la contraseña de fábrica (``1234``)
-        y ``password_enabled=1`` solo si ``settings.security_mode`` es
-        ``protected`` (equivale al estado previo a la migración).
+        y ``password_enabled=0`` (el estado por defecto es **desactivado**;
+        ``SECURITY_MODE`` ya no gobierna este flag).
         """
         assert self._conn is not None
         # Import dentro del método para evitar imports circulares al
         # cargar el módulo (config/security no dependen de persistence).
-        from backend.app.config import settings
         from backend.app.services.password_hash import DEFAULT_PASSWORD, hash_password
 
         await self._conn.executescript("""
@@ -193,13 +193,24 @@ class Persistence:
         """)
 
         default_hash = hash_password(DEFAULT_PASSWORD)
-        enabled = 1 if settings.security_mode == "protected" else 0
+        enabled = 0
         await self._conn.execute(
             "INSERT OR IGNORE INTO security_settings "
             "(id, password_hash, password_enabled, updated_at) "
             "VALUES (1, ?, ?, datetime('now'))",
             (default_hash, enabled),
         )
+
+    async def _migration_004(self) -> None:
+        """Resetea ``password_enabled`` a 0 en instalaciones previas.
+
+        Forza el nuevo comportamiento "off por defecto": instalaciones que
+        arrancaban protegidas (``password_enabled=1``) quedan con la
+        contraseña del panel desactivada tras esta migración, y el usuario
+        debe activarla explícitamente (cambiando primero la de fábrica).
+        """
+        assert self._conn is not None
+        await self._conn.execute("UPDATE security_settings SET password_enabled = 0")
 
     async def close(self) -> None:
         """Cierra la conexion a la BD."""
@@ -319,7 +330,7 @@ class Persistence:
         Returns:
             Dict con ``password_hash`` (str) y ``password_enabled`` (bool).
             Si no hay fila (o la BD no está inicializada), devuelve los
-            defaults: hash de ``1234`` y el flag según ``settings.security_mode``.
+            defaults: hash de ``1234`` y ``password_enabled=False``.
         """
         if not self._conn:
             return self._default_security_settings()
@@ -349,13 +360,12 @@ class Persistence:
 
     @staticmethod
     def _default_security_settings() -> dict[str, object]:
-        """Devuelve los defaults de seguridad (hash de ``1234`` + flag inicial)."""
-        from backend.app.config import settings
+        """Devuelve los defaults de seguridad (hash de ``1234`` + flag desactivado)."""
         from backend.app.services.password_hash import DEFAULT_PASSWORD, hash_password
 
         return {
             "password_hash": hash_password(DEFAULT_PASSWORD),
-            "password_enabled": settings.security_mode == "protected",
+            "password_enabled": False,
         }
 
     # ── Event Log ──────────────────────────────────────────────

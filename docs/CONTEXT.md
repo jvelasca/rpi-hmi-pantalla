@@ -7,18 +7,28 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-21 (Fase 6 — gestión de contraseña del panel web)
+- **Fecha:** 2026-08-21 (Fase 7 — cierre de seguridad + GPIO20/21 + display)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
-- **Branch:** main · HEAD `881ec1a` (working tree con Fases 1-6, sin commit) · Versión `0.3.3`
-- **Trabajo actual:** Fase 6 completada: menú "Contraseña" en Configuración para activar/desactivar
-  y cambiar la contraseña del panel web (default de fábrica `1234`, persistida en SQLite con hash
-  PBKDF2 stdlib, separada de `ADMIN_API_KEY`). Nuevo `SecurityManager` (flag runtime
-  `is_enabled()` que reemplaza a `settings.security_mode` en deps/ws/auth-status) y endpoints
-  `GET/POST /api/auth/security` + `POST /api/auth/password`. Bump de versión 0.3.2 → 0.3.3.
-  - Fase 1 (auth session-cookie) · Fase 2 (docs) · Fase 3 (limpieza) · Fase 4 (hardening) ·
-    Fase 5 (verificación + bump 0.3.2) · Fase 6 (contraseña panel + bump 0.3.3).
-  - Verificación Fase 6: pytest 369 passed / 9 skipped · 27 vitest (verde) · ruff verde · build verde.
-  - Siguiente: auditoría final del usuario + deploy físico a la Pi + commit (orquestador).
+- **Branch:** main · Versión `0.3.4`
+- **Trabajo actual:** Fase 7 completada, atendiendo a la auditoría externa y a la petición del
+  usuario:
+  - **7a (seguridad):** contraseña del panel **OFF por defecto** (migración 004 resetea
+    `password_enabled` a 0; `SecurityManager` arranca en `False`, ya no depende de
+    `SECURITY_MODE`). **Forzar cambio de `1234` antes de activar** (`POST /api/auth/security`
+    → `409` si `is_default`; mínimo de contraseña subido de 4 a **8** caracteres). WS **sin
+    `?token=`** (solo `X-API-Key` / `Sec-WebSocket-Protocol` / cookie). `credentials: "include"`
+    en `fetch()`.
+  - **7b (GPIO):** `led1` pasa de virtual a **GPIO 20** (LED botón On/Off); nuevo dispositivo
+    `led_button` en **GPIO 21** (LED del pulsador, se enciende al pulsar) con nuevo callback
+    `set_updater_button` en `StateManager`.
+  - **7c (display físico):** nueva vista `"security"` en Pygame con menú "Contraseña" en el
+    overlay de CONFIGURACION, teclado numérico en pantalla, activar/desactivar y cambio de
+    contraseña (validación en cliente: bloqueo con `is_default` y mínimo 8).
+  - Fases previas: F1 auth session-cookie · F2 docs · F3 limpieza · F4 hardening ·
+    F5 verificación (0.3.2) · F6 contraseña panel (0.3.3) · F7 cierre (0.3.4).
+  - Verificación Fase 7: pytest backend 312 passed / 7 skipped · display 79 passed / 2 skipped ·
+    27 vitest · ruff verde · build verde.
+  - Siguiente: deploy físico a la Pi + commit/push (orquestador).
 
 ## Estado actual
 
@@ -31,7 +41,7 @@
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
 | Frontend SolidJS | CORRIENDO | http://<IP_DE_LA_PI>:8000/. Servido por FastAPI desde frontend/dist/. |
 | Docs | OK | Swagger en http://<IP_DE_LA_PI>:8000/docs |
-| Tests | 353 pytest + 26 vitest | 353 passed / 9 skipped (backend+display) + 26 vitest (frontend) |
+| Tests | 391 pytest + 27 vitest | 312 backend + 79 display passed / 9 skipped · 27 vitest (frontend) |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
 
 ## Fase 1: COMPLETADA

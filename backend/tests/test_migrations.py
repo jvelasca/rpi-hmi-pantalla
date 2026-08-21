@@ -26,22 +26,22 @@ class TestMigrationRunner:
 
     @pytest.mark.asyncio
     async def test_init_applies_all_migrations_on_new_db(self):
-        """En BD nueva, `init()` aplica todas las migraciones y deja version 3."""
+        """En BD nueva, `init()` aplica todas las migraciones y deja version 4."""
         db = Persistence(":memory:")
         await db.init()
         try:
-            assert await db.get_schema_version() == 3
+            assert await db.get_schema_version() == 4
         finally:
             await db.close()
 
     @pytest.mark.asyncio
     async def test_init_is_idempotent(self):
-        """Llamar `init()` dos veces no lanza error y mantiene la version en 3."""
+        """Llamar `init()` dos veces no lanza error y mantiene la version en 4."""
         db = Persistence(":memory:")
         await db.init()
         try:
             await db.init()
-            assert await db.get_schema_version() == 3
+            assert await db.get_schema_version() == 4
         finally:
             await db.close()
 
@@ -97,6 +97,29 @@ class TestMigration002:
             await db.close()
 
 
+class TestMigration004:
+    """Tests de la migracion que fuerza password_enabled=0 (off por defecto)."""
+
+    @pytest.mark.asyncio
+    async def test_resets_password_enabled_to_zero(self):
+        """`_migration_004` apaga la contrasena en instalaciones previas."""
+        db = Persistence(":memory:")
+        await db.init()
+        try:
+            # Simula una instalacion previa con la contrasena activada.
+            await db._conn.execute(
+                "UPDATE security_settings SET password_enabled = 1 WHERE id = 1"
+            )
+            await db._conn.commit()
+
+            await db._migration_004()
+
+            data = await db.get_security_settings()
+            assert data["password_enabled"] is False
+        finally:
+            await db.close()
+
+
 class TestLegacyDatabase:
     """Tests de compatibilidad con bases de datos legacy."""
 
@@ -108,7 +131,7 @@ class TestLegacyDatabase:
         `init()` detecta las tablas legacy y ejecuta las migraciones idempotentes:
         `_migration_001` usa `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE`,
         por lo que NO pierde la fila guardada y ademas crea `display_settings`
-        (tabla posterior al esquema legacy de 3 tablas). La version final es 3.
+        (tabla posterior al esquema legacy de 3 tablas). La version final es 4.
         """
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -156,8 +179,8 @@ class TestLegacyDatabase:
                     "font_family": "dejavu",
                     "text_size": "medium",
                 }
-                # (c) Version final 3 tras aplicar migraciones 001-003.
-                assert await db.get_schema_version() == 3
+                # (c) Version final 4 tras aplicar migraciones 001-004.
+                assert await db.get_schema_version() == 4
             finally:
                 await db.close()
         finally:

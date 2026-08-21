@@ -1,4 +1,4 @@
-# RPi HMI — Arquitectura del Sistema (v0.3.3)
+# RPi HMI — Arquitectura del Sistema (v0.3.4)
 
 > **Estado:** Implementado (V1, no en producción)  
 > **Última actualización:** 2026-08-20  
@@ -136,7 +136,7 @@ Rpi_Pantalla_V1/
 │   │   └── hardware/
 │   │       └── __init__.py          # Placeholder HAL (GPIO unificado en gpio_service)
 │   ├── config/
-│   │   └── devices.yaml             # Fuente única de verdad de pines (LED virtual)
+│   │   └── devices.yaml             # Fuente única de verdad de pines (LED GPIO20/21)
 │   ├── tests/                       # pytest (hmi, ws, auth, network, ssh, deploy, ...)
 │   ├── pyproject.toml
 │   └── requirements.txt
@@ -208,7 +208,7 @@ Rpi_Pantalla_V1/
 │
 ├── .env.example
 ├── .gitignore
-├── VERSION                          # Versión única del proyecto (0.3.3)
+├── VERSION                          # Versión única del proyecto (0.3.4)
 └── README.md
 ```
 
@@ -314,13 +314,13 @@ El sobre del mensaje incluye siempre `version`, `type` y (en servidor) `sequence
 ```
 
 Acciones válidas de `display_command`: `screen_test`, `touch_calib`, `network`,
-`font`, `config`, `main`.
+`font`, `security`, `config`, `main`.
 
 ### 5.2 Mensajes servidor → cliente
 
 ```json
 {"version": "1.0", "type": "status_update", "data": { ... }, "sequence": 0, "timestamp": "..."}
-{"version": "1.0", "type": "led_changed", "data": {"state": true, "label": "ENCENDIDO", "gpio_pin": 0}, "sequence": 1, "timestamp": "..."}
+{"version": "1.0", "type": "led_changed", "data": {"state": true, "label": "ENCENDIDO", "gpio_pin": 20}, "sequence": 1, "timestamp": "..."}
 {"version": "1.0", "type": "button_pressed", "data": {"pressed": true, "press_count": 5}, "sequence": 2, "timestamp": "..."}
 {"version": "1.0", "type": "button_released", "data": { ... }, "sequence": 3, "timestamp": "..."}
 {"version": "1.0", "type": "display_changed", "data": { ... }, "sequence": 4, "timestamp": "..."}
@@ -340,9 +340,10 @@ de `accept()`. Se aceptan, por orden de prioridad:
 
 1. Header `X-API-Key` (scripts/M2M).
 2. Cookie de sesión válida (navegador; emitida por `POST /api/auth/login`).
-3. Subprotocolo `Sec-WebSocket-Protocol` o query param `?token=`.
+3. Subprotocolo `Sec-WebSocket-Protocol`.
 
-Si falla, el handshake se cierra con close code `4401` (no se llama a `accept()`).
+El query param `?token=` **ya no** es una fuente de credencial. Si falla, el
+handshake se cierra con close code `4401` (no se llama a `accept()`).
 El subprotocolo anunciado por el frontend es `["rpi-hmi"]`.
 
 ---
@@ -379,9 +380,11 @@ class SystemStatus(BaseModel):
     timestamp: datetime
 ```
 
-El LED es **virtual** (`pin: null` en `backend/config/devices.yaml`), por lo que
-`gpio_pin` es `0`. El pin se resuelve en runtime desde `devices.yaml` (fuente única
-de verdad); el valor `default=0` es el fallback cuando no hay GPIO configurado.
+El LED principal está mapeado a **GPIO 20** y el LED del pulsador a **GPIO 21**
+(en `backend/config/devices.yaml`, roles `led` y `button_led`), por lo que
+`gpio_pin` de `LedState` es `20`. El pin se resuelve en runtime desde
+`devices.yaml` (fuente única de verdad); el valor `default=0` es el fallback
+cuando no hay GPIO configurado.
 
 Los equivalentes TypeScript viven en `frontend/src/types/api.ts` y los esquemas de
 validación runtime (Zod) de mensajes WS en `frontend/src/schemas/ws.ts`.
@@ -391,8 +394,11 @@ validación runtime (Zod) de mensajes WS en `frontend/src/schemas/ws.ts`.
 ## 7. Autenticación (flujo del panel web)
 
 `SECURITY_MODE` (`local` | `protected`, default `local`) controla si los mutadores
-exigen autenticación. Cuando es `protected`, el panel web usa un flujo de login por
-**cookie de sesión HttpOnly** (sustituye al antiguo `VITE_API_KEY`, que ya no existe).
+exigen el header `X-API-Key` (scripts/M2M). La **contraseña del panel** es un
+mecanismo independiente, **desactivado por defecto**, que protege el login del
+panel web. Cuando la protección del panel está activa, el panel web usa un flujo de
+login por **cookie de sesión HttpOnly** (sustituye al antiguo `VITE_API_KEY`, que
+ya no existe).
 
 ```
 Navegador                          Backend FastAPI
@@ -444,9 +450,9 @@ Usuario hace clic en botón web
   -> Pygame (si conectado) recibe WS y redibuja
 ```
 
-> El LED es virtual: no hay GPIO físico implicado. Si en el futuro se mapea un
-> pin real, el callback `set_updater` de `StateManager` sincroniza el GPIO vía
-> `GPIOService`.
+> El LED principal se mapea a **GPIO 20** y el LED del pulsador a **GPIO 21**.
+> Los callbacks `set_updater` y `set_updater_button` de `StateManager` sincronizan
+> ambos pines vía `GPIOService` cuando cambia su estado.
 
 ---
 
@@ -501,6 +507,24 @@ import pygame
 pygame.display.init()
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 ```
+
+### 11.3 Vista "security" (contraseña del panel)
+
+El overlay de CONFIGURACION del display físico incluye una opción **"Contrasena"**
+(`SecuritySettingsView` en `display/ui/widgets.py`, vista `"security"` en
+`display/app.py`) que permite:
+
+- Ver el estado de la protección por contraseña (activada/desactivada y de
+  fábrica `1234` / personalizada).
+- Activar/desactivar la protección (`POST /api/auth/security`).
+- Cambiar la contraseña (`POST /api/auth/password`).
+
+La introducción de texto se hace con un **teclado numérico en pantalla**
+(0-9 + `BORRAR` + `LIMPIAR`). **Limitación:** desde la pantalla física solo se
+pueden introducir contraseñas numéricas; para contraseñas alfanuméricas debe
+usarse el panel web. La validación de "mínimo 8 caracteres" y "no activar con
+la contraseña de fábrica" se hace en cliente (la capa REST del display pierde el
+código de estado HTTP); el backend la refuerza en profundidad (422/409).
 
 ---
 

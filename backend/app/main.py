@@ -95,26 +95,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         devices = load_devices(devices_path)
         led_pin = 0
-        for dev_id, dev in devices.items():
+        button_led_pin = 0
+        for dev in devices.values():
             if dev.type == DeviceType.DIGITAL_OUTPUT and dev.pin:
-                led_pin = dev.pin.bcm
-                logger.info(
-                    "Dispositivo GPIO detectado: %s en pin %d (%s)",
-                    dev_id,
-                    led_pin,
-                    dev.name,
-                )
-                break
+                role = dev.kwargs.get("role")
+                if role == "led":
+                    led_pin = dev.pin.bcm
+                elif role == "button_led":
+                    button_led_pin = dev.pin.bcm
 
         if led_pin > 0:
             gpio_service.setup_output(led_pin)
             logger.info("GPIO %d configurado como salida (LED)", led_pin)
-        else:
-            logger.warning(
-                "No se encontro pin GPIO output en devices.yaml. "
-                "El LED funcionara en modo virtual (sin GPIO fisico). "
-                "Verifica backend/config/devices.yaml"
-            )
+        if button_led_pin > 0:
+            gpio_service.setup_output(button_led_pin)
+            logger.info("GPIO %d configurado como salida (LED pulsador)", button_led_pin)
 
         # Conectar StateManager con GPIO via callback
         def _update_led(device: str, led_state: object) -> None:
@@ -123,8 +118,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             if isinstance(led_state, LedState) and led_state.gpio_pin > 0:
                 gpio_service.set_state(led_state.gpio_pin, led_state.state)
 
+        def _update_button(device: str, pressed: object) -> None:
+            if button_led_pin > 0:
+                gpio_service.set_state(button_led_pin, bool(pressed))
+
         state_manager.set_updater(_update_led)
+        state_manager.set_updater_button(_update_button)
         logger.info("Callback GPIO registrado en StateManager")
+
+        if led_pin == 0:
+            logger.warning(
+                "No se encontro pin GPIO output para el LED en devices.yaml. "
+                "El LED funcionara en modo virtual (sin GPIO fisico). "
+                "Verifica backend/config/devices.yaml"
+            )
     except Exception as exc:
         logger.warning("No se pudo inicializar GPIO: %s", exc)
 

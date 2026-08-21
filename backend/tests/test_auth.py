@@ -11,6 +11,8 @@ Cubre:
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -29,7 +31,8 @@ def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
     monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", ADMIN_KEY)
-    security_manager.reset()  # enabled=True (security_mode=protected) + hash "1234"
+    security_manager.reset()  # enabled=False + hash "1234"
+    asyncio.run(security_manager.set_enabled(True))
     return ADMIN_KEY
 
 

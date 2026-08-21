@@ -22,14 +22,41 @@ from backend.app.services.state_manager import state_manager
 # ── Helpers ────────────────────────────────────────────────────
 
 
-def _make_device(pin_bcm: int = 17, dev_type: DeviceType = DeviceType.DIGITAL_OUTPUT) -> DeviceConfig:
-    """Crea un DeviceConfig de prueba."""
+def _make_device(
+    pin_bcm: int = 17,
+    dev_type: DeviceType = DeviceType.DIGITAL_OUTPUT,
+    role: str = "led",
+) -> DeviceConfig:
+    """Crea un DeviceConfig de prueba con un ``role`` en kwargs."""
     return DeviceConfig(
         id="led1",
         type=dev_type,
         name="LED 1",
         pin=PinMapping(bcm=pin_bcm, name="LED_ROJO"),
+        kwargs={"role": role},
     )
+
+
+def _two_devices(
+    led_pin: int = 20, button_pin: int = 21
+) -> dict[str, DeviceConfig]:
+    """Crea los dos dispositivos LED (role=led y role=button_led)."""
+    return {
+        "led1": DeviceConfig(
+            id="led1",
+            type=DeviceType.DIGITAL_OUTPUT,
+            name="LED BOTON ON/OFF",
+            pin=PinMapping(bcm=led_pin, name="LED_BOTON_ONOFF"),
+            kwargs={"role": "led"},
+        ),
+        "led_button": DeviceConfig(
+            id="led_button",
+            type=DeviceType.DIGITAL_OUTPUT,
+            name="LED PULSADOR",
+            pin=PinMapping(bcm=button_pin, name="LED_PULSADOR"),
+            kwargs={"role": "button_led"},
+        ),
+    }
 
 
 # ── Startup tests ──────────────────────────────────────────────
@@ -40,13 +67,14 @@ class TestLifespanStartup:
 
     @pytest.mark.asyncio
     async def test_gpio_pin_loaded_from_devices_yaml(self):
-        """Al cargar devices.yaml, debe usar el pin BCM del dispositivo."""
-        device = _make_device(pin_bcm=17)
+        """Al cargar devices.yaml, configura los dos LEDs segun su role."""
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output") as mock_setup, \
            patch.object(state_manager, "set_updater") as mock_updater, \
+           patch.object(state_manager, "set_updater_button") as mock_updater_button, \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -60,8 +88,36 @@ class TestLifespanStartup:
             async with lifespan(app):
                 pass
 
-            mock_setup.assert_called_once_with(17)
+            assert mock_setup.call_count == 2
+            mock_setup.assert_any_call(20)
+            mock_setup.assert_any_call(21)
             mock_updater.assert_called_once()
+            mock_updater_button.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_button_led_pin_configured_as_output(self):
+        """El LED del pulsador (role=button_led) se configura como salida."""
+        devices = _two_devices(led_pin=20, button_pin=21)
+
+        with patch(
+            "backend.app.services.gpio_service.load_devices", return_value=devices
+        ), patch.object(gpio_service, "setup_output") as mock_setup, \
+           patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
+           patch.object(state_manager, "set_display"), \
+           patch.object(state_manager, "set_persistence"), \
+           patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
+           patch.object(state_manager, "flush_pending_tasks", new_callable=AsyncMock), \
+           patch.object(gpio_service, "cleanup"), \
+           patch.object(Path, "exists", return_value=False), \
+           patch("backend.app.main.settings.enable_admin_api", False), \
+           patch("backend.app.services.persistence.get_persistence", new_callable=AsyncMock), \
+           patch("backend.app.services.persistence.close_persistence", new_callable=AsyncMock):
+
+            async with lifespan(app):
+                pass
+
+            mock_setup.assert_any_call(21)
 
     @pytest.mark.asyncio
     async def test_gpio_not_configured_when_no_devices(self):
@@ -87,13 +143,14 @@ class TestLifespanStartup:
 
     @pytest.mark.asyncio
     async def test_gpio_setup_output_called_with_correct_pin(self):
-        """Verifica que setup_output se llame con el pin BCM correcto."""
-        device = _make_device(pin_bcm=23)
+        """Verifica que setup_output se llame con los pines BCM de cada role."""
+        devices = _two_devices(led_pin=23, button_pin=24)
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output") as mock_setup, \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -107,15 +164,16 @@ class TestLifespanStartup:
             async with lifespan(app):
                 pass
 
-            mock_setup.assert_called_once_with(23)
+            mock_setup.assert_any_call(23)
+            mock_setup.assert_any_call(24)
 
     @pytest.mark.asyncio
     async def test_state_manager_updater_callback_registered(self):
-        """Despues del startup, state_manager debe tener un updater_callback."""
-        device = _make_device(pin_bcm=17)
+        """Despues del startup, state_manager debe tener los updaters registrados."""
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
@@ -129,9 +187,7 @@ class TestLifespanStartup:
 
             async with lifespan(app):
                 assert state_manager._updater_callback is not None
-
-            # Asegurar que se llamo a set_updater
-            pass
+                assert state_manager._updater_button_callback is not None
 
     @pytest.mark.asyncio
     @pytest.mark.skip(
@@ -140,16 +196,17 @@ class TestLifespanStartup:
     )
     async def test_display_detected_drm_when_card0_exists(self):
         """Si /dev/dri/card0 existe, detecta display DRM piscreen."""
-        device = _make_device()
+        devices = _two_devices()
 
         # Patch pathlib.Path.exists directamente en el modulo
         with patch(
             "pathlib.Path.exists",
             side_effect=lambda self: str(self) == "/dev/dri/card0",
         ), patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display") as mock_display, \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -173,15 +230,16 @@ class TestLifespanStartup:
     )
     async def test_display_detected_fb_when_fb1_exists(self):
         """Si /dev/fb1 existe, detecta display framebuffer ili9486."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
             "pathlib.Path.exists",
             side_effect=lambda self: str(self) == "/dev/fb1",
         ), patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display") as mock_display, \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -201,12 +259,13 @@ class TestLifespanStartup:
     @pytest.mark.asyncio
     async def test_display_not_detected_when_none_exist(self):
         """Si ningun display existe, no se llama set_display con connected=True."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display") as mock_display, \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -230,12 +289,13 @@ class TestLifespanStartup:
     @pytest.mark.asyncio
     async def test_ssh_auto_connect_not_called_when_admin_api_disabled(self):
         """Con enable_admin_api=False, no se llama a auto_connect_ssh."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -255,13 +315,14 @@ class TestLifespanStartup:
     @pytest.mark.asyncio
     async def test_persistence_initialized_and_state_restored(self):
         """La persistencia se inicializa y se restaura el estado desde BD."""
-        device = _make_device()
+        devices = _two_devices()
         mock_db = AsyncMock()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence") as mock_set_pers, \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock) as mock_restore, \
@@ -306,12 +367,13 @@ class TestLifespanShutdown:
     @pytest.mark.asyncio
     async def test_flush_pending_tasks_called_on_shutdown(self):
         """Durante el shutdown, se llama a flush_pending_tasks."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -331,12 +393,13 @@ class TestLifespanShutdown:
     @pytest.mark.asyncio
     async def test_gpio_cleanup_called_on_shutdown(self):
         """Durante el shutdown, se llama a gpio_service.cleanup()."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \
@@ -355,12 +418,13 @@ class TestLifespanShutdown:
     @pytest.mark.asyncio
     async def test_close_persistence_called_on_shutdown(self):
         """Durante el shutdown, se llama a close_persistence()."""
-        device = _make_device()
+        devices = _two_devices()
 
         with patch(
-            "backend.app.services.gpio_service.load_devices", return_value={"led1": device}
+            "backend.app.services.gpio_service.load_devices", return_value=devices
         ), patch.object(gpio_service, "setup_output"), \
            patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
            patch.object(state_manager, "set_display"), \
            patch.object(state_manager, "set_persistence"), \
            patch.object(state_manager, "restore_from_db", new_callable=AsyncMock), \

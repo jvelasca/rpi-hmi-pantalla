@@ -13,6 +13,8 @@ Cubre:
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -34,7 +36,8 @@ def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
     monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", ADMIN_KEY)
-    security_manager.reset()  # enabled=True + contraseña "1234"
+    security_manager.reset()  # enabled=False + contraseña "1234"
+    asyncio.run(security_manager.set_enabled(True))
     return ADMIN_KEY
 
 
@@ -69,6 +72,11 @@ class TestSecurityStatus:
         r = client.get("/api/auth/security")
         assert r.status_code == 200
         assert r.json()["enabled"] is False
+
+    def test_security_manager_disabled_after_reset(self):
+        """El estado por defecto del SecurityManager es desactivado."""
+        security_manager.reset()
+        assert security_manager.is_enabled() is False
 
     def test_login_with_default_password(self, client, protected_mode):
         """El login con la contraseña de fábrica funciona con la seguridad activada."""
@@ -122,15 +130,15 @@ class TestSecurityEndpointsAuthorization:
         """POST /auth/password con `current` incorrecto -> 401."""
         r = client.post(
             "/api/auth/password",
-            json={"current": "incorrecta", "new": "5678"},
+            json={"current": "incorrecta", "new": "56781234"},
         )
         assert r.status_code == 401
 
     def test_change_password_short_new_returns_422(self, client, protected_mode):
-        """POST /auth/password con `new` < 4 caracteres -> 422."""
+        """POST /auth/password con `new` de menos de 8 caracteres -> 422."""
         r = client.post(
             "/api/auth/password",
-            json={"current": DEFAULT_PASSWORD, "new": "abc"},
+            json={"current": DEFAULT_PASSWORD, "new": "1234567"},
         )
         assert r.status_code == 422
 
@@ -139,10 +147,18 @@ class TestToggleEnabled:
     """Activar/desactivar cambia el comportamiento de auth."""
 
     def test_enable_requires_auth_for_mutators(self, client):
-        """Al activar, auth/status pasa a protected y los mutadores exigen auth."""
+        """Al activar (tras cambiar la de fábrica), auth/status pasa a protected
+        y los mutadores exigen auth."""
+        # Primero se cambia la contraseña de fábrica (mín. 8).
+        r = client.post(
+            "/api/auth/password",
+            json={"current": DEFAULT_PASSWORD, "new": "nueva-clave-123"},
+        )
+        assert r.status_code == 200
+
         r = client.post(
             "/api/auth/security",
-            json={"enabled": True, "current": DEFAULT_PASSWORD},
+            json={"enabled": True, "current": "nueva-clave-123"},
         )
         assert r.status_code == 200
         assert r.json()["enabled"] is True
@@ -153,6 +169,15 @@ class TestToggleEnabled:
 
         # Mutador sin auth -> 401
         assert client.post("/api/led/on").status_code == 401
+
+    def test_enable_with_default_password_returns_409(self, client):
+        """Activar la protección con la contraseña de fábrica devuelve 409."""
+        r = client.post(
+            "/api/auth/security",
+            json={"enabled": True, "current": DEFAULT_PASSWORD},
+        )
+        assert r.status_code == 409
+        assert "1234" in r.json()["detail"]
 
     def test_disable_restores_local_mode(self, client, protected_mode):
         """Al desactivar, auth/status vuelve a local y los mutadores no exigen auth."""
@@ -180,7 +205,7 @@ class TestChangePassword:
 
         r = client.post(
             "/api/auth/password",
-            json={"current": DEFAULT_PASSWORD, "new": "5678"},
+            json={"current": DEFAULT_PASSWORD, "new": "nueva-clave-123"},
         )
         assert r.status_code == 200
         assert r.json() == {"success": True}
@@ -192,7 +217,7 @@ class TestChangePassword:
 
         # La nueva funciona
         assert client.post(
-            "/api/auth/login", json={"password": "5678"}
+            "/api/auth/login", json={"password": "nueva-clave-123"}
         ).status_code == 200
 
         # La sesión emitida antes del cambio quedó revocada
@@ -206,7 +231,7 @@ class TestChangePassword:
         """Tras cambiar la contraseña, is_default pasa a False."""
         client.post(
             "/api/auth/password",
-            json={"current": DEFAULT_PASSWORD, "new": "5678"},
+            json={"current": DEFAULT_PASSWORD, "new": "nueva-clave-123"},
         )
         r = client.get("/api/auth/security")
         assert r.json()["is_default"] is False
@@ -217,12 +242,12 @@ class TestPersistenceRoundTrip:
 
     @pytest.mark.asyncio
     async def test_migration_003_seeds_default_row(self):
-        """La migración 003 crea la fila con hash de ``1234`` y flag inicial."""
+        """La migración 003 crea la fila con hash de ``1234`` y flag desactivado."""
         db = Persistence(":memory:")
         await db.init()
         try:
             data = await db.get_security_settings()
-            # settings.security_mode por defecto es "local" en tests.
+            # La migración 003 siembra siempre password_enabled=0 (off por defecto).
             assert data["password_enabled"] is False
             assert verify_password(DEFAULT_PASSWORD, str(data["password_hash"]))
         finally:

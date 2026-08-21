@@ -1,10 +1,11 @@
 """SecurityManager — Estado runtime de la contraseña del panel web.
 
-Singleton que sustituye al flag estático ``settings.security_mode`` por un
-estado **cambiable en caliente y persistido en SQLite**:
+Singleton con un estado **cambiable en caliente y persistido en SQLite**:
 
 - ``is_enabled()`` controla si el login del panel y la protección de los
-  mutadores HMI están activos (equivale al antiguo ``SECURITY_MODE``).
+  mutadores HMI están activos. El estado por defecto es **desactivado**
+  (la web no pide contraseña al cargar); ``SECURITY_MODE`` ya **no** lo
+  gobierna.
 - ``verify_password()`` valida la contraseña del panel contra el hash
   persistido (por defecto ``"1234"``).
 - ``set_enabled``/``set_password`` persisten el cambio en SQLite y actualizan
@@ -24,7 +25,6 @@ import logging
 import threading
 from typing import Any
 
-from backend.app.config import settings
 from backend.app.services.password_hash import (
     DEFAULT_PASSWORD,
     hash_password,
@@ -49,7 +49,7 @@ class SecurityManager:
 
     def __init__(self) -> None:
         self._lock: threading.Lock = threading.Lock()
-        self._enabled: bool = settings.security_mode == "protected"
+        self._enabled: bool = False
         self._password_hash: str = hash_password(DEFAULT_PASSWORD)
         self._persistence: Any = None
 
@@ -138,12 +138,12 @@ class SecurityManager:
     def reset(self) -> None:
         """Devuelve el estado a los defaults (util en tests).
 
-        Restaura ``_enabled`` según ``settings.security_mode``, el hash de
-        ``DEFAULT_PASSWORD`` y desvincula la referencia de persistencia para
-        evitar contaminación entre tests.
+        Restaura ``_enabled`` a ``False`` (la seguridad del panel queda
+        desactivada por defecto), el hash de ``DEFAULT_PASSWORD`` y desvincula
+        la referencia de persistencia para evitar contaminación entre tests.
         """
         with self._lock:
-            self._enabled = settings.security_mode == "protected"
+            self._enabled = False
             self._password_hash = hash_password(DEFAULT_PASSWORD)
             self._persistence = None
 

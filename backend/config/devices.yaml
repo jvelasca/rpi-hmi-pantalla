@@ -9,15 +9,25 @@
 #   - pin: mapeo de pines (bcm + name) - None si no usa GPIO directo
 #   - kwargs: parametros adicionales especificos del dispositivo
 #
-# NOTA (V1.1): Los LEDs son VIRTUALES (solo visual, en pantalla y web).
-# No se mapean a GPIO fisico para evitar conflicto con el pin de
-# interrupcion del panel tactil (GPIO 17 = TP_IRQ/pendown).
+# NOTA (V1.2): Dos LEDs fisicos:
+#   - led1 (GPIO 20, role=led): LED del boton On/Off.
+#   - led_button (GPIO 21, role=button_led): LED del pulsador.
 
 devices:
   - id: led1
     type: digital_output
-    name: "LED 1"
-    pin: null
+    name: "LED BOTON ON/OFF"
+    pin:
+      bcm: 20
+      name: "LED_BOTON_ONOFF"
     kwargs:
-      virtual: true
       role: led
+
+  - id: led_button
+    type: digital_output
+    name: "LED PULSADOR"
+    pin:
+      bcm: 21
+      name: "LED_PULSADOR"
+    kwargs:
+      role: button_led
