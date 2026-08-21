@@ -5,7 +5,7 @@ Jerarquia de widgets:
     ├── Panel          — Contenedor rectangular con borde
     ├── HeaderWidget   — Barra de titulo superior
     ├── StatusBar      — Barra de estado inferior
-    ├── LedIndicator   — Circulo LED con estado ON/OFF y boton toggle
+    ├── LedIndicator   — Circulo LED con estado ON/OFF e interruptor
     └── ButtonWidget   — Boton circular con contador de pulsaciones
 
 Soporta pygame.freetype (preferido) y pygame.font (fallback para ARMv6).
@@ -354,12 +354,12 @@ class StatusBar(Widget):
 
 
 # ═══════════════════════════════════════════════════════════════
-# LedIndicator — Circulo LED con boton toggle
+# LedIndicator — Circulo LED con interruptor
 # ═══════════════════════════════════════════════════════════════
 
 
 class LedIndicator(Widget):
-    """Indicador LED circular con boton TOGGLE integrado."""
+    """Indicador LED circular con interruptor ON/OFF integrado."""
 
     def __init__(self, x: int, y: int, w: int, h: int,
                  label: str = "LED 1", gpio_pin: int = 17) -> None:
@@ -382,11 +382,11 @@ class LedIndicator(Widget):
                                      w - 2 * padding, btn_h)
 
     def set_on_toggle(self, callback: callable) -> None:
-        """Registra el callback invocado al tocar el boton toggle del LED."""
+        """Registra el callback invocado al tocar el interruptor del LED."""
         self._on_toggle = callback
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Dibuja el panel LED: titulo, circulo indicador y boton toggle."""
+        """Dibuja el panel LED: titulo, circulo indicador e interruptor."""
         if not self.visible:
             return
 
@@ -429,8 +429,8 @@ class LedIndicator(Widget):
         _render_text(surface, state_font, state_text, state_color, state_x, state_y)
 
     def _draw_toggle_button(self, surface: pygame.Surface) -> None:
-        """Dibuja el boton toggle con la etiqueta segun el estado del LED."""
-        label = "APAGAR" if self.on else "ENCENDER"
+        """Dibuja el interruptor con la etiqueta segun el estado del LED."""
+        label = "ON" if self.on else "OFF"
         btn_rect = self._btn_rect
 
         pygame.draw.rect(surface, BUTTON_BG, btn_rect)
@@ -443,13 +443,13 @@ class LedIndicator(Widget):
         _render_text(surface, btn_font, label, BUTTON_TEXT, text_x, text_y)
 
     def hit_test(self, screen_x: int, screen_y: int) -> bool:
-        """Devuelve True si el toque cae dentro del boton toggle del LED."""
+        """Devuelve True si el toque cae dentro del interruptor del LED."""
         if not self.visible or not self.enabled:
             return False
         return self._btn_rect.collidepoint(screen_x, screen_y)
 
     def on_touch(self, screen_x: int, screen_y: int) -> bool:
-        """Activa el callback de toggle si el toque cae en el boton."""
+        """Activa el callback del interruptor si el toque cae en el boton."""
         if self._btn_rect.collidepoint(screen_x, screen_y):
             if self._on_toggle:
                 self._on_toggle()
@@ -466,7 +466,7 @@ class ButtonWidget(Widget):
     """Boton circular interactivo con contador de pulsaciones."""
 
     def __init__(self, x: int, y: int, w: int, h: int,
-                 label: str = "BOTON TOGGLE LED") -> None:
+                 label: str = "PULSADOR") -> None:
         super().__init__(x, y, w, h)
         self.pressed: bool = False
         self.press_count: int = 0
@@ -527,7 +527,7 @@ class ButtonWidget(Widget):
             pygame.draw.circle(surface, LED_OFF_HIGHLIGHT, (cx - r // 3, cy - r // 3), r // 4)
 
     def _draw_button(self, surface: pygame.Surface) -> None:
-        """Dibuja el circulo del boton con la etiqueta ALTERNAR/ALTERNADO."""
+        """Dibuja el circulo del boton con la etiqueta PULSAR/PULSADO."""
         cx, cy = self._btn_center_x, self._btn_center_y
         r = self._btn_radius
 
@@ -535,13 +535,13 @@ class ButtonWidget(Widget):
             pygame.draw.circle(surface, BTN_PRESSED_BG, (cx, cy), r)
             pygame.draw.circle(surface, BTN_PRESSED_MID, (cx, cy), r - 3)
             btn_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
-            label = "ALTERNADO"
+            label = "PULSADO"
             color = BTN_PRESSED_TEXT
         else:
             pygame.draw.circle(surface, BTN_IDLE_BG, (cx, cy), r)
             pygame.draw.circle(surface, BTN_IDLE_MID, (cx, cy), r - 3)
             btn_font = _get_font(FONT_BOLD, FONT_SIZE_HEADING)
-            label = "ALTERNAR"
+            label = "PULSAR"
             color = BUTTON_TEXT
 
         text_rect = _get_text_rect(btn_font, label)

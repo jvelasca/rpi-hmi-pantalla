@@ -124,7 +124,6 @@ class DisplayApp:
 
         # Estado local (cache del backend)
         self.led_on: bool = False
-        self.led_label: str = "APAGADO"
         self.press_count: int = 0
         self.backend_connected: bool = False
         self.ws_connected: bool = False
@@ -212,12 +211,12 @@ class DisplayApp:
         # Panel LED (izquierda)
         led_x = int(LED_PANEL_X * sx)
         led_w = int(LED_PANEL_W * sx)
-        self.led = LedIndicator(led_x, content_y, led_w, content_h, label="BOTON ON/OFF")
+        self.led = LedIndicator(led_x, content_y, led_w, content_h, label="INTERRUPTOR ON/OFF")
 
         # Panel Botón (derecha)
         btn_w = int(BTN_PANEL_W * sx)
         btn_x = w - btn_w - int(margin * sx)
-        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h, label="BOTON TOGGLE LED")
+        self.button = ButtonWidget(btn_x, content_y, btn_w, content_h, label="PULSADOR")
 
         # Footer
         self.status_bar = StatusBar(0, h - footer_h, w, footer_h)
@@ -584,19 +583,16 @@ class DisplayApp:
             btn_data = data.get("button", {})
 
             new_led_on = led_data.get("state", self.led_on)
-            new_led_label = led_data.get("label", "APAGADO")
             new_press_count = btn_data.get("press_count", self.press_count)
             new_ws_connected = data.get("websocket_clients", 0) > 0
 
             with self._ws_lock:
                 self.led_on = new_led_on
-                self.led_label = new_led_label
                 self.press_count = new_press_count
                 self.ws_connected = new_ws_connected
 
-            if self.led.on != new_led_on or self.led.label != new_led_label:
+            if self.led.on != new_led_on:
                 self.led.on = new_led_on
-                self.led.label = new_led_label
                 self._redraw = True
             if self.button.press_count != new_press_count:
                 self.button.press_count = new_press_count
@@ -646,14 +642,12 @@ class DisplayApp:
             with self._ws_lock:
                 if msg_type == "led_changed":
                     self.led_on = data.get("state", self.led_on)
-                    self.led_label = data.get("label", self.led_label)
                 elif msg_type == "button_pressed":
                     self.press_count = data.get("press_count", self.press_count)
                 elif msg_type == "status_update":
                     led_d = data.get("led", {})
                     btn_d = data.get("button", {})
                     self.led_on = led_d.get("state", self.led_on)
-                    self.led_label = led_d.get("label", self.led_label)
                     self.press_count = btn_d.get("press_count", self.press_count)
                 elif msg_type == "display_command":
                     self._pending_display_action = data.get("action", "")
@@ -923,7 +917,6 @@ class DisplayApp:
             self._ws_dirty = False
             # Copiar estado bajo lock
             led_on = self.led_on
-            led_label = self.led_label
             press_count = self.press_count
             pending_action = self._pending_display_action
             self._pending_display_action = None
@@ -933,9 +926,8 @@ class DisplayApp:
             self._pending_text_size = None
 
         # Fuera del lock: aplicar a widgets (solo hilo principal)
-        if self.led.on != led_on or self.led.label != led_label:
+        if self.led.on != led_on:
             self.led.on = led_on
-            self.led.label = led_label
             changed = True
         if self.button.press_count != press_count:
             self.button.press_count = press_count

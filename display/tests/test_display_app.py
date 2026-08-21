@@ -171,13 +171,12 @@ class TestDisplayAppStateSync:
 
         # Estado simulado (WS thread ya escribio)
         app.led_on = True
-        app.led_label = "ENCENDIDO"
         app.press_count = 0
         app._ws_dirty = True
 
         app.led = LedIndicator(10, 50, 180, 230)
         app.led.on = False
-        app.led.label = "APAGADO"
+        app.led.label = "INTERRUPTOR ON/OFF"
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
@@ -188,7 +187,7 @@ class TestDisplayAppStateSync:
         result = app._apply_ws_state()
         assert result is True
         assert app.led.on is True
-        assert app.led.label == "ENCENDIDO"
+        assert app.led.label == "INTERRUPTOR ON/OFF"
 
     def test_apply_ws_state_button_pressed(self) -> None:
         """_apply_ws_state aplica cambios de button press_count."""
@@ -202,7 +201,6 @@ class TestDisplayAppStateSync:
         app._ws_lock = threading.Lock()
 
         app.led_on = False
-        app.led_label = "APAGADO"
         app.press_count = 42
         app._ws_dirty = True
 
@@ -232,13 +230,12 @@ class TestDisplayAppStateSync:
         app._ws_lock = threading.Lock()
 
         app.led_on = True
-        app.led_label = "LED_ON"
         app.press_count = 99
         app._ws_dirty = True
 
         app.led = LedIndicator(10, 50, 180, 230)
         app.led.on = False
-        app.led.label = "APAGADO"
+        app.led.label = "INTERRUPTOR ON/OFF"
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
@@ -249,7 +246,7 @@ class TestDisplayAppStateSync:
         result = app._apply_ws_state()
         assert result is True
         assert app.led.on is True
-        assert app.led.label == "LED_ON"
+        assert app.led.label == "INTERRUPTOR ON/OFF"
         assert app.button.press_count == 99
 
     def test_apply_ws_state_invalid_data_handled(self) -> None:
@@ -264,7 +261,6 @@ class TestDisplayAppStateSync:
         app._ws_lock = threading.Lock()
 
         app.led_on = False
-        app.led_label = "APAGADO"
         app.press_count = 0
         app._ws_dirty = False  # No hay datos nuevos
 

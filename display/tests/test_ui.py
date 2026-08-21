@@ -512,14 +512,13 @@ class TestDisplayAppThreadSafety:
 
         # Estado compartido simulado (WS thread ya escribio)
         app.led_on = True
-        app.led_label = "ENCENDIDO"
         app.press_count = 5
         app._ws_dirty = True
 
         # Widgets reales (sin inicializar via __init__ completo)
         app.led = LedIndicator(10, 50, 180, 230)
         app.led.on = False
-        app.led.label = "APAGADO"
+        app.led.label = "INTERRUPTOR ON/OFF"
         app.button = ButtonWidget(260, 50, 180, 230)
         app.button.press_count = 0
 
@@ -530,7 +529,7 @@ class TestDisplayAppThreadSafety:
         result = app._apply_ws_state()
         assert result is True
         assert app.led.on is True
-        assert app.led.label == "ENCENDIDO"
+        assert app.led.label == "INTERRUPTOR ON/OFF"
         assert app.button.press_count == 5
         assert app._ws_dirty is False  # dirty flag se limpia
 
@@ -549,7 +548,6 @@ class TestDisplayAppThreadSafety:
         app._ws_lock = threading.Lock()
 
         app.led_on = False
-        app.led_label = "APAGADO"
         app.press_count = 0
         app._ws_dirty = True
 
