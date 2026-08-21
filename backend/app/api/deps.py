@@ -107,19 +107,18 @@ def require_admin_api_key(
 
 
 def require_admin_api_key_always(
-    request: Request,
     api_key: str | None = Security(_api_key_header),
 ) -> None:
     """Exige autenticacion SIEMPRE, independiente del estado del panel.
 
-    Se usa en los endpoints ``/admin/*`` (SSH y deploy). A diferencia de
-    ``require_admin_api_key``, no respeta la contraseña del panel (exige
-    siempre). Acepta ``X-API-Key`` (scripts/M2M) o cookie de sesion valida
-    (navegador).
+    Se usa en los endpoints ``/admin/*`` (SSH y deploy). Acepta EXCLUSIVAMENTE
+    ``X-API-Key`` (credencial M2M fuerte); NO acepta la cookie de sesion del
+    panel web, para que una contraseña HMI de bajo privilegio nunca se
+    convierta en credencial administrativa.
 
     Raises:
         HTTPException 503: Si no hay ``ADMIN_API_KEY`` configurada.
-        HTTPException 401: Si no hay credencial valida.
+        HTTPException 401: Si la key falta o no coincide.
     """
     if not settings.admin_api_key:
         logger.warning("ADMIN_API_KEY no configurada en .env")
@@ -127,9 +126,6 @@ def require_admin_api_key_always(
             status_code=503,
             detail="API administrativa no configurada. Establece ADMIN_API_KEY en .env",
         )
-
-    if _has_valid_session(request):
-        return None
 
     _require_matching_key(api_key)
 

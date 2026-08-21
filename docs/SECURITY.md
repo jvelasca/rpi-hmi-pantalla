@@ -39,7 +39,7 @@
 | **SECURITY** | `GET /api/auth/security`, `POST /api/auth/security`, `POST /api/auth/password` | `GET` es público; los `POST` exigen cookie de sesión, `X-API-Key` o la contraseña actual (`current`) |
 | **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
 | **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **o** cookie de sesión, **solo si** la contraseña del panel está activada (loopback exento) |
-| **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **o** cookie de sesión, **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
+| **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` (ADMIN_API_KEY) **únicamente**, **siempre** (no acepta cookie de sesión); solo existen si `ENABLE_ADMIN_API=true` |
 
 Notas:
 
@@ -147,8 +147,9 @@ Dependencias de auth (ver `backend/app/api/deps.py`):
   contraseña del panel está desactivada no exige nada; si está activada exige
   `X-API-Key` **o** cookie de sesión, salvo desde loopback). Se usa en los
   mutadores HMI y de red.
-- `require_admin_api_key_always` — exige `X-API-Key` **o** cookie de sesión
-  **siempre**; si `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
+- `require_admin_api_key_always` — exige `X-API-Key` (ADMIN_API_KEY)
+  **únicamente**, **siempre** (NO acepta cookie de sesión); si `ADMIN_API_KEY`
+  está vacía devuelve `503`. Se usa en `/admin/*`.
 
 Ejemplo de `.env`:
 
@@ -318,5 +319,6 @@ contraseña primero.
 El chequeo de la cookie de sesión se realiza **antes** del chequeo de
 `ADMIN_API_KEY` vacía, de modo que el panel web funciona aunque `ADMIN_API_KEY`
 no esté configurada (solo se exige `ADMIN_API_KEY` para el path `X-API-Key`).
-`require_admin_api_key_always` (para `/admin/*`) mantiene su semántica
-(`ADMIN_API_KEY` + sesión).
+`require_admin_api_key_always` (para `/admin/*`) exige `X-API-Key`
+(`ADMIN_API_KEY`) **únicamente**: ya **no** acepta cookie de sesión, de modo
+que una contraseña HMI de bajo privilegio nunca concede acceso administrativo.

@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141-green?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SolidJS](https://img.shields.io/badge/SolidJS-1.9-blue?logo=solid)](https://www.solidjs.com/)
-[![Tests](https://img.shields.io/badge/tests-346%20pytest%20%2B%2026%20vitest-green)]()
+[![Tests](https://img.shields.io/badge/tests-396%20pytest%20%2B%2027%20vitest-green)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/jvelasca/rpi-hmi-pantalla/blob/main/LICENSE)
 
 Plataforma HMI (Human-Machine Interface) para Raspberry Pi con pantalla táctil 3.5",
@@ -68,7 +68,7 @@ botón virtual y LED interactivo. Comunicación en tiempo real vía WebSocket.
 | **Touch** | evdev | Driver ADS7846/XPT2046 |
 | **Frontend Web** | SolidJS + TypeScript + Vite + Tailwind v4 | Panel de control < 11 KB gzip |
 | **Systemd** | 2 services | Auto-boot backend + display (lightdm disabled) |
-| **Tests** | Pytest + Vitest | 346 tests (backend+display) + 26 frontend |
+| **Tests** | Pytest + Vitest | 396 tests (backend+display) + 27 frontend |
 
 ---
 
@@ -267,7 +267,7 @@ rpi-hmi-pantalla/
 
 ## Tests
 
-Estado verificado por CI (2026-08-20): **346 tests** (pytest, backend + display) y **26 tests** de frontend (Vitest).
+Estado verificado por CI (2026-08-20): **396 tests** (pytest, backend + display) y **27 tests** de frontend (Vitest).
 
 ```bash
 # Suite completa (backend + display)

@@ -548,6 +548,34 @@ class TestAdminDeployIntegration:
         assert isinstance(data["results"], list)
         assert isinstance(data["count"], int)
 
+    def test_admin_does_not_accept_hmi_session_cookie(self, client, auth_headers):
+        """Una cookie de sesion HMI no da acceso a /admin/* (solo X-API-Key)."""
+        import asyncio
+
+        from backend.app.api.auth import SESSION_COOKIE_NAME
+        from backend.app.services.security_manager import security_manager
+
+        # Activar la seguridad del panel para poder emitir una sesion valida.
+        security_manager.reset()
+        asyncio.run(security_manager.set_enabled(True))
+
+        # Login con la contraseña de fabrica -> cookie de sesion valida.
+        login = client.post("/api/auth/login", json={"password": "1234"})
+        assert login.status_code == 200, login.text
+        token = login.cookies.get(SESSION_COOKIE_NAME)
+        assert token
+
+        # La cookie NO debe autenticar el endpoint admin (401).
+        r = client.get(
+            "/admin/deploy/scan",
+            headers={"Cookie": f"{SESSION_COOKIE_NAME}={token}"},
+        )
+        assert r.status_code == 401
+
+        # El header X-API-Key si debe autenticar (200).
+        r = client.get("/admin/deploy/scan", headers=auth_headers)
+        assert r.status_code == 200
+
     def test_setup_without_ssh_connection(self, client, auth_headers):
         """POST /admin/deploy/setup sin SSH -> 503."""
         ssh_mod = _get_ssh_module()

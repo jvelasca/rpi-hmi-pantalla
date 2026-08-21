@@ -5,7 +5,6 @@ Valida defaults, seguridad, y carga de .env.
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -145,10 +144,8 @@ class TestAuthDependencies:
 
         monkeypatch.setattr(config_module.settings, "admin_api_key", "")
 
-        request = SimpleNamespace(headers={})
-
         with pytest.raises(HTTPException) as exc_info:
-            require_admin_api_key_always(request=request, api_key=None)
+            require_admin_api_key_always(api_key=None)
 
         assert exc_info.value.status_code == 503
 

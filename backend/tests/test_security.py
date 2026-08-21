@@ -288,3 +288,38 @@ class TestSecurityManagerFailClosed:
         persistence.get_security_settings.side_effect = RuntimeError("db corrupta")
         with pytest.raises(RuntimeError):
             await security_manager.load(persistence)
+
+
+class TestSecurityManagerSetFailClosed:
+    """Los setters persisten PRIMERO y solo actualizan RAM tras un guardado OK."""
+
+    @pytest.mark.asyncio
+    async def test_set_enabled_keeps_ram_on_persistence_failure(self):
+        """Si el guardado falla, set_enabled no cambia la cache en memoria."""
+        sm = SecurityManager()
+        fake = AsyncMock()
+        sm._persistence = fake
+
+        # Alcanzar enabled=True con un guardado que funciona.
+        await sm.set_enabled(True)
+        assert sm.is_enabled() is True
+
+        fake.save_security_settings.side_effect = RuntimeError("db rota")
+        with pytest.raises(RuntimeError):
+            await sm.set_enabled(False)
+        assert sm.is_enabled() is True
+
+    @pytest.mark.asyncio
+    async def test_set_password_keeps_ram_on_persistence_failure(self):
+        """Si el guardado falla, set_password no cambia la contraseña en RAM."""
+        sm = SecurityManager()
+        fake = AsyncMock()
+        sm._persistence = fake
+
+        assert sm.verify_password(DEFAULT_PASSWORD) is True
+
+        fake.save_security_settings.side_effect = RuntimeError("db rota")
+        with pytest.raises(RuntimeError):
+            await sm.set_password("nueva-clave-123")
+        assert sm.verify_password(DEFAULT_PASSWORD) is True
+        assert sm.verify_password("nueva-clave-123") is False

@@ -116,28 +116,38 @@ class SecurityManager:
     async def set_enabled(self, enabled: bool) -> None:
         """Activa/desactiva la contraseña del panel y persiste el cambio.
 
+        Persiste PRIMERO en SQLite y solo tras un guardado correcto actualiza
+        la cache en memoria. Si ``save_security_settings`` falla (excepción),
+        la cache queda intacta (fail-closed) y el error se propaga al llamante.
+
         Args:
             enabled: Nuevo estado del flag ``password_enabled``.
         """
         with self._lock:
-            self._enabled = enabled
             password_hash = self._password_hash
         if self._persistence is not None:
             await self._persistence.save_security_settings(password_hash, enabled)
+        with self._lock:
+            self._enabled = enabled
         logger.info("Seguridad del panel %s", "activada" if enabled else "desactivada")
 
     async def set_password(self, new: str) -> None:
         """Cambia la contraseña del panel y persiste el nuevo hash.
+
+        Persiste PRIMERO el nuevo hash en SQLite y solo tras un guardado
+        correcto actualiza la cache en memoria. Si el guardado falla, la
+        contraseña en RAM no cambia (fail-closed) y el error se propaga.
 
         Args:
             new: Nueva contraseña en texto plano.
         """
         new_hash = hash_password(new)
         with self._lock:
-            self._password_hash = new_hash
             enabled = self._enabled
         if self._persistence is not None:
             await self._persistence.save_security_settings(new_hash, enabled)
+        with self._lock:
+            self._password_hash = new_hash
         logger.info("Contraseña del panel actualizada")
 
     def reset(self) -> None:
