@@ -1,4 +1,4 @@
-# RPi HMI — Arquitectura del Sistema (v0.4.0)
+# RPi HMI — Arquitectura del Sistema (v0.4.1)
 
 > **Estado:** Implementado (V1, no en producción)  
 > **Última actualización:** 2026-08-20  
@@ -208,7 +208,7 @@ Rpi_Pantalla_V1/
 │
 ├── .env.example
 ├── .gitignore
-├── VERSION                          # Versión única del proyecto (0.4.0)
+├── VERSION                          # Versión única del proyecto (0.4.1)
 └── README.md
 ```
 

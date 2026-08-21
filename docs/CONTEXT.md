@@ -7,19 +7,20 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-21 (Fase 8 — refactor F0-F6 completado · bump a 0.4.0 + verificación final)
+- **Fecha:** 2026-08-21 (Fase 8 F7 — auditoría externa + correcciones + bump a 0.4.1)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
-- **Branch:** main · Versión `0.4.0`
-- **Trabajo actual:** Fase 8 (refactor a 0.4.0) COMPLETADA (F0-F6):
-  - F0 baseline/gobernanza · F1 separación de LEDs (GPIO 20/21) · F2 UI · F3 fail-closed
-    (SQLite) · F4 drift documental (SECURITY_MODE) · F5 ortografía Ñ + limpieza ·
-    F6 bump 0.4.0 + verificación final + cierre.
-  - Verificación Fase 8 (F6): pytest 393 passed / 9 skipped · vitest 27 passed ·
-    ruff verde · mypy verde (31 ficheros) · build verde · bandit/pip-audit/npm-audit sin
-    hallazgos.
+- **Branch:** main · Versión `0.4.1`
+- **Trabajo actual:** Fase 8 cerrada: refactor 0.4.0 → release v0.4.0 → HIL real →
+  auditoría externa → correcciones P1 → release v0.4.1:
+  - F6: bump 0.4.0 + verificación final (pytest 393, vitest 27) + release v0.4.0.
+  - F7 (cierre 0.4.1): correcciones de auditoría externa — atomicidad fail-closed en
+    `SecurityManager.set_enabled()/set_password()` (SQLite antes que RAM), `/admin/*`
+    solo `X-API-Key` (ya no acepta cookie de sesión HMI) y README con conteos reales.
+  - HIL real: 5/5 (originales) + 6/6 (extendidos) passed sobre Pi real.
+  - Verificación 0.4.1: pytest 396 passed / 15 skipped · vitest 27 passed · ruff verde ·
+    mypy verde (31 ficheros) · build/bandit/pip-audit/npm-audit sin hallazgos.
   - Histórico (cierre V1): F1 auth session-cookie · F2 docs · F3 limpieza · F4 hardening ·
     F5 verificación (0.3.2) · F6 contraseña panel (0.3.3) · F7 cierre (0.3.4).
-  - Siguiente: HIL en Raspberry Pi real (apagado brusco, SQLite corrupta, touch, DRM, login/logout...).
 
 ## Estado actual
 
@@ -32,7 +33,7 @@
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
 | Frontend SolidJS | CORRIENDO | http://<IP_DE_LA_PI>:8000/. Servido por FastAPI desde frontend/dist/. |
 | Docs | OK | Swagger en http://<IP_DE_LA_PI>:8000/docs |
-| Tests | 393 pytest + 27 vitest | 393 passed / 9 skipped (pytest backend+display) · 27 vitest (frontend) |
+| Tests | 396 pytest + 27 vitest | 396 passed / 15 skipped (pytest backend+display) · 27 vitest (frontend) |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
 
 ## Fase 1: COMPLETADA
