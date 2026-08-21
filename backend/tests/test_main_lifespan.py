@@ -345,6 +345,28 @@ class TestLifespanStartup:
             mock_restore.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_sqlite_failure_prevents_ready(self):
+        """Si SQLite falla en arranque, el lifespan relanza el error (fail-closed)."""
+        devices = _two_devices()
+        with patch(
+            "backend.app.services.gpio_service.load_devices", return_value=devices
+        ), patch.object(gpio_service, "setup_output"), \
+           patch.object(state_manager, "set_updater"), \
+           patch.object(state_manager, "set_updater_button"), \
+           patch.object(state_manager, "set_display"), \
+           patch.object(Path, "exists", return_value=False), \
+           patch("backend.app.main.settings.enable_admin_api", False), \
+           patch(
+               "backend.app.services.persistence.get_persistence",
+               new_callable=AsyncMock,
+               side_effect=RuntimeError("SQLite corrupta"),
+           ), \
+           patch("backend.app.services.persistence.close_persistence", new_callable=AsyncMock), \
+           pytest.raises(RuntimeError):
+            async with lifespan(app):
+                pass
+
+    @pytest.mark.asyncio
     async def test_app_docs_control_at_startup(self):
         """Verifica que la config de docs (enable_docs) afecta a docs_url.
         NOTA: docs_url se evalua en tiempo de importacion del modulo.

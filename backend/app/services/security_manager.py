@@ -39,6 +39,10 @@ __all__ = ["SecurityManager", "security_manager"]
 class SecurityManager:
     """Cache y persistencia de la configuración de seguridad del panel web.
 
+    ``load()`` falla cerrado: si no puede leer ``security_settings`` desde
+    SQLite (o los datos son inválidos), propaga el error en lugar de dejar el
+    estado desprotegido.
+
     Attributes:
         _lock: Lock para proteger la cache en memoria.
         _enabled: Si la contraseña del panel está activada.
@@ -86,22 +90,23 @@ class SecurityManager:
     async def load(self, persistence: Any) -> None:
         """Lee la configuración desde SQLite y actualiza la cache.
 
+        Comportamiento **fail-closed**: cualquier error de lectura de la BD
+        (``get_security_settings``) o de estructura de los datos (``KeyError``/
+        ``TypeError``) se propaga en lugar de dejarse tragar. Así un sistema
+        previamente protegido nunca arranca desprotegido por un fallo de
+        persistencia.
+
         Args:
             persistence: Instancia de ``Persistence`` inicializada.
+
+        Raises:
+            Exception: Si no se puede leer ``security_settings`` o los datos
+                devueltos son inválidos.
         """
         self._persistence = persistence
-        try:
-            data = await persistence.get_security_settings()
-        except Exception:
-            logger.warning("No se pudo leer security_settings desde SQLite", exc_info=True)
-            return
-
-        try:
-            password_hash = data["password_hash"]
-            password_enabled = bool(data["password_enabled"])
-        except (KeyError, TypeError):
-            logger.warning("security_settings devolvió datos inválidos", exc_info=True)
-            return
+        data = await persistence.get_security_settings()
+        password_hash = data["password_hash"]
+        password_enabled = bool(data["password_enabled"])
 
         with self._lock:
             self._password_hash = password_hash

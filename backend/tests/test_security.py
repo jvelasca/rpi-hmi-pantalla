@@ -14,6 +14,7 @@ Cubre:
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -276,3 +277,15 @@ class TestPersistenceRoundTrip:
             assert verify_password("9999", str(reloaded["password_hash"]))
         finally:
             await db.close()
+
+
+class TestSecurityManagerFailClosed:
+    """``SecurityManager.load()`` falla cerrado ante errores de lectura."""
+
+    @pytest.mark.asyncio
+    async def test_load_raises_when_persistence_read_fails(self):
+        """load() falla cerrado (propaga el error) si no puede leer security_settings."""
+        persistence = AsyncMock()
+        persistence.get_security_settings.side_effect = RuntimeError("db corrupta")
+        with pytest.raises(RuntimeError):
+            await security_manager.load(persistence)

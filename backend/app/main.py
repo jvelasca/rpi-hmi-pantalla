@@ -161,7 +161,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.debug("Auto-conexion SSH ignorada: %s", exc)
 
-    # Inicializar persistencia SQLite
+    # Inicializar persistencia SQLite.
+    #
+    # SQLite es un componente ESENCIAL: si falla aqui, el backend no entra en
+    # READY y deja que systemd reinicie el servicio. De lo contrario,
+    # SecurityManager.load() conservaria enabled=False y un sistema previamente
+    # protegido arrancaria DESPROTEGIDO (fail-open).
     try:
         from backend.app.services.persistence import get_persistence
         from backend.app.services.security_manager import security_manager
@@ -172,7 +177,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await security_manager.load(db)
         logger.info("Persistencia SQLite inicializada en %s", settings.db_path)
     except Exception as exc:
-        logger.warning("Persistencia SQLite no disponible: %s", exc)
+        logger.critical(
+            "SQLite es esencial: no se pudo inicializar la persistencia (%s). "
+            "El backend NO entrara en READY y systemd debe reiniciar el servicio.",
+            exc,
+        )
+        raise
 
     # ── systemd sd_notify ─────────────────────────────────────
     # No-op si no corre bajo systemd (Windows/CI/dev): notify_ready()
