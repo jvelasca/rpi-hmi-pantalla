@@ -13,7 +13,7 @@
 **Verificado programáticamente (SSH):**
 
 - Sync SFTP de 94 archivos actualizados; servicios instalados y `systemd-analyze verify` OK.
-- `SECURITY_MODE=local` desplegado (ver limitación de `protected` en `docs/SECURITY.md` §8).
+- Contraseña del panel **desactivada por defecto** (protección activable desde la UI; ver `docs/SECURITY.md` §8).
 - Backend `Type=notify` + watchdog activo; HIL 5/5 passed; smoke HTTP (200 público, 200 mutadores, 404 admin).
 - sudoers `nmcli` funcional; `POST /api/network/static` inválido → `400` sin romper la red.
 - Watchdog validado 240 s: `NRestarts=0`, `WatchdogTimestamp` avanza cada ~30 s, sin falsos reinicios.
@@ -37,14 +37,15 @@
 
 | Variable | Valores | Efecto |
 |---|---|---|
-| `SECURITY_MODE` | `local` | HMI sin auth (prototipo doméstico). |
-| `SECURITY_MODE` | `protected` | Los mutadores HMI (REST `POST /api/led/*`, `/api/button/*`, `/api/display/command` y comandos WebSocket no-loopback) exigen header `X-API-Key`. |
+| Contraseña del panel (SQLite) | desactivada por defecto | HMI sin auth (prototipo doméstico). Se activa desde la UI tras cambiar la contraseña de fábrica `1234`. |
+| Contraseña del panel (SQLite) | activada | Los mutadores HMI (REST `POST /api/led/*`, `/api/button/*`, `/api/display/command` y comandos WebSocket no-loopback) exigen header `X-API-Key` o cookie de sesión. |
 | `ENABLE_ADMIN_API` | `false` | `/admin/ssh/*` y `/admin/deploy/*` NO montados (producción). |
 | `ADMIN_API_KEY` | 32+ chars | Clave para mutadores y `/admin/*`. |
 
-En producción usa **`SECURITY_MODE=protected`**. El display local se conecta por
-loopback (`127.0.0.1`) y queda exento de la clave; la UI web desde LAN y las
-herramientas de línea necesitan el header `X-API-Key`.
+En producción **activa la contraseña del panel desde la UI** (primero cambia la de
+fábrica `1234`). El display local se conecta por loopback (`127.0.0.1`) y queda
+exento de la clave; la UI web desde LAN y las herramientas de línea necesitan el
+header `X-API-Key`.
 
 ---
 
@@ -98,11 +99,12 @@ Valores mínimos para producción:
 
 ```ini
 RPI_HOST=<IP_DE_LA_PI>
-SECURITY_MODE=protected
 ENABLE_ADMIN_API=false
 ADMIN_API_KEY=<clave-de-32+-caracteres>
 STARTUP_POLICY=restore
 CORS_ORIGINS=http://localhost:5173,http://localhost:8000
+# La protección del panel se activa desde la UI (Configuración → Contraseña),
+# no con una variable de entorno.
 ```
 
 Genera la clave con:

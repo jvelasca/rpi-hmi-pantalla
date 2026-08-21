@@ -105,16 +105,17 @@ Todos los endpoints disponibles en `http://&lt;RASPBERRY_IP&gt;:8000`:
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/api/auth/status` | Estado de auth (`security_mode` + `authenticated`) |
-| `POST` | `/api/auth/login` | Valida la clave y emite cookie de sesión HttpOnly |
+| `GET` | `/api/auth/status` | Estado de auth (`security_enabled` + `authenticated`) |
+| `POST` | `/api/auth/login` | Valida la contraseña del panel y emite cookie de sesión HttpOnly |
 | `POST` | `/api/auth/logout` | Revoca la sesión y borra la cookie |
 
-Cuando `SECURITY_MODE=protected`, el panel web muestra una pantalla de login al
-entrar. La clave introducida se envía a `POST /api/auth/login` (body JSON
-`{"api_key": "..."}`); si es correcta, el backend responde con una cookie
-**`rpi_hmi_session`** `HttpOnly; SameSite=Strict` que el navegador envía
-automáticamente en el resto de peticiones (fetch REST y handshake WebSocket). La
-clave nunca llega al JavaScript del bundle: ya no existe `VITE_API_KEY`.
+Cuando la contraseña del panel está activada, el panel web muestra una pantalla
+de login al entrar. La contraseña introducida se envía a
+`POST /api/auth/login` (body JSON `{"password": "..."}`); si es correcta, el
+backend responde con una cookie **`rpi_hmi_session`** `HttpOnly; SameSite=Strict`
+que el navegador envía automáticamente en el resto de peticiones (fetch REST y
+handshake WebSocket). La contraseña nunca llega al JavaScript del bundle: ya no
+existe `VITE_API_KEY`.
 
 ### WebSocket
 
@@ -191,8 +192,9 @@ se sirve desde el propio backend (mismo origen), por lo que no se necesita.
 
 La autenticación del panel web se gestiona con **cookie de sesión HttpOnly** (ver
 "Autenticación del panel web" más arriba). No es necesario (ni recomendable)
-configurar ninguna `VITE_API_KEY` en el frontend: la clave de administración
-solo vive en el backend (`ADMIN_API_KEY`) y se intercambia a través del login.
+configurar ninguna `VITE_API_KEY` en el frontend: la contraseña del panel se
+gestiona en el backend (persistida en SQLite) y se intercambia a través del
+login; `ADMIN_API_KEY` queda reservada para scripts/M2M (`X-API-Key`) y `/admin/*`.
 
 ---
 

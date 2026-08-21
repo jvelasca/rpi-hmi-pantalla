@@ -4,8 +4,8 @@ Singleton con un estado **cambiable en caliente y persistido en SQLite**:
 
 - ``is_enabled()`` controla si el login del panel y la protección de los
   mutadores HMI están activos. El estado por defecto es **desactivado**
-  (la web no pide contraseña al cargar); ``SECURITY_MODE`` ya **no** lo
-  gobierna.
+  (la web no pide contraseña al cargar); el estado real es ``password_enabled``
+  persistido en SQLite, leído por ``security_manager.load()``.
 - ``verify_password()`` valida la contraseña del panel contra el hash
   persistido (por defecto ``"1234"``).
 - ``set_enabled``/``set_password`` persisten el cambio en SQLite y actualizan

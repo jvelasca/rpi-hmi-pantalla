@@ -5,12 +5,12 @@ sobre la conexion ethernet activa usando NetworkManager.
 
 Endpoints:
     GET  /api/network        -> Estado de red actual (publico, solo lectura)
-    POST /api/network/static -> Aplicar IP estatica (protegido en SECURITY_MODE=protected)
-    POST /api/network/dhcp   -> Cambiar a DHCP (protegido en SECURITY_MODE=protected)
+    POST /api/network/static -> Aplicar IP estatica (protegido cuando la contraseña del panel esta activada)
+    POST /api/network/dhcp   -> Cambiar a DHCP (protegido cuando la contraseña del panel esta activada)
 
 Seguridad: ``GET`` es publico porque solo lee estado. Los ``POST`` mutan la
-configuracion de red y exigen el header ``X-API-Key`` cuando
-``SECURITY_MODE=protected`` (via ``require_admin_api_key``).
+configuracion de red y exigen el header ``X-API-Key`` cuando la contraseña del
+panel esta activada (via ``require_admin_api_key``).
 """
 
 from __future__ import annotations
@@ -45,7 +45,8 @@ async def get_network() -> NetworkStatus:
 async def set_static_ip(request: StaticIpRequest) -> NetworkResult:
     """Aplica una configuracion de IP estatica.
 
-    Requiere autenticacion (header X-API-Key) cuando SECURITY_MODE=protected.
+    Requiere autenticacion (header X-API-Key) cuando la contraseña del panel
+    esta activada.
 
     AVISO: al re-activar la conexion la sesion actual (web/SSH) se cortara
     temporalmente hasta que la nueva IP este activa.
@@ -69,7 +70,8 @@ async def set_static_ip(request: StaticIpRequest) -> NetworkResult:
 async def set_dhcp() -> NetworkResult:
     """Cambia la conexion a DHCP (IP automatica).
 
-    Requiere autenticacion (header X-API-Key) cuando SECURITY_MODE=protected.
+    Requiere autenticacion (header X-API-Key) cuando la contraseña del panel
+    esta activada.
 
     AVISO: al re-activar la conexion la sesion actual (web/SSH) se cortara
     temporalmente hasta que el router asigne una nueva IP.

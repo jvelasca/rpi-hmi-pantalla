@@ -6,7 +6,7 @@ Valida:
 - Las operaciones de toggle son idempotentes
 - POST /api/led/on y /api/led/off mutan el estado correctamente
 - GET /api/status incluye todos los subsistemas
-- En SECURITY_MODE=protected, los mutadores exigen X-API-Key
+- Con la contraseña del panel activada, los mutadores exigen X-API-Key
 """
 
 from __future__ import annotations
@@ -170,7 +170,6 @@ class TestStatus:
 @pytest.fixture
 def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
-    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
     security_manager.reset()  # enabled=False + hash "1234"
     asyncio.run(security_manager.set_enabled(True))
@@ -178,7 +177,7 @@ def protected_mode(monkeypatch):
 
 
 class TestProtectedHmi:
-    """Mutadores HMI exigen X-API-Key en SECURITY_MODE=protected."""
+    """Mutadores HMI exigen X-API-Key cuando la contraseña del panel esta activada."""
 
     def test_led_on_without_key_returns_401(self, client, protected_mode):
         """POST /api/led/on en protected sin key -> 401."""

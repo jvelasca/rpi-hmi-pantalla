@@ -22,7 +22,7 @@ import type {
 const BASE = "/api";
 
 export interface AuthStatus {
-  security_mode: "local" | "protected";
+  security_enabled: boolean;
   authenticated: boolean;
 }
 

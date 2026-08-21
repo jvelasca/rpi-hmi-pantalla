@@ -1,15 +1,17 @@
 """Dependencias reutilizables de FastAPI.
 
 Proporciona dos dependencias de autenticacion basadas en el patron de
-``_verify_api_key`` (antes duplicado en ``ssh.py``/``deploy.py``), unificadas
-y configurables segun ``settings.SECURITY_MODE``:
+``_verify_api_key`` (antes duplicado en ``ssh.py``/``deploy.py``):
 
-- ``require_admin_api_key`` (respeta ``SECURITY_MODE``): para mutadores HMI/red.
+- ``require_admin_api_key`` (respeta ``security_manager.is_enabled()``): para
+  mutadores HMI/red.
 - ``require_admin_api_key_always`` (exige key siempre): para ``/admin/*``.
 
-En ``local`` (default) no se exige autenticacion (HMI de prototipo domestico);
-en ``protected`` se exige autenticacion excepto para clientes loopback (el
-display fisico local), que quedan exentos para no romper el HMI táctil.
+La proteccion se rige por la contraseña del panel, que esta **desactivada por
+defecto** hasta activarla en el panel. Cuando ``security_manager.is_enabled()``
+es False no se exige autenticacion (HMI de prototipo domestico); cuando esta
+activada se exige autenticacion excepto para clientes loopback (el display
+fisico local), que quedan exentos para no romper el HMI táctil.
 
 La autenticacion acepta **o bien** el header ``X-API-Key`` igual a
 ``settings.admin_api_key`` (scripts/M2M) **o bien** una cookie de sesion valida
@@ -37,9 +39,10 @@ logger = logging.getLogger("backend.api.deps")
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# Hosts de loopback considerados de confianza en modo ``protected``.
-# El display fisico (Pygame) llama a la REST local (localhost:8000) desde la
-# propia Pi, por lo que estas conexiones no requieren X-API-Key.
+# Hosts de loopback considerados de confianza cuando la contraseña del panel
+# esta activada. El display fisico (Pygame) llama a la REST local
+# (localhost:8000) desde la propia Pi, por lo que estas conexiones no requieren
+# X-API-Key.
 _LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 
 
@@ -67,8 +70,8 @@ def require_admin_api_key(
     """Exige autenticacion solo si la contraseña del panel está activada.
 
     Si ``security_manager.is_enabled()`` es False no exige autenticacion y
-    retorna ``None`` (equivale al antiguo ``SECURITY_MODE=local``). Si está
-    activada (equivale a ``protected``):
+    retorna ``None`` (la proteccion esta desactivada por defecto). Si esta
+    activada:
     - Las peticiones desde loopback (127.0.0.1 / ::1 / localhost) se aceptan
       sin credenciales: es el display fisico (Pygame) que corre en la propia Pi.
     - La cookie de sesion valida se comprueba ANTES del chequeo de
@@ -107,11 +110,12 @@ def require_admin_api_key_always(
     request: Request,
     api_key: str | None = Security(_api_key_header),
 ) -> None:
-    """Exige autenticacion SIEMPRE, independiente de ``SECURITY_MODE``.
+    """Exige autenticacion SIEMPRE, independiente del estado del panel.
 
     Se usa en los endpoints ``/admin/*`` (SSH y deploy). A diferencia de
-    ``require_admin_api_key``, no respeta el modo local. Acepta ``X-API-Key``
-    (scripts/M2M) o cookie de sesion valida (navegador).
+    ``require_admin_api_key``, no respeta la contraseña del panel (exige
+    siempre). Acepta ``X-API-Key`` (scripts/M2M) o cookie de sesion valida
+    (navegador).
 
     Raises:
         HTTPException 503: Si no hay ``ADMIN_API_KEY`` configurada.

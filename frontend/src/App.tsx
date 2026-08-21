@@ -49,14 +49,14 @@ export function App() {
   const api = useApi();
 
   // ── Autenticacion (session-cookie HttpOnly) ─────────
-  const [securityMode, setSecurityMode] = createSignal<"local" | "protected" | null>(null);
+  const [securityEnabled, setSecurityEnabled] = createSignal<boolean | null>(null);
   const [authenticated, setAuthenticated] = createSignal(false);
   const [loginError, setLoginError] = createSignal<string | null>(null);
 
   onMount(async () => {
     const status = await api.getAuthStatus();
     if (status) {
-      setSecurityMode(status.security_mode);
+      setSecurityEnabled(status.security_enabled);
       setAuthenticated(status.authenticated);
     }
   });
@@ -65,7 +65,7 @@ export function App() {
   createEffect(() => {
     if (api.unauthorized()) {
       setAuthenticated(false);
-      setSecurityMode("protected");
+      setSecurityEnabled(true);
     }
   });
 
@@ -74,7 +74,7 @@ export function App() {
     const result = await api.login(password);
     if (result?.authenticated) {
       setAuthenticated(true);
-      setSecurityMode("protected");
+      setSecurityEnabled(true);
       ws.reconnect();
     } else {
       setLoginError("Contrasena incorrecta");
@@ -88,7 +88,7 @@ export function App() {
     ws.disconnect();
   }
 
-  const needsLogin = () => securityMode() === "protected" && !authenticated();
+  const needsLogin = () => securityEnabled() && !authenticated();
 
   // ── WebSocket ───────────────────────────────────────
   function handleWsMessage(msg: ServerMessage) {

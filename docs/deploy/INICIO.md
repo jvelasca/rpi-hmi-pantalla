@@ -61,7 +61,7 @@ Cada uno dejó un **handoff** en `docs/audits/refactor/handoffs/<id>.md`.
 |---|---|---|
 | A1 | 1 | Display: 16 tests corregidos (15 drift + 1 bug feedback botón) + feedback no-bloqueante del botón |
 | A2 | 1 | mypy `strict` a 0 errores (57→0); patrón `X = Field(default=...)` (sin `pydantic.mypy`, incompatible) |
-| B | 2 | `SECURITY_MODE=local\|protected` + dependencia `require_admin_api_key`; `POST /api/network/*` protegidos; README LED virtual; sudoers mínimo `pi → nmcli` |
+| B | 2 | dependencia `require_admin_api_key` (protección del panel) + `POST /api/network/*` protegidos; README LED virtual; sudoers mínimo `pi → nmcli` |
 | C | 2 | `Screen.allow_mock_fallback`; detección de conector DRM vía sysfs (`_drm_connector_state`) |
 | D | 2 | Validación WS con Zod; máquina de estados resync; `VITE_API_URL` sin IP fija |
 | E | 3 | Migraciones SQLite versionadas; red no bloqueante (`asyncio.to_thread`); límites systemd; split `StateManager → WebSocketHub` |
@@ -130,7 +130,7 @@ build, smoke, VERSION, archivos prohibidos) · contrato Pydantic↔Zod con `safe
 ### ⚪ P0 — Requieren HARDWARE (Raspberry Pi física) y decisión
 
 1. Instalar regla sudoers `config/sudoers.d/rpi-hmi` (`sudo install -m 0440 ... && visudo -c`).
-2. Crear `.env` de producción: `SECURITY_MODE=protected` + `ADMIN_API_KEY` (32+ chars). **No commitear `.env`.**
+2. Crear `.env` de producción con `ADMIN_API_KEY` (32+ chars); la contraseña del panel se activa desde la UI (cambiando primero `1234`). **No commitear `.env`.**
 3. Verificar `VENV_PIP` en `scripts/deploy_atomic.py` (`f"{PI_BASE}/venv/bin/pip3"` vs `{VENV_PY} -m pip`).
 4. Validar límites systemd en la Pi: `systemd-analyze verify` + `systemctl daemon-reload`.
 5. Decidir si `/dev/mem` es necesario en `ReadWritePaths` (P2-4) según el driver GPIO real.
@@ -167,7 +167,7 @@ principal verifica el gate y hace **commit por workstream**.
 1. Añadir auth al handshake WS: en `protected`, validar `X-API-Key` (header o `Sec-WebSocket-Protocol`) **antes** de `accept()`; en `local`, aceptar sin key. Usar `require_admin_api_key` o un helper nuevo en `deps.py` que permita lectura síncrona del header (el WS no pasa por `Depends`).
 2. Añadir `dependencies=[Depends(require_admin_api_key)]` a `POST /api/led/toggle|on|off`, `POST /api/button/press|release`, `POST /api/display/command` en `hmi.py`.
 3. Añadir `X-API-Key` a `allow_headers` en `main.py`.
-4. Consolidar `_verify_api_key` de `ssh.py`/`deploy.py` en `deps.py` con **dos** dependencias: `require_admin_api_key` (respeta `SECURITY_MODE`) para HMI, y `require_admin_api_key_always` (exige key **siempre**) para `/admin/*`. Documentar la diferencia.
+4. Consolidar `_verify_api_key` de `ssh.py`/`deploy.py` en `deps.py` con **dos** dependencias: `require_admin_api_key` (respeta `security_manager.is_enabled()`) para HMI, y `require_admin_api_key_always` (exige key **siempre**) para `/admin/*`. Documentar la diferencia.
 5. Corregir el mensaje de `config.py` (`enable_admin_api` sin key → "inaccesibles (503)", no "expuestos sin protección").
 6. Actualizar `docs/SECURITY.md` §2/§3 al modelo unificado (WS y mutadores HMI pasan a PROTECTED).
 - **Done:** `pytest backend/tests/` + `mypy` + `ruff` verdes.

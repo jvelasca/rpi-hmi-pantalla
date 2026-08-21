@@ -223,13 +223,12 @@ class TestWebSocketEndpoint:
         assert r.json()["websocket_clients"] == 0
 
 
-# ── Autenticacion WebSocket (SECURITY_MODE) ────────────────────
+# ── Autenticacion WebSocket (contraseña del panel) ─────────────
 
 
 @pytest.fixture
 def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
-    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", "test-key-123")
     security_manager.reset()  # enabled=False + hash "1234"
     asyncio.run(security_manager.set_enabled(True))
@@ -237,7 +236,7 @@ def protected_mode(monkeypatch):
 
 
 class TestWebSocketAuth:
-    """Comportamiento de auth del endpoint /ws segun SECURITY_MODE."""
+    """Comportamiento de auth del endpoint /ws segun la contraseña del panel."""
 
     def test_local_mode_accepts_without_key(self, client):
         """En local, WS acepta sin key (comportamiento existente)."""

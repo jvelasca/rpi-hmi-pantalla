@@ -38,7 +38,7 @@
 | **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | `POST /api/auth/login` valida la **contraseña del panel** (body JSON) y emite cookie de sesión; `logout` revoca la sesión |
 | **SECURITY** | `GET /api/auth/security`, `POST /api/auth/security`, `POST /api/auth/password` | `GET` es público; los `POST` exigen cookie de sesión, `X-API-Key` o la contraseña actual (`current`) |
 | **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
-| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **o** cookie de sesión, **solo si** `SECURITY_MODE=protected` (loopback exento) |
+| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **o** cookie de sesión, **solo si** la contraseña del panel está activada (loopback exento) |
 | **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **o** cookie de sesión, **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
 
 Notas:
@@ -48,11 +48,11 @@ Notas:
   no existen (responden 404).
 - Los endpoints HMI de solo lectura (`GET /api/*`, `GET /api/settings/display`)
   y `GET /api/network` son públicos a propósito.
-- `POST /api/settings/display` (ajustes visuales) está en **PROTECTED**: en modo
-  `protected` exige `X-API-Key` salvo desde loopback, de modo que el display
-  local (Pygame) sigue ajustando fuente/tamaño sin key.
+- `POST /api/settings/display` (ajustes visuales) está en **PROTECTED**: cuando
+  la contraseña del panel está activada exige `X-API-Key` salvo desde loopback,
+  de modo que el display local (Pygame) sigue ajustando fuente/tamaño sin key.
 - `GET /api/network` es público a propósito (solo lectura); los `POST` que mutan
-  la red son los que exigen auth en modo `protected`.
+  la red son los que exigen auth cuando la contraseña del panel está activada.
 - `POST /api/auth/login` aplica **rate-limiting** anti brute-force: ventana fija
   en memoria por IP de cliente, contando solo intentos fallidos. Superado
   `LOGIN_MAX_ATTEMPTS` dentro de `LOGIN_WINDOW_SECONDS` responde **429**; un login
@@ -64,7 +64,8 @@ Notas:
 ### Exención de loopback (REST + WS)
 
 El display físico (Pygame) se conecta a `localhost:8000` (REST y `ws://`) desde la
-propia Pi. En `SECURITY_MODE=protected`, las peticiones cuyo host de cliente sea
+propia Pi. Cuando la contraseña del panel está activada, las peticiones cuyo
+host de cliente sea
 `127.0.0.1`, `::1` o `localhost` se aceptan **sin** `X-API-Key` (display local de
 confianza). Aplica a:
 
@@ -106,18 +107,16 @@ cookie de sesión válida:
 
 ## 3. Variables de configuración
 
-- **`SECURITY_MODE`** — `local` | `protected` (default **`local`**):
-  - Quedó como variable **legacy/de compatibilidad** para otros subsistemas,
-    pero **ya no gobierna** el estado runtime de la contraseña del panel. El
-    estado por defecto de `security_manager.is_enabled()` es **`False`**
-    (contraseña **OFF** al arrancar), y se persiste en SQLite (tabla
-    `security_settings`) como `password_enabled=0`. La activación se hace en
-    caliente desde la UI.
-  - `local`: HMI de prototipo doméstico. Ningún endpoint exige `X-API-Key`.
-  - `protected`: (semántica histórica) los endpoints **PROTECTED** (que mutan
-    hardware/red) y `WS /ws` (para clientes no-loopback) exigen el header
-    `X-API-Key` igual a `ADMIN_API_KEY` **o** una cookie de sesión válida
-    (ver §9).
+- **Panel security (activación de la contraseña del panel)** — la protección se
+  rige por el flag `password_enabled` persistido en SQLite (tabla
+  `security_settings`) y leído por `security_manager.load()`. El estado por
+  defecto de `security_manager.is_enabled()` es **`False`** (contraseña **OFF**
+  al arrancar). La
+  activación/desactivación se hace en caliente desde la UI (`/api/auth/security`)
+  y persiste entre reinicios. Cuando está activada, los endpoints **PROTECTED**
+  (que mutan hardware/red) y `WS /ws` (para clientes no-loopback) exigen el
+  header `X-API-Key` igual a `ADMIN_API_KEY` **o** una cookie de sesión válida
+  (ver §9).
 - **Contraseña del panel web** — persistida en SQLite con hash PBKDF2-HMAC-SHA256
   (stdlib). Valor de fábrica `1234`. Se gestiona desde la UI (Configuración →
   Contraseña) vía `/api/auth/security` y `/api/auth/password`, sin tocar
@@ -144,18 +143,20 @@ cookie de sesión válida:
 
 Dependencias de auth (ver `backend/app/api/deps.py`):
 
-- `require_admin_api_key` — respeta `SECURITY_MODE` (en `local` no exige nada; en
-  `protected` exige `X-API-Key` **o** cookie de sesión, salvo desde loopback).
-  Se usa en los mutadores HMI y de red.
+- `require_admin_api_key` — respeta `security_manager.is_enabled()` (si la
+  contraseña del panel está desactivada no exige nada; si está activada exige
+  `X-API-Key` **o** cookie de sesión, salvo desde loopback). Se usa en los
+  mutadores HMI y de red.
 - `require_admin_api_key_always` — exige `X-API-Key` **o** cookie de sesión
   **siempre**; si `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
 
 Ejemplo de `.env`:
 
 ```bash
-SECURITY_MODE=protected
 ADMIN_API_KEY=<clave-segura-de-32+-caracteres>
 ENABLE_ADMIN_API=false
+# La contraseña del panel se activa desde la UI (Configuración → Contraseña),
+# no con una variable de entorno.
 ```
 
 ---
@@ -217,7 +218,7 @@ Política explícita de qué ocurre con el estado del dispositivo en cada moment
 
 - [ ] `ENABLE_ADMIN_API=false`
 - [ ] `ADMIN_API_KEY` segura (32+ caracteres), distinta del valor por defecto
-- [ ] `SECURITY_MODE` decidido explícitamente (`local` o `protected`)
+- [ ] Contraseña del panel activada/desactivada explícitamente desde la UI (persistida en SQLite)
 - [ ] Rate-limit de login configurado (`LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_SECONDS`)
 - [ ] Regla sudoers instalada y validada (`visudo -c`)
 - [ ] Puerto 8000 no expuesto a Internet
@@ -253,19 +254,19 @@ Los ficheros `systemd`, `sudoers` y `*.sh` desplegados vía SFTP desde Windows d
 llevar fin de línea LF. El archivo `.gitattributes` fuerza `eol=lf` para ellos, evitando
 errores de `visudo -c` y `systemd-analyze verify` provocados por el carácter `\r` (CRLF).
 
-### `SECURITY_MODE` en la primera instalación
+### Protección del panel en la primera instalación
 
-La Pi quedó desplegada con `SECURITY_MODE=local` (prototipo doméstico en LAN de
-confianza). La exención de loopback se extiende a REST **y** WS, por lo que
-el HMI táctil local (loopback) muta LED/button/display sin credenciales.
+La Pi quedó desplegada con la contraseña del panel **desactivada** (prototipo
+doméstico en LAN de confianza). La exención de loopback se extiende a REST **y**
+WS, por lo que el HMI táctil local (loopback) muta LED/button/display sin
+credenciales.
 
-Desde la FASE 7, la contraseña del panel está **desactivada por defecto** y
-`SECURITY_MODE` ya no la gobierna. Para proteger el panel: (1) cambia la
-contraseña de fábrica (`1234`) por una personalizada (mínimo 8 caracteres) y
-(2) actívala desde la UI (Configuración → Contraseña). El panel web pedirá
-login al entrar (`POST /api/auth/login`) y operará con una cookie de sesión
-HttpOnly; los scripts/M2M usan `X-API-Key`. Ya no es necesario (ni
-recomendable) compilar el frontend con `VITE_API_KEY`.
+Desde la FASE 7, la contraseña del panel está **desactivada por defecto** y se
+persiste en SQLite (`password_enabled`). Para proteger el panel: (1) cambia la contraseña de fábrica (`1234`) por una
+personalizada (mínimo 8 caracteres) y (2) actívala desde la UI (Configuración →
+Contraseña). El panel web pedirá login al entrar (`POST /api/auth/login`) y
+operará con una cookie de sesión HttpOnly; los scripts/M2M usan `X-API-Key`. Ya
+no es necesario (ni recomendable) compilar el frontend con `VITE_API_KEY`.
 
 ---
 
@@ -289,8 +290,9 @@ login al cargar).
   `backend/app/services/password_hash.py`.
 - **Runtime**: `security_manager` (singleton en
   `backend/app/services/security_manager.py`) mantiene la cache en memoria.
-  `is_enabled()` parte de `False`; `SECURITY_MODE` ya no lo gobierna. Se usa
-  en `deps.py`, `ws.py` y `auth.py/status`.
+  `is_enabled()` parte de `False`; el estado real es `password_enabled`
+  persistido en SQLite, leído por `security_manager.load()`. Se usa en
+  `deps.py`, `ws.py` y `auth.py/status`.
 
 ### Endpoints
 

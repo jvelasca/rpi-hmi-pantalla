@@ -3,9 +3,8 @@
 Cubre:
 - Login (contraseña correcta/incorrecta) y logout.
 - La cookie de sesion se emite con HttpOnly y SameSite=Strict.
-- Con la contraseña del panel activada (antes SECURITY_MODE=protected), los
-  mutadores REST y el WS aceptan la cookie (navegador) ademas de X-API-Key
-  (M2M), con loopback exento.
+- Con la contraseña del panel activada, los mutadores REST y el WS aceptan la
+  cookie (navegador) ademas de X-API-Key (M2M), con loopback exento.
 - La cookie malformada/alterada se rechaza.
 """
 
@@ -29,7 +28,6 @@ ADMIN_KEY = "test-key-123"
 @pytest.fixture
 def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
-    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", ADMIN_KEY)
     security_manager.reset()  # enabled=False + hash "1234"
     asyncio.run(security_manager.set_enabled(True))
@@ -98,10 +96,10 @@ class TestLoginLogout:
         assert r.status_code == 401
 
     def test_auth_status_reports_mode_and_authenticated(self, client, protected_mode):
-        """GET /api/auth/status refleja security_mode y autenticacion."""
+        """GET /api/auth/status refleja security_enabled y autenticacion."""
         r = client.get("/api/auth/status")
         assert r.status_code == 200
-        assert r.json()["security_mode"] == "protected"
+        assert r.json()["security_enabled"] is True
         assert r.json()["authenticated"] is False
 
         _login(client)
@@ -110,9 +108,9 @@ class TestLoginLogout:
 
     def test_login_works_without_admin_key(self, client, monkeypatch):
         """El login no depende de ADMIN_API_KEY (usa la contraseña del panel)."""
-        monkeypatch.setattr(config_module.settings, "security_mode", "protected")
         monkeypatch.setattr(config_module.settings, "admin_api_key", "")
         security_manager.reset()
+        asyncio.run(security_manager.set_enabled(True))
         r = client.post("/api/auth/login", json={"password": DEFAULT_PASSWORD})
         assert r.status_code == 200
 

@@ -35,7 +35,6 @@ ADMIN_KEY = "test-key-123"
 @pytest.fixture
 def protected_mode(monkeypatch):
     """Activa la seguridad del panel con una ADMIN_API_KEY conocida."""
-    monkeypatch.setattr(config_module.settings, "security_mode", "protected")
     monkeypatch.setattr(config_module.settings, "admin_api_key", ADMIN_KEY)
     security_manager.reset()  # enabled=False + contraseña "1234"
     asyncio.run(security_manager.set_enabled(True))
@@ -165,7 +164,7 @@ class TestToggleEnabled:
         assert r.json()["enabled"] is True
 
         status = client.get("/api/auth/status").json()
-        assert status["security_mode"] == "protected"
+        assert status["security_enabled"] is True
         assert status["authenticated"] is False
 
         # Mutador sin auth -> 401
@@ -190,7 +189,7 @@ class TestToggleEnabled:
         assert r.json()["enabled"] is False
 
         status = client.get("/api/auth/status").json()
-        assert status["security_mode"] == "local"
+        assert status["security_enabled"] is False
         assert status["authenticated"] is True
 
         # Mutador sin auth -> 200

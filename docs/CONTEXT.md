@@ -13,8 +13,8 @@
 - **Trabajo actual:** Fase 7 completada, atendiendo a la auditoría externa y a la petición del
   usuario:
   - **7a (seguridad):** contraseña del panel **OFF por defecto** (migración 004 resetea
-    `password_enabled` a 0; `SecurityManager` arranca en `False`, ya no depende de
-    `SECURITY_MODE`). **Forzar cambio de `1234` antes de activar** (`POST /api/auth/security`
+    `password_enabled` a 0; `SecurityManager` arranca en `False` y el estado real se
+    persiste en SQLite). **Forzar cambio de `1234` antes de activar** (`POST /api/auth/security`
     → `409` si `is_default`; mínimo de contraseña subido de 4 a **8** caracteres). WS **sin
     `?token=`** (solo `X-API-Key` / `Sec-WebSocket-Protocol` / cookie). `credentials: "include"`
     en `fetch()`.

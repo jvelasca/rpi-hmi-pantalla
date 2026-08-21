@@ -228,8 +228,8 @@ Rpi_Pantalla_V1/
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/auth/status` | `{security_mode, authenticated}` (público, sin secretos) |
-| POST | `/api/auth/login` | Valida `ADMIN_API_KEY` (body JSON) y emite cookie `rpi_hmi_session` HttpOnly |
+| GET | `/api/auth/status` | `{security_enabled, authenticated}` (público, sin secretos) |
+| POST | `/api/auth/login` | Valida la contraseña del panel (body JSON) y emite cookie `rpi_hmi_session` HttpOnly |
 | POST | `/api/auth/logout` | Revoca la sesión y borra la cookie |
 
 ### 4.3 HMI — solo lectura (públicos)
@@ -242,7 +242,7 @@ Rpi_Pantalla_V1/
 | GET | `/api/display/info` | `DisplayInfo` (404 si no detectado) |
 | GET | `/api/settings/display` | `DisplaySettings` |
 
-### 4.4 HMI — mutadores (PROTECTED en `protected`)
+### 4.4 HMI — mutadores (PROTECTED cuando la contraseña del panel está activada)
 
 | Método | Ruta | Response |
 |---|---|---|
@@ -286,8 +286,8 @@ Rpi_Pantalla_V1/
 | Clase | Endpoints | Autenticación |
 |---|---|---|
 | **PUBLIC** | `/health*`, `GET /api/auth/status`, lecturas HMI/red | Ninguna |
-| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | Login valida `ADMIN_API_KEY` |
-| **PROTECTED** | mutadores HMI, `POST /api/settings/display`, `POST /api/network/*`, `WS /ws` | `X-API-Key` **o** cookie de sesión, solo en `protected`; loopback exento |
+| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | Login valida la contraseña del panel |
+| **PROTECTED** | mutadores HMI, `POST /api/settings/display`, `POST /api/network/*`, `WS /ws` | `X-API-Key` **o** cookie de sesión, solo cuando la contraseña del panel está activada; loopback exento |
 | **ADMIN** | `/admin/*` | `X-API-Key` **o** cookie de sesión, **siempre** |
 
 Ver `docs/SECURITY.md` para el detalle completo del modelo de amenazas.
@@ -335,8 +335,8 @@ Acciones válidas de `display_command`: `screen_test`, `touch_calib`, `network`,
 
 ### 5.3 Autenticación del handshake
 
-En `SECURITY_MODE=protected`, las conexiones no-loopback deben autenticarse antes
-de `accept()`. Se aceptan, por orden de prioridad:
+Cuando la contraseña del panel está activada, las conexiones no-loopback deben
+autenticarse antes de `accept()`. Se aceptan, por orden de prioridad:
 
 1. Header `X-API-Key` (scripts/M2M).
 2. Cookie de sesión válida (navegador; emitida por `POST /api/auth/login`).
@@ -393,20 +393,20 @@ validación runtime (Zod) de mensajes WS en `frontend/src/schemas/ws.ts`.
 
 ## 7. Autenticación (flujo del panel web)
 
-`SECURITY_MODE` (`local` | `protected`, default `local`) controla si los mutadores
-exigen el header `X-API-Key` (scripts/M2M). La **contraseña del panel** es un
-mecanismo independiente, **desactivado por defecto**, que protege el login del
-panel web. Cuando la protección del panel está activa, el panel web usa un flujo de
-login por **cookie de sesión HttpOnly** (sustituye al antiguo `VITE_API_KEY`, que
-ya no existe).
+La protección del panel web se rige por la **contraseña del panel**, persistida en
+SQLite (`password_enabled`) y leída por `security_manager.load()`; está
+**desactivada por defecto**. Cuando está activada, los mutadores exigen el header
+`X-API-Key` (scripts/M2M) **o** una cookie de sesión válida (navegador). El panel
+web usa entonces un flujo de login por **cookie de sesión HttpOnly** (sustituye al
+antiguo `VITE_API_KEY`, que ya no existe).
 
 ```
 Navegador                          Backend FastAPI
-   |  1. GET /api/auth/status         |  -> {security_mode, authenticated}
+   |  1. GET /api/auth/status         |  -> {security_enabled, authenticated}
    |<---------------------------------|
-   |  2. (si protected, sin sesión)   |
+   |  2. (si activada y sin sesión)   |
    |     POST /api/auth/login         |
-   |     {"api_key": ADMIN_API_KEY}   |
+   |     {"password": "..."}          |
    |<---------------------------------|  -> Set-Cookie: rpi_hmi_session=...
    |  3. fetch REST + WS handshake    |  cookie viaja automáticamente (HttpOnly)
    |     (sin manejar clave en JS)    |

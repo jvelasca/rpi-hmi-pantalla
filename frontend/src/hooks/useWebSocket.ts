@@ -23,10 +23,10 @@ import { createSequenceTracker } from "@/hooks/sequenceTracker";
 const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`;
 const RECONNECT_DELAY = 2000;
 
-// En SECURITY_MODE=protected el backend exige autenticacion en /ws para
-// clientes no-loopback. El navegador envia la cookie de sesion HttpOnly
-// automaticamente en el handshake (mismo origen). Solo se anuncia el
-// subprotocolo "rpi-hmi" para que el backend lo seleccione.
+// Cuando la contraseña del panel esta activada, el backend exige
+// autenticacion en /ws para clientes no-loopback. El navegador envia la
+// cookie de sesion HttpOnly automaticamente en el handshake (mismo origen).
+// Solo se anuncia el subprotocolo "rpi-hmi" para que el backend lo seleccione.
 const WS_PROTOCOLS = ["rpi-hmi"];
 
 type SyncState = "normal" | "resyncing";

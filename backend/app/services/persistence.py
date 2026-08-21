@@ -176,7 +176,8 @@ class Persistence:
         Guarda el hash PBKDF2 de la contraseña del panel y el flag de
         activación. La fila inicial usa la contraseña de fábrica (``1234``)
         y ``password_enabled=0`` (el estado por defecto es **desactivado**;
-        ``SECURITY_MODE`` ya no gobierna este flag).
+        el estado real es ``password_enabled`` persistido en SQLite, leído por
+        ``security_manager.load()``).
         """
         assert self._conn is not None
         # Import dentro del método para evitar imports circulares al

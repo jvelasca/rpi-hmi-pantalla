@@ -12,7 +12,6 @@ Variables de entorno:
     RPI_TIMEOUT: Timeout SSH en segundos (default: 15)
     BACKEND_HOST: Host de escucha del servidor (default: 0.0.0.0)
     BACKEND_PORT: Puerto de escucha (default: 8000)
-    SECURITY_MODE: Modo de seguridad 'local' | 'protected' (default: local)
     ADMIN_API_KEY: Clave API para endpoints protegidos y administrativos
     SESSION_TTL_SECONDS: TTL de la cookie de sesion del panel web (default: 28800)
     LOGIN_MAX_ATTEMPTS: Intentos fallidos de login por IP antes de bloquear (default: 5)
@@ -60,12 +59,6 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8000, ge=1, le=65535, description="Puerto HTTP")
 
     # Seguridad
-    security_mode: Literal["local", "protected"] = Field(
-        default="local",
-        description="Modo de seguridad. 'local' = HMI sin auth (prototipo domestico). "
-                    "'protected' = endpoints que mutan hardware/red exigen X-API-Key "
-                    "o cookie de sesion (ver /api/auth/login).",
-    )
     admin_api_key: str = Field(
         default="",
         description="API key para proteger endpoints administrativos /admin/*",
@@ -136,13 +129,6 @@ class Settings(BaseSettings):
         import logging
 
         logger = logging.getLogger("rpi_hmi.config")
-
-        if self.security_mode == "protected" and not self.admin_api_key:
-            logger.critical(
-                "SECURITY_MODE=protected pero ADMIN_API_KEY no configurada. "
-                "Los endpoints que mutan hardware/red quedan inaccesibles "
-                "(exigen X-API-Key)."
-            )
 
         if self.enable_admin_api and not self.admin_api_key:
             logger.critical(

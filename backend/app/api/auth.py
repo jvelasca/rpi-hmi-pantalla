@@ -395,18 +395,19 @@ async def logout(request: Request) -> JSONResponse:
 async def auth_status(request: Request) -> JSONResponse:
     """Estado de autenticacion publico para que el frontend decida mostrar login.
 
-    No revela la contraseña; solo indica el ``security_mode`` (derivado del flag
-    runtime ``security_manager.is_enabled()``) y si la peticion trae una cookie
-    de sesion valida.
+    No revela la contraseña; solo indica si la contraseña del panel esta
+    activada (``security_enabled``, derivado del flag runtime
+    ``security_manager.is_enabled()``) y si la peticion trae una cookie de
+    sesion valida.
 
     Returns:
-        JSON ``{"security_mode": ..., "authenticated": ...}``.
+        JSON ``{"security_enabled": ..., "authenticated": ...}``.
     """
     token = get_session_token_from_cookies(request.headers.get("cookie"))
     enabled = security_manager.is_enabled()
     return JSONResponse(
         content={
-            "security_mode": "protected" if enabled else "local",
+            "security_enabled": enabled,
             "authenticated": (not enabled) or session_manager.is_valid(token),
         }
     )
