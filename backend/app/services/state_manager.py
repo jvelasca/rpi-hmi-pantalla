@@ -318,23 +318,17 @@ class StateManager:
         return new_state
 
     def press_button(self) -> ButtonState:
-        """Registra una pulsacion del boton y alterna el LED.
+        """Registra una pulsacion del boton.
 
-        Cada pulsacion alterna el LED (via toggle_led, atomico) y ademas
-        incrementa el contador de pulsaciones. El orden es: primero el
-        toggle del LED (emite led_changed), despues el contador (emite
-        button_pressed). Son dos locks separados y aceptables porque
-        toggle_led alterna el LED atomicamente y el contador es independiente.
+        Incrementa el contador de pulsaciones, marca el boton como presionado
+        y notifica al callback GPIO del pulsador para encender su propio LED
+        (role="button_led"). NO altera el LED principal (role="led"); el LED
+        del pulsador se enciende/apaga exclusivamente por el flag `pressed`
+        via el callback, sin emitir led_changed.
 
         Returns:
             ButtonState actualizado.
         """
-        # Alternar el LED primero, reutilizando toggle_led (ya atomico y con
-        # su propia secuencia, persistencia y callback GPIO). No se
-        # reimplementa el toggle dentro del lock del boton para evitar
-        # carreras read-modify-write sobre el estado del LED.
-        self.toggle_led()
-
         with self._lock:
             seq = self._hub.next_sequence()
             count = self._button_state.press_count + 1

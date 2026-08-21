@@ -69,11 +69,12 @@ class TestButtonState:
         assert result.pressed is True
         assert result.press_count == 1
 
-    def test_press_button_toggles_led(self):
-        """press_button alterna el LED ademas de incrementar el contador."""
+    def test_press_button_does_not_toggle_led(self):
+        """press_button NO altera el LED principal; solo incrementa el contador."""
         assert state_manager.led.state is False
         state_manager.press_button()
-        assert state_manager.led.state is True
+        assert state_manager.led.state is False
+        assert state_manager.button.pressed is True
         assert state_manager.button.press_count == 1
         state_manager.press_button()
         assert state_manager.led.state is False

@@ -126,8 +126,9 @@ class TestRestApiIntegration:
         assert r.json()["press_count"] == 3
 
     def test_status_after_changes(self, client):
-        """Status refleja cambios en LED y button (el press alterna el LED)."""
-        # El press del boton alterna el LED (off -> on) e incrementa el contador.
+        """Status refleja cambios en LED y button (el press NO altera el LED)."""
+        # El press del boton incrementa el contador sin tocar el LED;
+        # el LED se enciende explicitamente con /api/led/on.
         client.post("/api/button/press")
         client.post("/api/led/on")
 
@@ -206,7 +207,7 @@ class TestWebSocketStateIntegration:
 
     @pytest.mark.asyncio
     async def test_press_button_broadcasts(self):
-        """Press button → broadcast button_pressed."""
+        """Press button → broadcast button_pressed, sin alterar el LED."""
         ws = MockWebSocket()
         await state_manager.subscribe(ws)
         ws.sent.clear()
@@ -214,6 +215,7 @@ class TestWebSocketStateIntegration:
         state_manager.press_button()
         assert state_manager.button.pressed is True
         assert state_manager.button.press_count == 1
+        assert state_manager.led.state is False  # el press no toca el LED
 
         state_manager.unsubscribe(ws)
 
