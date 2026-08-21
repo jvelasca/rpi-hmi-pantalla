@@ -510,7 +510,7 @@ screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 
 ### 11.3 Vista "security" (contraseña del panel)
 
-El overlay de CONFIGURACION del display físico incluye una opción **"Contrasena"**
+El overlay de CONFIGURACION del display físico incluye una opción **"Contraseña"**
 (`SecuritySettingsView` en `display/ui/widgets.py`, vista `"security"` en
 `display/app.py`) que permite:
 

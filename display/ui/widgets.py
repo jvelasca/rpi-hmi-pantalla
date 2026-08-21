@@ -651,7 +651,7 @@ _ICON_MONITOR = "□"    # monitor
 _ICON_TOUCH = "◎"      # touch target
 _ICON_NETWORK = "⇄"    # network
 _ICON_FONT = "A"       # text/font
-_ICON_LOCK = "*"       # contrasena (candado simple, compatible con bitmap)
+_ICON_LOCK = "*"       # contraseña (candado simple, compatible con bitmap)
 _ICON_BACK = "←"       # back arrow
 
 
@@ -710,7 +710,7 @@ class ConfigOverlay(Widget):
         self._draw_option(surface, self._btn_calib, "Calibracion Tactil", _ICON_TOUCH, OPTION_ICON_TOUCH)
         self._draw_option(surface, self._btn_network, "Configurar IP", _ICON_NETWORK, OPTION_ICON_NETWORK)
         self._draw_option(surface, self._btn_font, "Texto y Fuente", _ICON_FONT, OPTION_ICON_FONT)
-        self._draw_option(surface, self._btn_security, "Contrasena", _ICON_LOCK, OPTION_ICON_LOCK)
+        self._draw_option(surface, self._btn_security, "Contraseña", _ICON_LOCK, OPTION_ICON_LOCK)
         self._draw_option(surface, self._btn_back, "Volver", _ICON_BACK, OPTION_ICON_BACK)
 
     def _draw_option(self, surface: pygame.Surface, rect: pygame.Rect,
@@ -1412,7 +1412,7 @@ class FontSettingsView(Widget):
 
 
 # ═══════════════════════════════════════════════════════════════
-# SecuritySettingsView — Gestion de contrasena (FASE 7c)
+# SecuritySettingsView — Gestion de contraseña (FASE 7c)
 # ═══════════════════════════════════════════════════════════════
 
 _FIELD_LABELS = {"current": "ACTUAL", "new": "NUEVA", "confirm": "CONFIRMAR"}
@@ -1424,11 +1424,11 @@ _KEY_ROWS = [
 
 
 class SecuritySettingsView(Widget):
-    """Vista de gestion de contrasena apta para pantalla tactil.
+    """Vista de gestion de contraseña apta para pantalla tactil.
 
-    Permite ver el estado de la proteccion por contrasena (activada/desactivada
+    Permite ver el estado de la proteccion por contraseña (activada/desactivada
     y de fabrica/personalizada), activar/desactivar la proteccion y cambiar la
-    contrasena usando un teclado numerico en pantalla (0-9 + BORRAR + LIMPIAR).
+    contraseña usando un teclado numerico en pantalla (0-9 + BORRAR + LIMPIAR).
 
     Limitacion: desde la pantalla fisica solo se pueden introducir contraseñas
     numericas; para contraseñas alfanumericas usar el panel web.
@@ -1507,14 +1507,14 @@ class SecuritySettingsView(Widget):
         self._active_field = "current"
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Dibuja la vista de gestion de contrasena con teclado numerico."""
+        """Dibuja la vista de gestion de contraseña con teclado numerico."""
         if not self.visible:
             return
         pygame.draw.rect(surface, NETWORK_BG, self.rect)
 
         # Titulo
         title_font = _get_font(FONT_BOLD, FONT_SIZE_TITLE)
-        title_text = "CONTRASENA"
+        title_text = "CONTRASEÑA"
         title_r = _get_text_rect(title_font, title_text)
         _render_text(surface, title_font, title_text, NETWORK_ACCENT,
                      (self.rect.width - title_r.width) // 2, 4)
@@ -1522,9 +1522,9 @@ class SecuritySettingsView(Widget):
         # Estado
         info_font = _get_font(FONT_FAMILY, FONT_SIZE_SMALL)
         proteccion = "ACTIVADA" if self._enabled else "DESACTIVADA"
-        contrasena = "DE FABRICA (1234)" if self._is_default else "PERSONALIZADA"
+        contraseña = "DE FABRICA (1234)" if self._is_default else "PERSONALIZADA"
         _render_text(surface, info_font, f"Proteccion: {proteccion}", NETWORK_DIM, 12, 26)
-        _render_text(surface, info_font, f"Contrasena: {contrasena}", NETWORK_DIM, 12, 40)
+        _render_text(surface, info_font, f"Contraseña: {contraseña}", NETWORK_DIM, 12, 40)
 
         # Campos editables
         for key, rect in self._field_rects.items():
@@ -1645,7 +1645,7 @@ class SecuritySettingsView(Widget):
             self._on_toggle(target, self.current)
 
     def _handle_change(self) -> None:
-        """Valida y lanza el callback de cambio de contrasena."""
+        """Valida y lanza el callback de cambio de contraseña."""
         if not self.current:
             self.set_result("Introduce la contraseña actual", error=True)
             return

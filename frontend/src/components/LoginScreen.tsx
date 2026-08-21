@@ -1,9 +1,9 @@
 /**
  * LoginScreen — Pantalla de autenticacion del panel web.
  *
- * Se muestra cuando la contrasena del panel esta activada y el backend rechaza
+ * Se muestra cuando la contraseña del panel esta activada y el backend rechaza
  * la peticion (401) o el WebSocket (4401) por no tener una cookie de sesion
- * valida. La contrasena introducida se envia a POST /api/auth/login y no se
+ * valida. La contraseña introducida se envia a POST /api/auth/login y no se
  * guarda en el navegador: el backend responde con una cookie HttpOnly.
  */
 
@@ -56,14 +56,14 @@ export function LoginScreen(props: LoginScreenProps) {
         </div>
 
         <p class="text-gray-500 text-xs text-center mb-8">
-          Introduce la contrasena para controlar el HMI.
+          Introduce la contraseña para controlar el HMI.
         </p>
 
         <input
           type="password"
           value={password()}
           onInput={(e) => setPassword(e.currentTarget.value)}
-          placeholder="Contrasena"
+          placeholder="Contraseña"
           autocomplete="current-password"
           class="w-full px-4 py-3 rounded-xl bg-[#141428] border border-[#2a2a5e]
                  text-gray-200 placeholder-gray-600 text-sm

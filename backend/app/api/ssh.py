@@ -44,7 +44,7 @@ class SSHConnectRequest(BaseModel):
     Atributos:
         host: Direccion IP o hostname de la Raspberry Pi.
         user: Nombre de usuario para autenticacion SSH.
-        password: Contrasena para autenticacion (nunca se almacena en logs).
+        password: Contraseña para autenticacion (nunca se almacena en logs).
         key_path: Ruta a clave privada SSH (opcional, alternativa a password).
         port: Puerto TCP del servidor SSH (por defecto 22).
         timeout: Timeout de conexion en segundos (por defecto 15).
@@ -52,7 +52,7 @@ class SSHConnectRequest(BaseModel):
 
     host: str = Field(..., description="IP o hostname de la Raspberry Pi", examples=["192.168.1.100"])
     user: str = Field(default="pi", description="Usuario SSH", examples=["pi"])
-    password: str = Field(default="", description="Contrasena SSH (no se guarda en logs)")
+    password: str = Field(default="", description="Contraseña SSH (no se guarda en logs)")
     key_path: str = Field(default="", description="Ruta a clave privada SSH (opcional)")
     port: int = Field(default=22, ge=1, le=65535, description="Puerto SSH")
     timeout: int = Field(default=15, ge=1, le=60, description="Timeout en segundos")

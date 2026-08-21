@@ -102,11 +102,11 @@ class TestMigration004:
 
     @pytest.mark.asyncio
     async def test_resets_password_enabled_to_zero(self):
-        """`_migration_004` apaga la contrasena en instalaciones previas."""
+        """`_migration_004` apaga la contraseña en instalaciones previas."""
         db = Persistence(":memory:")
         await db.init()
         try:
-            # Simula una instalacion previa con la contrasena activada.
+            # Simula una instalacion previa con la contraseña activada.
             await db._conn.execute(
                 "UPDATE security_settings SET password_enabled = 1 WHERE id = 1"
             )

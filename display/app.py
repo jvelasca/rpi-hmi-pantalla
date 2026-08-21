@@ -381,7 +381,7 @@ class DisplayApp:
         self._redraw = True
 
     def _show_security(self) -> None:
-        """Muestra la configuracion de contrasena y carga el estado actual."""
+        """Muestra la configuracion de contraseña y carga el estado actual."""
         self.security_view.set_result("")
         self.view = "security"
         self._redraw = True
@@ -397,7 +397,7 @@ class DisplayApp:
         self._api_get("/api/auth/security", on_result=apply)
 
     def _toggle_security(self, enabled: bool, current: str) -> None:
-        """Activa o desactiva la proteccion por contrasena en background."""
+        """Activa o desactiva la proteccion por contraseña en background."""
         def apply(result: dict | None) -> None:
             if result is not None:
                 self.security_view.set_status(result)
@@ -419,10 +419,10 @@ class DisplayApp:
         )
 
     def _change_password(self, current: str, new: str) -> None:
-        """Cambia la contrasena del panel en background."""
+        """Cambia la contraseña del panel en background."""
         def apply(result: dict | None) -> None:
             if result is not None:
-                self.security_view.set_result("Contrasena actualizada")
+                self.security_view.set_result("Contraseña actualizada")
                 self.security_view.clear_fields()
                 self._fetch_security()
             else:

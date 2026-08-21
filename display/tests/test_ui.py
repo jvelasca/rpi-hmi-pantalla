@@ -915,7 +915,7 @@ class TestThemeConstants:
 
 
 class TestSecuritySettingsView:
-    """Pruebas de la vista de gestion de contrasena con teclado numerico."""
+    """Pruebas de la vista de gestion de contraseña con teclado numerico."""
 
     def _key_rect(self, view, key: str):
         """Devuelve el rect de la tecla del keypad por su etiqueta."""
@@ -1040,7 +1040,7 @@ class TestSecuritySettingsView:
         assert changed == [("1234", "12345678")]
 
     def test_toggle_blocks_activation_when_default(self):
-        """Activar con contrasena de fabrica se bloquea en cliente (sin callback)."""
+        """Activar con contraseña de fabrica se bloquea en cliente (sin callback)."""
         from display.ui.widgets import SecuritySettingsView
 
         view = SecuritySettingsView(480, 320)
@@ -1054,7 +1054,7 @@ class TestSecuritySettingsView:
         assert "fábrica" in view._result
 
     def test_toggle_requires_current(self):
-        """El toggle exige contrasena actual aunque no sea de fabrica."""
+        """El toggle exige contraseña actual aunque no sea de fabrica."""
         from display.ui.widgets import SecuritySettingsView
 
         view = SecuritySettingsView(480, 320)
@@ -1096,7 +1096,7 @@ class TestSecuritySettingsView:
         view.current = "1234"
         view.new = "12345678"
         view.confirm = "12345678"
-        view.set_result("Contrasena actualizada")
+        view.set_result("Contraseña actualizada")
         view.draw(surface)
 
         view.set_result("Debes cambiar la contraseña de fábrica (1234) antes de activar", error=True)

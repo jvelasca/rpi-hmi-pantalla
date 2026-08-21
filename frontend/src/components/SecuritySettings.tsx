@@ -1,13 +1,13 @@
 /**
- * SecuritySettings — Gestion de la contrasena del panel web.
+ * SecuritySettings — Gestion de la contraseña del panel web.
  *
  * Permite:
- *  - Activar/desactivar la contrasena del panel (flag persistido en SQLite).
- *  - Cambiar la contrasena (actual + nueva + confirmar).
+ *  - Activar/desactivar la contraseña del panel (flag persistido en SQLite).
+ *  - Cambiar la contraseña (actual + nueva + confirmar).
  *
  * El estado actual (activada/desactivada y si es la de fabrica "1234") se
- * carga desde GET /api/auth/security al montar. Para activar la contrasena
- * estando desactivada se exige introducir la contrasena actual (no hay cookie
+ * carga desde GET /api/auth/security al montar. Para activar la contraseña
+ * estando desactivada se exige introducir la contraseña actual (no hay cookie
  * de sesion valida en ese caso); para desactivarla, la cookie de sesion del
  * panel autoriza el cambio.
  */
@@ -32,7 +32,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
   const [currentForToggle, setCurrentForToggle] = createSignal("");
   const [toggling, setToggling] = createSignal(false);
 
-  // Cambio de contrasena
+  // Cambio de contraseña
   const [currentPwd, setCurrentPwd] = createSignal("");
   const [newPwd, setNewPwd] = createSignal("");
   const [confirmPwd, setConfirmPwd] = createSignal("");
@@ -54,16 +54,16 @@ export function SecuritySettings(props: SecuritySettingsProps) {
     const enabled = status()?.enabled ?? false;
     const target = !enabled;
 
-    // Para activar (no hay sesion valida) se exige la contrasena actual.
+    // Para activar (no hay sesion valida) se exige la contraseña actual.
     if (target && !currentForToggle()) {
-      setError("Introduce la contrasena actual para activar");
+      setError("Introduce la contraseña actual para activar");
       return;
     }
 
-    // No se permite activar la proteccion con la contrasena de fabrica.
+    // No se permite activar la proteccion con la contraseña de fabrica.
     if (target && status()?.is_default) {
       setError(
-        "Debes cambiar la contrasena de fabrica (1234) antes de activar la proteccion.",
+        "Debes cambiar la contraseña de fabrica (1234) antes de activar la proteccion.",
       );
       return;
     }
@@ -75,24 +75,24 @@ export function SecuritySettings(props: SecuritySettingsProps) {
     if (r) {
       setStatus(r);
       setCurrentForToggle("");
-      setMessage(target ? "Contrasena activada" : "Contrasena desactivada");
+      setMessage(target ? "Contraseña activada" : "Contraseña desactivada");
     } else {
-      setError("No se pudo cambiar el estado de la contrasena");
+      setError("No se pudo cambiar el estado de la contraseña");
     }
   }
 
   async function changePassword() {
     clearFeedback();
     if (!currentPwd()) {
-      setError("Introduce la contrasena actual");
+      setError("Introduce la contraseña actual");
       return;
     }
     if (newPwd().length < 8) {
-      setError("La nueva contrasena debe tener al menos 8 caracteres");
+      setError("La nueva contraseña debe tener al menos 8 caracteres");
       return;
     }
     if (newPwd() !== confirmPwd()) {
-      setError("La nueva contrasena no coincide con la confirmacion");
+      setError("La nueva contraseña no coincide con la confirmacion");
       return;
     }
 
@@ -106,9 +106,9 @@ export function SecuritySettings(props: SecuritySettingsProps) {
       setConfirmPwd("");
       const s = await api.getSecurity();
       if (s) setStatus(s);
-      setMessage("Contrasena actualizada. Vuelve a iniciar sesion.");
+      setMessage("Contraseña actualizada. Vuelve a iniciar sesion.");
     } else {
-      setError("No se pudo cambiar la contrasena (verifica la contrasena actual)");
+      setError("No se pudo cambiar la contraseña (verifica la contraseña actual)");
     }
   }
 
@@ -116,7 +116,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
     <div class="min-h-screen flex flex-col items-center justify-center bg-[#141428] p-6">
       <div class="bg-[#0f0f23] border border-[#2a2a5e] rounded-2xl p-8 w-[420px] max-w-[94vw] shadow-2xl">
         <h2 class="text-xl font-bold text-gray-200 mb-6 text-center tracking-wider">
-          CONTRASENA
+          CONTRASEÑA
         </h2>
 
         <Show when={loading()}>
@@ -139,7 +139,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-gray-500">Contrasena</span>
+              <span class="text-gray-500">Contraseña</span>
               <span
                 class="font-semibold"
                 classList={{
@@ -172,7 +172,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
 
             <Show when={!status()?.enabled}>
               <Field
-                label="Contrasena actual"
+                label="Contraseña actual"
                 value={currentForToggle()}
                 onChange={setCurrentForToggle}
                 placeholder="1234"
@@ -193,36 +193,36 @@ export function SecuritySettings(props: SecuritySettingsProps) {
               {toggling()
                 ? "Aplicando..."
                 : status()?.enabled
-                  ? "Desactivar contrasena"
-                  : "Activar contrasena"}
+                  ? "Desactivar contraseña"
+                  : "Activar contraseña"}
             </button>
           </div>
 
-          {/* Cambio de contrasena */}
+          {/* Cambio de contraseña */}
           <div>
             <div class="text-gray-500 text-xs font-semibold mb-2 tracking-wider">
-              CAMBIAR CONTRASENA
+              CAMBIAR CONTRASEÑA
             </div>
             <div class="space-y-3">
               <Field
-                label="Contrasena actual"
+                label="Contraseña actual"
                 value={currentPwd()}
                 onChange={setCurrentPwd}
-                placeholder="Contrasena actual"
+                placeholder="Contraseña actual"
                 type="password"
               />
               <Field
-                label="Nueva contrasena"
+                label="Nueva contraseña"
                 value={newPwd()}
                 onChange={setNewPwd}
                 placeholder="Minimo 8 caracteres"
                 type="password"
               />
               <Field
-                label="Confirmar nueva contrasena"
+                label="Confirmar nueva contraseña"
                 value={confirmPwd()}
                 onChange={setConfirmPwd}
-                placeholder="Repite la nueva contrasena"
+                placeholder="Repite la nueva contraseña"
                 type="password"
               />
             </div>
@@ -234,7 +234,7 @@ export function SecuritySettings(props: SecuritySettingsProps) {
                      text-white font-bold text-sm transition-colors
                      disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {changing() ? "Cambiando..." : "Cambiar contrasena"}
+              {changing() ? "Cambiando..." : "Cambiar contraseña"}
             </button>
           </div>
 

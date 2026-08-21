@@ -1,7 +1,7 @@
 /**
  * ConfigScreen — Modal de configuracion con opciones de diagnostico.
  * Muestra los accesos a: Prueba de Pantalla, Calibracion Tactil,
- * Configurar IP, Texto y Fuente, Contrasena y Volver.
+ * Configurar IP, Texto y Fuente, Contraseña y Volver.
  */
 
 interface ConfigScreenProps {
@@ -166,7 +166,7 @@ export function ConfigScreen(props: ConfigScreenProps) {
             </div>
           </button>
 
-          {/* Contrasena */}
+          {/* Contraseña */}
           <button
             onClick={props.onSecurity}
             class="flex items-center gap-4 px-6 py-4 rounded-xl
@@ -192,7 +192,7 @@ export function ConfigScreen(props: ConfigScreenProps) {
             </svg>
             <div class="text-left">
               <div class="text-gray-200 text-sm font-semibold group-hover:text-white transition-colors">
-                Contrasena
+                Contraseña
               </div>
               <div class="text-gray-500 text-xs mt-0.5">
                 Activar, desactivar o cambiar la clave

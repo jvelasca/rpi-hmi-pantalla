@@ -77,7 +77,7 @@ export function App() {
       setSecurityEnabled(true);
       ws.reconnect();
     } else {
-      setLoginError("Contrasena incorrecta");
+      setLoginError("Contraseña incorrecta");
     }
   }
 
