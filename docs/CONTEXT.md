@@ -7,11 +7,13 @@
 
 ## Ultima sesion
 
-- **Fecha:** 2026-08-11 (17:11 – 17:22)
+- **Fecha:** 2026-08-21 (cierre de V1 — Fases 1-5 completadas)
 - **Agente:** Cursor Agent (deepseek-v4-pro)
-- **Branch:** main
-- **Trabajo actual:** GitHub repo creado y push realizado. Proyecto público en https://github.com/jvelasca/rpi-hmi-pantalla.
-  - Siguiente: Fase 5 — GitHub Actions (CI), pre-commit hooks, badges dinámicos.
+- **Branch:** main · HEAD `881ec1a` (working tree con Fases 1-5, sin commit) · Versión `0.3.2`
+- **Trabajo actual:** Cierre de V1 completado: plan `docs/PLAN_CIERRE_V1.md` ejecutado en 5 fases.
+  - Fase 1 (auth session-cookie) · Fase 2 (docs) · Fase 3 (limpieza) · Fase 4 (hardening) · Fase 5 (verificación + bump 0.3.2).
+  - Verificación final: pytest 353 passed / 9 skipped · 26 vitest (verde) · ruff/mypy/bandit verdes.
+  - Siguiente: deploy físico a la Pi + commit final (hilo principal/orquestador).
 
 ## Estado actual
 
@@ -24,7 +26,7 @@
 | lightdm (escritorio) | DISABLED | `systemctl disable lightdm`. Ya no interfiere con /dev/dri/card0. |
 | Frontend SolidJS | CORRIENDO | http://<IP_DE_LA_PI>:8000/. Servido por FastAPI desde frontend/dist/. |
 | Docs | OK | Swagger en http://<IP_DE_LA_PI>:8000/docs |
-| Tests | 103/103 pass | 77 backend + 26 display = 103 tests total |
+| Tests | 353 pytest + 26 vitest | 353 passed / 9 skipped (backend+display) + 26 vitest (frontend) |
 | Systemd | INSTALADO | `rpi-hmi-backend.service` + `rpi-hmi-display.service` enabled. Auto-boot. |
 
 ## Fase 1: COMPLETADA
@@ -168,8 +170,8 @@ npm run build        # Compilar a dist/
 # Compilar
 cd frontend/ && npm run build
 
-# Desplegar a la Pi
-python scripts/deploy_frontend.py
+# Desplegar a la Pi (build + sync, unificado)
+python scripts/deploy.py
 ```
 
 ### API
@@ -276,6 +278,18 @@ dtoverlay=piscreen,drm,speed=24000000
 
 ## Tareas pendientes
 
+### Cierre de V1 (`docs/PLAN_CIERRE_V1.md`) — COMPLETADO
+- [x] **Fase 1 (P0):** Auth por session-cookie HttpOnly + login mínimo (sin `VITE_API_KEY` en el bundle)
+- [x] **Fase 2:** Documentación sincronizada (ARCHITECTURE / SECURITY / README)
+- [x] **Fase 3:** Limpieza de código obsoleto (`legacy/`, scripts duplicados, `.pyproj`/`.slnx`)
+- [x] **Fase 4:** Hardening (rate-limit login, `DISPLAY_RESOLUTION` centralizada)
+- [x] **Fase 5:** Verificación final completa + bump a `0.3.2`
+
+**Pendientes del hilo principal/orquestador:**
+- [ ] Deploy físico a la Pi con 0.3.2 (scripts + runbook ya listos)
+- [ ] Commit final de las Fases 1-5
+
+### Construcción original (histórico)
 - [x] **Fase 1:** Backend refactorizado, 77 tests pasan, corriendo en la Pi
 - [x] **Fase 1.1:** Instalar servicios systemd en la Pi
 - [x] **Fase 2:** Implementar `display/` con Pygame + DRM/KMS + Touch
@@ -287,7 +301,6 @@ dtoverlay=piscreen,drm,speed=24000000
 
 ### Archivos creados/modificados (fase 3)
 - `frontend/` — Proyecto completo SolidJS + Vite + Tailwind (COMPLETADO + DESPLEGADO)
-- `scripts/deploy_frontend.py` — Deploy SFTP del build frontend a la Pi
 - `scripts/deploy.py` — Script unificado: deploy, deps, --hmi, --install-service
 - `scripts/start_hmi.sh` — Script en la Pi: stop lightdm, unbind vtcon1, launch HMI
 - `config/systemd/rpi-hmi-display.service` — Auto-boot con Conflicts=lightdm

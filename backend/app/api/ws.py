@@ -39,6 +39,7 @@ from collections.abc import Mapping
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.app.api.auth import get_session_token_from_headers, session_manager
 from backend.app.api.deps import is_loopback_host
 from backend.app.config import settings
 from backend.app.models.events import ClientMessage, ServerMessage
@@ -108,7 +109,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - ``SECURITY_MODE == "protected"``: acepta conexiones desde loopback
       (display local de confianza); el resto debe autenticarse con
       ``settings.admin_api_key`` via header ``X-API-Key``, subprotocolo
-      ``Sec-WebSocket-Protocol`` o query param ``?token=``.
+      ``Sec-WebSocket-Protocol``, query param ``?token=`` o una cookie de
+      sesion valida emitida por ``POST /api/auth/login`` (navegador).
 
     Valida la version del protocolo: rechaza mensajes con
     version != "1.0" enviando PROTOCOL_VERSION_MISMATCH.
@@ -118,7 +120,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     """
     if settings.security_mode == "protected":
         client_host = websocket.client.host if websocket.client else None
-        if not is_loopback_host(client_host) and not any(
+        session_ok = session_manager.is_valid(
+            get_session_token_from_headers(websocket.headers)
+        )
+        if not is_loopback_host(client_host) and not session_ok and not any(
             _secrets.compare_digest(candidate, settings.admin_api_key or "")
             for candidate in _extract_api_key_candidates(websocket)
         ):

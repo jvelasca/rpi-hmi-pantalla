@@ -149,7 +149,7 @@ principal verifica el gate y hace **commit por workstream**.
 | H2 | Display + touch | `display/ui/{screen,touch}.py`, `display/app.py`, `display/tests/{test_ui,test_display_app}.py` | No | Sí (con H3/H4/H5) | P1/P2/P3 |
 | H3 | Red + watchdog | `backend/app/services/network_service.py`, `backend/app/models/network.py`, `backend/tests/test_network.py` (nuevo) | No | Sí | P2/P3 |
 | H4 | CI/CD + deps | `.github/workflows/ci.yml`, `backend/pyproject.toml`, `backend/requirements.txt`, `display/requirements.txt` | No | Sí | P2 |
-| H5 | Docs/versión | `README.md`, `QUICKSTART.md`, `docs/CONTEXT.md`, `docs/ARCHITECTURE.md`, `.env.example`, `frontend/.env.example` | No | Sí | P2/P3 |
+| H5 | Docs/versión | `README.md`, `docs/deploy/runbook.md`, `docs/CONTEXT.md`, `docs/ARCHITECTURE.md`, `.env.example`, `frontend/.env.example` | No | Sí | P2/P3 |
 | H6 | Despliegue a la Pi | `config/sudoers.d/rpi-hmi`, `config/systemd/*`, `scripts/deploy*.py`, `.env` (NO commitear), `docs/deploy/runbook.md` (nuevo) | **Sí** | Secuencial (último) | P0 |
 | H7 | Arquitectura mayor (HMI vs Admin) | `backend/app/main.py`, `backend/app/api/*`, systemd | No | Solo tras decidir diseño | P3 |
 | H8 | Decisiones de producto | — (solo documentar/decidir) | No | Al inicio, con el usuario | P3 |
@@ -157,7 +157,7 @@ principal verifica el gate y hace **commit por workstream**.
 ### Reglas anti-colisión
 
 - `backend/app/main.py` lo posee **H1** (CORS) — H7 solo si se lanza (nunca en paralelo con H1).
-- `docs/SECURITY.md` lo posee **H1**; H5 **NO** lo toca (H5 solo README/QUICKSTART/CONTEXT/ARCHITECTURE/.env.example).
+- `docs/SECURITY.md` lo posee **H1**; H5 **NO** lo toca (H5 solo README/runbook/CONTEXT/ARCHITECTURE/.env.example).
 - `display/app.py` lo posee **H2** (incluye el fix de `version="v1.2"` del HeaderWidget).
 - Los tests son disjuntos por workstream (H1: backend api/config; H3: `test_network.py` nuevo; H2: display).
 
@@ -191,9 +191,9 @@ principal verifica el gate y hace **commit por workstream**.
 - **Done:** `ci.yml` válido (YAML) y los checks nuevos reproducibles localmente.
 
 **H5 — Docs/versión.**
-1. Eliminar `192.168.88.211` hardcodeada de README/QUICKSTART (dejar `http://<IP_DE_LA_PI>:8000` o `VITE_API_URL`).
+1. Eliminar `192.168.88.211` hardcodeada de README/runbook (dejar `http://<IP_DE_LA_PI>:8000` o `VITE_API_URL`).
 2. Unificar conteos de tests y referencias de versión a `0.3.0`.
-3. Documentar el modelo `protected` unificado (mutadores HMI + WS) en README/QUICKSTART.
+3. Documentar el modelo `protected` unificado (mutadores HMI + WS) en README/runbook.
 4. Asegurar `frontend/.env.example` documenta `VITE_API_URL`.
 - **Done:** sin impacto en tests; revisar que no rompe `npm run build`.
 

@@ -371,14 +371,18 @@ class StateManager:
         logger.info("Boton liberado (seq=%d)", seq)
         return new_state
 
-    def set_display(self, connected: bool, resolution: str = "480x320", driver: str = "ili9486") -> None:
+    def set_display(
+        self, connected: bool, resolution: str | None = None, driver: str = "ili9486"
+    ) -> None:
         """Actualiza la informacion del display fisico.
 
         Args:
             connected: True si el display esta funcional.
-            resolution: Resolucion WxH.
+            resolution: Resolucion WxH. Si es None, usa ``settings.display_resolution``.
             driver: Nombre del driver kernel.
         """
+        if resolution is None:
+            resolution = settings.display_resolution
         with self._lock:
             seq = self._hub.next_sequence()
             self._display_info = DisplayInfo(

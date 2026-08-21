@@ -163,7 +163,7 @@ sudo journalctl -u rpi-hmi-backend.service -f
 ```
 
 Si ves reinicios cada 30 s, revisa que `NOTIFY_SOCKET` esté disponible y que el
-event loop no esté saturado (consulta `docs/deploy/handoffs/H9.md`).
+event loop no esté saturado (consulta `docs/archive/deploy-handoffs/H9.md`).
 
 ### 2.5 `/dev/mem` en `ReadWritePaths` (P2-4)
 
@@ -218,7 +218,7 @@ RPI_HIL=1 python -m pytest backend/tests/test_hil_hardware.py -q
 
 Se esperan **5 passed** (gpiomem, DRM card0, `/health`, `/api/status`, touch
 presente). Si alguno se salta, revisa el recurso concreto (ver
-`docs/deploy/handoffs/H6-hil.md`).
+`docs/archive/deploy-handoffs/H6-hil.md`).
 
 ### 4.2 Checklist manual de cierre
 
@@ -279,6 +279,6 @@ python scripts/deploy.py --verify          # solo verificar estado
 
 - `docs/deploy/INICIO.md` — punto de arranque y mapa de workstreams H1–H8.
 - `docs/deploy/ESTADO_DESPLEGUE.md` — estado global y decisiones.
-- `docs/deploy/handoffs/H6-deploy.md`, `H6-hil.md`, `H8.md`, `H9.md` — detalle técnico.
+- `docs/archive/deploy-handoffs/H6-deploy.md`, `H6-hil.md`, `H8.md`, `H9.md` — detalle técnico.
 - `docs/SECURITY.md` — modelo de amenazas y safe-state.
 - `backend/config/devices.yaml` — fuente de verdad de pines (LED virtual).

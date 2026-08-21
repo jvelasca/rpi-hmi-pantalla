@@ -2,9 +2,13 @@
  * Header — Barra superior con titulo y estado de conexion.
  */
 
+import { Show } from "solid-js";
+
 interface HeaderProps {
   connected: boolean;
   wsClients: number;
+  authenticated: boolean;
+  onLogout: () => void;
 }
 
 export function Header(props: HeaderProps) {
@@ -40,6 +44,17 @@ export function Header(props: HeaderProps) {
             {props.connected ? `WS:${props.wsClients}` : "WS:--"}
           </span>
         </div>
+
+        {/* Cerrar sesion (solo cuando hay sesion activa) */}
+        <Show when={props.authenticated}>
+          <button
+            onClick={props.onLogout}
+            class="text-xs text-gray-500 hover:text-[#e94560] transition-colors
+                   focus:outline-none focus:ring-2 focus:ring-[#e94560]/50 rounded px-2 py-1"
+          >
+            Salir
+          </button>
+        </Show>
       </div>
     </header>
   );

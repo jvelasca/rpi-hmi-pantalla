@@ -25,6 +25,7 @@ from backend.app._version import __version__
 from backend.app.api import (
     admin_deploy_router,
     admin_ssh_router,
+    auth_router,
     health_router,
     hmi_router,
     network_router,
@@ -130,10 +131,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Detectar display
     try:
         if Path("/dev/dri/card0").exists():
-            state_manager.set_display(connected=True, resolution="480x320", driver="piscreen")
+            state_manager.set_display(
+                connected=True, resolution=settings.display_resolution, driver="piscreen"
+            )
             logger.info("Display detectado: piscreen DRM")
         elif Path("/dev/fb1").exists():
-            state_manager.set_display(connected=True, resolution="480x320", driver="ili9486")
+            state_manager.set_display(
+                connected=True, resolution=settings.display_resolution, driver="ili9486"
+            )
             logger.info("Display detectado: ili9486 framebuffer")
         else:
             logger.warning("Display fisico no detectado")
@@ -241,6 +246,9 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Accept", "X-API-Key"],
 )
+
+# Autenticacion del panel web (login/logout/status). Siempre registrado.
+app.include_router(auth_router)
 
 # Routers HMI (sin autenticacion, acceso LAN)
 app.include_router(hmi_router)

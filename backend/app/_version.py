@@ -12,7 +12,7 @@ from pathlib import Path
 # _version.py -> app -> backend -> raiz del repo
 _VERSION_PATH = Path(__file__).resolve().parents[2] / "VERSION"
 
-_FALLBACK = "0.3.1"
+_FALLBACK = "0.3.2"
 
 
 def _read_version() -> str:

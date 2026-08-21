@@ -5,7 +5,9 @@ Valida defaults, seguridad, y carga de .env.
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
+import pytest
 from fastapi import HTTPException
 
 from backend.app.config import Settings
@@ -37,6 +39,9 @@ class TestSettingsDefaults:
         assert s.enable_admin_api is False
         assert s.db_path == "data/state.db"
         assert s.startup_policy == "restore"
+        assert s.login_max_attempts == 5
+        assert s.login_window_seconds == 300
+        assert s.display_resolution == "480x320"
 
     def test_startup_policy_rejects_invalid_value(self):
         """startup_policy solo acepta 'off', 'restore' y 'safe'."""
@@ -60,6 +65,27 @@ class TestSettingsDefaults:
         """Los espacios alrededor de las comas se eliminan."""
         s = _new_settings(cors_origins=" http://a.com , http://b.com ")
         assert s.cors_origin_list == ["http://a.com", "http://b.com"]
+
+    def test_display_resolution_rejects_invalid_pattern(self):
+        """display_resolution debe cumplir el patron WxH (digitos x digitos)."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _new_settings(display_resolution="480-320")
+
+    def test_login_max_attempts_rejects_zero(self):
+        """login_max_attempts debe ser >= 1."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _new_settings(login_max_attempts=0)
+
+    def test_login_window_seconds_rejects_small(self):
+        """login_window_seconds debe ser >= 10."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _new_settings(login_window_seconds=9)
 
 
 # ── Seguridad ──────────────────────────────────────────────────
@@ -114,15 +140,15 @@ class TestAuthDependencies:
 
     def test_require_admin_api_key_always_503_without_key(self, monkeypatch):
         """require_admin_api_key_always devuelve 503 si admin_api_key esta vacia."""
-        import pytest
-
         from backend.app import config as config_module
         from backend.app.api.deps import require_admin_api_key_always
 
         monkeypatch.setattr(config_module.settings, "admin_api_key", "")
 
+        request = SimpleNamespace(headers={})
+
         with pytest.raises(HTTPException) as exc_info:
-            require_admin_api_key_always(api_key=None)
+            require_admin_api_key_always(request=request, api_key=None)
 
         assert exc_info.value.status_code == 503
 

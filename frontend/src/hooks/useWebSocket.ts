@@ -24,10 +24,10 @@ const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.h
 const RECONNECT_DELAY = 2000;
 
 // En SECURITY_MODE=protected el backend exige autenticacion en /ws para
-// clientes no-loopback. El navegador no puede enviar X-API-Key como header,
-// pero si como subprotocolo: new WebSocket(url, ["rpi-hmi", apiKey]).
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
-const WS_PROTOCOLS = API_KEY ? ["rpi-hmi", API_KEY] : [];
+// clientes no-loopback. El navegador envia la cookie de sesion HttpOnly
+// automaticamente en el handshake (mismo origen). Solo se anuncia el
+// subprotocolo "rpi-hmi" para que el backend lo seleccione.
+const WS_PROTOCOLS = ["rpi-hmi"];
 
 type SyncState = "normal" | "resyncing";
 
@@ -160,6 +160,21 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
     setConnected(false);
   }
 
+  function reconnect() {
+    shouldReconnect = true;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws) {
+      ws.onclose = null;
+      ws.close();
+      ws = null;
+    }
+    setConnected(false);
+    connect();
+  }
+
   // Auto-connect
   connect();
 
@@ -169,5 +184,6 @@ export function useWebSocket(onMessage: (msg: ServerMessage) => void) {
     connected,
     send,
     disconnect,
+    reconnect,
   };
 }

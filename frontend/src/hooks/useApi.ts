@@ -1,6 +1,10 @@
 /**
  * useApi — REST client para el backend FastAPI.
  * Fallback cuando WebSocket no esta disponible.
+ *
+ * La autenticacion del panel web se gestiona con una cookie de sesion HttpOnly
+ * (emitida por POST /api/auth/login). El navegador envia la cookie
+ * automaticamente en cada fetch; no se maneja ninguna API key en JS.
  */
 
 import { createSignal } from "solid-js";
@@ -16,17 +20,21 @@ import type {
 
 const BASE = "/api";
 
-// API key opcional (VITE_API_KEY). En SECURITY_MODE=protected el backend exige
-// X-API-Key en los endpoints mutadores (POST). Si no se configura, el frontend
-// funciona igual que antes (modo local / LAN de confianza).
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
-
-function authHeaders(): Record<string, string> {
-  return API_KEY ? { "X-API-Key": API_KEY } : {};
+export interface AuthStatus {
+  security_mode: "local" | "protected";
+  authenticated: boolean;
 }
 
 export function useApi() {
   const [error, setError] = createSignal<string | null>(null);
+  const [unauthorized, setUnauthorized] = createSignal(false);
+
+  async function handle<T>(res: Response): Promise<T | null> {
+    if (res.status === 401) setUnauthorized(true);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    setError(null);
+    return (await res.json()) as T;
+  }
 
   async function get<T>(endpoint: string): Promise<T | null> {
     try {
@@ -34,9 +42,7 @@ export function useApi() {
         headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(3000),
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      setError(null);
-      return (await res.json()) as T;
+      return await handle<T>(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return null;
@@ -54,14 +60,11 @@ export function useApi() {
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
-          ...authHeaders(),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(5000),
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      setError(null);
-      return (await res.json()) as T;
+      return await handle<T>(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return null;
@@ -93,8 +96,14 @@ export function useApi() {
   const sendDisplayCommand = (action: DisplayAction) =>
     postJson<{ success: boolean; action: string }>("/display/command", { action });
 
+  const getAuthStatus = () => get<AuthStatus>("/auth/status");
+  const login = (api_key: string) =>
+    postJson<{ authenticated: boolean }>("/auth/login", { api_key });
+  const logout = () => postJson<{ authenticated: boolean }>("/auth/logout");
+
   return {
     error,
+    unauthorized,
     getStatus,
     getLed,
     toggleLed,
@@ -109,5 +118,8 @@ export function useApi() {
     getDisplaySettings,
     setDisplaySettings,
     sendDisplayCommand,
+    getAuthStatus,
+    login,
+    logout,
   };
 }

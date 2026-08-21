@@ -2,7 +2,7 @@
  * App — Componente raiz. Orquesta WebSocket, estado y layout.
  */
 
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, onMount, Show } from "solid-js";
 import { useApi } from "@/hooks/useApi";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useConnectionMonitor } from "@/hooks/useConnectionMonitor";
@@ -12,6 +12,7 @@ import { ButtonPanel } from "@/components/ButtonPanel";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { ConfigScreen } from "@/components/ConfigScreen";
+import { LoginScreen } from "@/components/LoginScreen";
 import { ScreenTest } from "@/components/ScreenTest";
 import { TouchCalibration } from "@/components/TouchCalibration";
 import { NetworkConfig } from "@/components/NetworkConfig";
@@ -38,6 +39,48 @@ export function App() {
 
   // ── API REST (fallback) ─────────────────────────────
   const api = useApi();
+
+  // ── Autenticacion (session-cookie HttpOnly) ─────────
+  const [securityMode, setSecurityMode] = createSignal<"local" | "protected" | null>(null);
+  const [authenticated, setAuthenticated] = createSignal(false);
+  const [loginError, setLoginError] = createSignal<string | null>(null);
+
+  onMount(async () => {
+    const status = await api.getAuthStatus();
+    if (status) {
+      setSecurityMode(status.security_mode);
+      setAuthenticated(status.authenticated);
+    }
+  });
+
+  // Si el backend responde 401 en algun mutador, forzamos el login.
+  createEffect(() => {
+    if (api.unauthorized()) {
+      setAuthenticated(false);
+      setSecurityMode("protected");
+    }
+  });
+
+  async function handleLogin(apiKey: string) {
+    setLoginError(null);
+    const result = await api.login(apiKey);
+    if (result?.authenticated) {
+      setAuthenticated(true);
+      setSecurityMode("protected");
+      ws.reconnect();
+    } else {
+      setLoginError("Clave incorrecta");
+    }
+  }
+
+  async function handleLogout() {
+    await api.logout();
+    setAuthenticated(false);
+    setLoginError(null);
+    ws.disconnect();
+  }
+
+  const needsLogin = () => securityMode() === "protected" && !authenticated();
 
   // ── WebSocket ───────────────────────────────────────
   function handleWsMessage(msg: ServerMessage) {
@@ -138,46 +181,58 @@ export function App() {
   // ── Render ──────────────────────────────────────────
   return (
     <div class="min-h-screen flex flex-col bg-[#141428]">
-      <Show when={view() === "screenTest"}>
-        <ScreenTest onBack={() => setView("config")} />
+      {/* Pantalla de login: solo en protected y sin sesion valida. */}
+      <Show when={needsLogin()}>
+        <LoginScreen error={loginError()} onLogin={handleLogin} />
       </Show>
 
-      <Show when={view() === "touchCalibration"}>
-        <TouchCalibration onBack={() => setView("config")} />
-      </Show>
+      <Show when={!needsLogin()}>
+        <Show when={view() === "screenTest"}>
+          <ScreenTest onBack={() => setView("config")} />
+        </Show>
 
-      <Show when={view() === "network"}>
-        <NetworkConfig onBack={() => setView("config")} />
-      </Show>
+        <Show when={view() === "touchCalibration"}>
+          <TouchCalibration onBack={() => setView("config")} />
+        </Show>
 
-      <Show when={view() === "font"}>
-        <FontSettings onBack={() => setView("config")} />
-      </Show>
+        <Show when={view() === "network"}>
+          <NetworkConfig onBack={() => setView("config")} />
+        </Show>
 
-      <Show when={view() === "main" || view() === "config"}>
-        <Header connected={ws.connected()} wsClients={wsClients()} />
+        <Show when={view() === "font"}>
+          <FontSettings onBack={() => setView("config")} />
+        </Show>
 
-        <main class="flex-1 flex items-center justify-center p-6">
-          <div class="flex flex-wrap gap-6 justify-center items-start">
-            <LedPanel led={led()} onToggle={toggleLed} />
-            <ButtonPanel button={button()} onPress={pressButton} onRelease={releaseButton} />
-          </div>
-        </main>
-
-        <ConnectionStatus connected={ws.connected()} error={api.error()} />
-
-        {/* Boton de configuracion */}
-        <ConfigPanel onOpen={() => setView("config")} />
-
-        {/* Modal de configuracion */}
-        <Show when={view() === "config"}>
-          <ConfigScreen
-            onScreenTest={goScreenTest}
-            onTouchCalibration={goTouchCalibration}
-            onNetwork={goNetwork}
-            onFont={goFont}
-            onBack={goBackToMain}
+        <Show when={view() === "main" || view() === "config"}>
+          <Header
+            connected={ws.connected()}
+            wsClients={wsClients()}
+            authenticated={authenticated()}
+            onLogout={handleLogout}
           />
+
+          <main class="flex-1 flex items-center justify-center p-6">
+            <div class="flex flex-wrap gap-6 justify-center items-start">
+              <LedPanel led={led()} onToggle={toggleLed} />
+              <ButtonPanel button={button()} onPress={pressButton} onRelease={releaseButton} />
+            </div>
+          </main>
+
+          <ConnectionStatus connected={ws.connected()} error={api.error()} />
+
+          {/* Boton de configuracion */}
+          <ConfigPanel onOpen={() => setView("config")} />
+
+          {/* Modal de configuracion */}
+          <Show when={view() === "config"}>
+            <ConfigScreen
+              onScreenTest={goScreenTest}
+              onTouchCalibration={goTouchCalibration}
+              onNetwork={goNetwork}
+              onFont={goFont}
+              onBack={goBackToMain}
+            />
+          </Show>
         </Show>
       </Show>
     </div>

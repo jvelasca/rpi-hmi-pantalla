@@ -14,12 +14,16 @@ Variables de entorno:
     BACKEND_PORT: Puerto de escucha (default: 8000)
     SECURITY_MODE: Modo de seguridad 'local' | 'protected' (default: local)
     ADMIN_API_KEY: Clave API para endpoints protegidos y administrativos
+    SESSION_TTL_SECONDS: TTL de la cookie de sesion del panel web (default: 28800)
+    LOGIN_MAX_ATTEMPTS: Intentos fallidos de login por IP antes de bloquear (default: 5)
+    LOGIN_WINDOW_SECONDS: Ventana en segundos del rate-limit de login (default: 300)
     ENABLE_ADMIN_API: Habilitar endpoints /admin/* (default: false)
     CORS_ORIGINS: Origenes CORS permitidos (separados por coma)
     ENABLE_DOCS: Habilitar Swagger/Redoc (default: false)
     LOG_LEVEL: Nivel de logging (default: info)
     STARTUP_POLICY: Politica de arranque de actuadores 'off'|'restore'|'safe' (default: restore)
     DB_PATH: Ruta al archivo SQLite de persistencia (default: data/state.db)
+    DISPLAY_RESOLUTION: Resolucion del display fisico en formato WxH (default: 480x320)
 """
 
 from __future__ import annotations
@@ -59,11 +63,30 @@ class Settings(BaseSettings):
     security_mode: Literal["local", "protected"] = Field(
         default="local",
         description="Modo de seguridad. 'local' = HMI sin auth (prototipo domestico). "
-                    "'protected' = endpoints que mutan hardware/red exigen header X-API-Key.",
+                    "'protected' = endpoints que mutan hardware/red exigen X-API-Key "
+                    "o cookie de sesion (ver /api/auth/login).",
     )
     admin_api_key: str = Field(
         default="",
         description="API key para proteger endpoints administrativos /admin/*",
+    )
+    session_ttl_seconds: int = Field(
+        default=28800,
+        ge=60,
+        description="TTL en segundos de la cookie de sesion del panel web "
+                    "(login por /api/auth/login). Default 8 horas.",
+    )
+    login_max_attempts: int = Field(
+        default=5,
+        ge=1,
+        description="Numero maximo de intentos fallidos de login por IP antes de "
+                    "devolver 429 (ventana fija; ver LOGIN_WINDOW_SECONDS).",
+    )
+    login_window_seconds: int = Field(
+        default=300,
+        ge=10,
+        description="Ventana en segundos del rate-limit de login (ventana fija "
+                    "por IP de cliente).",
     )
     cors_origins: str = Field(
         default="http://localhost:5173,http://localhost:8000",
@@ -94,6 +117,13 @@ class Settings(BaseSettings):
     db_path: str = Field(
         default="data/state.db",
         description="Ruta al archivo SQLite de persistencia",
+    )
+
+    # Display
+    display_resolution: str = Field(
+        default="480x320",
+        pattern=r"^\d+x\d+$",
+        description="Resolucion del display fisico en formato WxH (ej. '480x320').",
     )
 
     @property

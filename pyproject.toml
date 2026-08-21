@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpi-hmi"
-version = "0.3.1"
+version = "0.3.2"
 description = "Raspberry Pi HMI — Panel de control táctil industrial"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,7 +27,7 @@ asyncio_mode = "auto"
 testpaths = ["backend/tests", "display/tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short --strict-markers"
-norecursedirs = ["legacy", ".venv", "venv", "node_modules", ".git", "__pycache__"]
+norecursedirs = [".venv", "venv", "node_modules", ".git", "__pycache__"]
 markers = [
     "hardware: test que requiere Raspberry Pi fisica (HIL). Se salta en entornos sin hardware.",
 ]

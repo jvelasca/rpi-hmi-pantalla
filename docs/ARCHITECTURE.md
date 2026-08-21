@@ -1,33 +1,36 @@
-# RPi HMI — Arquitectura del Sistema (v0.3.1)
+# RPi HMI — Arquitectura del Sistema (v0.3.2)
 
-> **Estado:** Plan para implementacion  
-> **Ultima actualizacion:** 2026-08-11  
-> **Hardware:** Raspberry Pi B+ V1.2 (BCM2835 ARMv6, 512MB RAM)  
-> **Display:** 3.5" ILI9486 480x320 SPI + XPT2046 Touch  
+> **Estado:** Implementado (V1, no en producción)  
+> **Última actualización:** 2026-08-20  
+> **Hardware:** Raspberry Pi Model B+ Rev 1.2 (BCM2835 ARMv6, 512MB RAM)  
+> **Display:** 3.5" ILI9486 480x320 SPI + XPT2046 Touch
 
 ---
 
-## 1. Vision General
+## 1. Visión general
 
-Sistema HMI embebido autonomo para Raspberry Pi con doble interfaz de usuario:
+Sistema HMI embebido autónomo para Raspberry Pi con doble interfaz de usuario:
 
-| Interfaz | Tecnologia | Proposito |
+| Interfaz | Tecnología | Propósito |
 |---|---|---|
-| **Display fisico** (3.5" TFT) | Pygame + DRM/KMS | Panel de control tactil local |
+| **Display físico** (3.5" TFT) | Pygame + DRM/KMS | Panel de control táctil local |
 | **Frontend web** | SolidJS + TypeScript | Control remoto desde navegador |
 
-Ambos se comunican con un **unico backend FastAPI** que abstrae el hardware (GPIO, SPI, I2C) y gestiona el estado del sistema.
+Ambos se comunican con un **único backend FastAPI** que abstrae el hardware (GPIO),
+gestiona el estado del sistema, persiste en SQLite y expone REST + WebSocket.
 
 ```
-+------------------ Raspberry Pi (autonoma) ---------------------+
++------------------ Raspberry Pi (autónoma) ----------------------+
 |                                                                  |
 |  +------------------------------------------------------------+ |
 |  |           Backend FastAPI (Python 3.11 + tipado)           | |
 |  |                                                            | |
-|  |  * REST API  (/:8000/api/*)          Pydantic v2 models   | |
+|  |  * REST API  (/:8000/api/*, /admin/*)  Pydantic v2        | |
 |  |  * WebSocket (/:8000/ws)             Estado en tiempo real | |
-|  |  * HAL       (gpiozero)              GPIO, SPI, I2C        | |
-|  |  * Static    (SolidJS compilado)     Servido desde /static | |
+|  |  * Auth      (/:8000/api/auth/*)     Cookie de sesión      | |
+|  |  * GPIO      (gpiozero)              Pin desde devices.yaml| |
+|  |  * Persistencia SQLite               data/state.db         | |
+|  |  * Frontend  (SolidJS compilado)     Servido desde /       | |
 |  +------------------------------+-----------------------------+ |
 |                                 |                               |
 |            +--------------------+----------+                    |
@@ -35,7 +38,7 @@ Ambos se comunican con un **unico backend FastAPI** que abstrae el hardware (GPI
 |  +-----------------+ +-----------+ +-------------+             |
 |  | Pygame DRM      | | Navegador | | Navegador   |             |
 |  | (display        | | (misma    | | (LAN/remoto)|             |
-|  |  fisico)        | | Pi)       | |             |             |
+|  |  físico)        | | Pi)       | |             |             |
 |  | ILI9486 TFT     | |           | |             |             |
 |  +-----------------+ +-----------+ +-------------+             |
 |       ^ touch                                                  |
@@ -43,151 +46,169 @@ Ambos se comunican con un **unico backend FastAPI** que abstrae el hardware (GPI
 +-------+--------------------------------------------------------+
 ```
 
-### Principios de Diseno
+### Principios de diseño
 
-1. **Pi autonoma:** Todo se ejecuta en la Pi. Un navegador = un cliente.
-2. **Backend unico:** FastAPI es la fuente de verdad. No hay `pi_hmi_server.py` duplicado.
-3. **Tipado fuerte:** Pydantic en backend, TypeScript en frontend = contrato verificable.
-4. **Ligero:** SolidJS (~7.6KB gzip), sin Docker en ARMv6, sin Node.js en runtime.
-5. **Profesional:** Documentacion exhaustiva, tests, CI, estructura de proyecto estandar.
-6. **Preservacion de contexto:** `docs/CONTEXT.md` como checkpoint para agentes de IA.
+1. **Pi autónoma:** Todo se ejecuta en la Pi. Un navegador = un cliente.
+2. **Backend único:** FastAPI es la fuente de verdad. No hay `pi_hmi_server.py` duplicado.
+3. **Tipado fuerte:** Pydantic en backend, TypeScript + Zod en frontend = contrato verificable.
+4. **Ligero:** SolidJS (sin VDOM), sin Docker en ARMv6, sin Node.js en runtime.
+5. **Persistencia:** estado (LED, botón, ajustes de display) en SQLite; el pin GPIO se lee siempre de `devices.yaml`.
+6. **Profesional:** documentación exhaustiva, tests, CI, estructura de proyecto estándar.
 
 ---
 
-## 2. Stack Tecnologico
+## 2. Stack tecnológico
 
 ### 2.1 Backend (Python)
 
-| Componente | Tecnologia | Justificacion |
+| Componente | Tecnología | Justificación |
 |---|---|---|
-| Framework HTTP | **FastAPI 0.115+** | Async nativo, OpenAPI automatico, tipado Pydantic |
-| Modelos | **Pydantic v2** | Validacion estricta, serializacion, documentacion |
+| Framework HTTP | **FastAPI** | Async nativo, OpenAPI automático, tipado Pydantic |
+| Modelos | **Pydantic v2** | Validación estricta, serialización, documentación |
 | Hardware GPIO | **gpiozero** | API de alto nivel, soporta BCM2835 |
-| Display fisico | **Pygame 2.6+** | DRM/KMS nativo, dirty rectangles, touch via evdev |
+| Display físico | **Pygame 2.6+** | DRM/KMS nativo, dirty rectangles, touch vía evdev |
 | Async | **asyncio** + **anyio** | Concurrencia ligera, WebSocket real-time |
-| Servidor | **uvicorn** | ASGI, produccion, workers configurables |
-| Tests | **pytest** + **pytest-asyncio** | Cobertura >= 80% |
-| Tipado | **mypy** (strict mode) | Verificacion estatica total |
-| Linting | **ruff** | Rapido, reemplaza flake8+isort+black |
+| Servidor | **uvicorn** | ASGI, producción, workers configurables |
+| Persistencia | **SQLite** (`data/state.db`) | Estado local sin servidor externo |
+| SSH/deploy | **paramiko** | Conexión remota para `/admin/*` |
+| Tests | **pytest** + **pytest-asyncio** | Cobertura backend + display |
+| Tipado / lint | **mypy** + **ruff** | Verificación estática y estilo |
 
-### 2.2 Frontend Web (TypeScript)
+### 2.2 Frontend web (TypeScript)
 
-| Componente | Tecnologia | Tamano (gzip) | Justificacion |
-|---|---|---|---|
-| Framework | **SolidJS 1.9+** | ~7.6 KB | El mas rapido, sin VDOM, JSX nativo |
-| Bundler | **Vite 6** | — | HMR instantaneo, tree-shaking optimo |
-| CSS | **Tailwind CSS v4** | ~3 KB | Utility-first, purgado en build |
-| Estado | **createSignal** (built-in) | 0 KB extra | Reactividad fina, sin librerias externas |
-| Tipado | **TypeScript 5.x** (strict) | — | Contrato tipado con backend |
-
-### 2.3 Display Fisico (Pygame)
-
-| Componente | Tecnologia | Justificacion |
+| Componente | Tecnología | Justificación |
 |---|---|---|
-| Renderizado | **Pygame + DRM/KMS** | Acceso directo a /dev/dri/card0, sin X11/Wayland |
-| Driver pantalla | **dtoverlay=piscreen,drm,speed=24000000** | TinyDRM oficial de Raspberry Pi, dirty rectangles |
-| Driver touch | **dtoverlay=ads7846** | XPT2046 via SPI1 CS1 |
-| Optimizacion | Dirty rectangles | Solo actualiza zonas modificadas (10-25 FPS efectivos) |
-| Fuentes | Pygame freetype | Renderizado escalable de fuentes TTF |
+| Framework | **SolidJS** | Señales reactivas, sin VDOM, JSX nativo |
+| Bundler | **Vite** | HMR instantáneo, tree-shaking óptimo |
+| CSS | **Tailwind CSS v4** | Utility-first, purgado en build |
+| Estado | **createSignal** (built-in) | Reactividad fina, sin librerías externas |
+| Validación runtime | **Zod** | Esquemas de mensajes WS (`schemas/ws.ts`) |
+| Tipado | **TypeScript** (strict) | Contrato tipado con backend |
+
+### 2.3 Display físico (Pygame)
+
+| Componente | Tecnología | Justificación |
+|---|---|---|
+| Renderizado | **Pygame + DRM/KMS** | Acceso directo a `/dev/dri/card0`, sin X11/Wayland |
+| Driver pantalla | `dtoverlay=piscreen,drm` | TinyDRM oficial de Raspberry Pi, dirty rectangles |
+| Driver touch | `dtoverlay=ads7846` | XPT2046 vía SPI1 CS1 |
+| Optimización | Dirty rectangles | Solo actualiza zonas modificadas |
 
 ---
 
-## 3. Estructura del Proyecto
+## 3. Estructura del proyecto
 
 ```
 Rpi_Pantalla_V1/
 ├── backend/                         # Servidor FastAPI
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py                  # FastAPI app + lifespan events
-│   │   ├── config.py                # Pydantic Settings (.env)
+│   │   ├── _version.py              # Versión leída de VERSION (raíz)
+│   │   ├── main.py                  # FastAPI app + lifespan + CORS + static
+│   │   ├── config.py                # pydantic-settings (.env)
 │   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   ├── router.py            # Router principal (/api/*)
-│   │   │   ├── hmi.py              # Endpoints HMI (LED, button)
-│   │   │   ├── deploy.py           # Deploy remoto
-│   │   │   └── ws.py               # WebSocket handler
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── state_manager.py     # Estado compartido (singleton)
-│   │   │   ├── display_service.py   # Pygame DRM display manager
-│   │   │   └── gpio_service.py      # Abstraction GPIO (gpiozero)
-│   │   ├── hardware/
-│   │   │   ├── __init__.py
-│   │   │   ├── hal.py              # Hardware Abstraction Layer
-│   │   │   └── devices.py          # Registro de dispositivos
+│   │   │   ├── __init__.py          # Exporta todos los routers
+│   │   │   ├── auth.py              # /api/auth/* (login/logout/status + SessionManager)
+│   │   │   ├── deps.py              # require_admin_api_key(_always), loopback exento
+│   │   │   ├── hmi.py               # /api/led|button|status|display|settings/display
+│   │   │   ├── ws.py                # WebSocket /ws
+│   │   │   ├── network.py           # /api/network (GET público, POST protegido)
+│   │   │   ├── health.py            # /health, /health/live, /health/ready
+│   │   │   ├── ssh.py               # /admin/ssh/* (feature-gated)
+│   │   │   └── deploy.py            # /admin/deploy/* (feature-gated)
 │   │   ├── models/
 │   │   │   ├── __init__.py
-│   │   │   ├── hmi.py              # Pydantic models: LED, Button
-│   │   │   ├── events.py           # WebSocket message schemas
-│   │   │   └── device.py           # Device configuration schemas
-│   │   └── static/                  # Frontend compilado (Vite build)
-│   ├── tests/
-│   │   ├── test_hmi.py
-│   │   ├── test_state_manager.py
-│   │   ├── test_display_service.py
-│   │   ├── test_gpio_service.py
-│   │   └── test_ws.py
-│   ├── pyproject.toml              # Project metadata + tool config
+│   │   │   ├── hmi.py               # LedState, ButtonState, DisplayInfo, DisplaySettings,
+│   │   │   │                        #   DisplayCommand, SystemStatus
+│   │   │   ├── events.py            # ClientMessage, ServerMessage, enums WS
+│   │   │   ├── device.py            # DeviceConfig, PinMapping, load_devices()
+│   │   │   └── network.py           # NetworkStatus, StaticIpRequest, NetworkResult
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── state_manager.py     # Estado compartido thread-safe + broadcast
+│   │   │   ├── ws_hub.py            # Suscripciones por topic + broadcast serializado
+│   │   │   ├── gpio_service.py      # Abstracción GPIO (gpiozero) + load_devices()
+│   │   │   ├── persistence.py       # Persistencia SQLite asíncrona
+│   │   │   ├── network_service.py   # Gestión de red vía NetworkManager (nmcli)
+│   │   │   ├── ssh_manager.py       # Driver SSH (Paramiko)
+│   │   │   ├── deploy_service.py    # Deploy remoto + escaneo de red
+│   │   │   └── systemd_notify.py    # sd_notify: READY/WATCHDOG/STOPPING
+│   │   └── hardware/
+│   │       └── __init__.py          # Placeholder HAL (GPIO unificado en gpio_service)
+│   ├── config/
+│   │   └── devices.yaml             # Fuente única de verdad de pines (LED virtual)
+│   ├── tests/                       # pytest (hmi, ws, auth, network, ssh, deploy, ...)
+│   ├── pyproject.toml
 │   └── requirements.txt
 │
-├── frontend/                        # SolidJS + TypeScript
+├── display/                         # App Pygame (display físico)
+│   ├── __init__.py
+│   ├── app.py                       # Entry point CLI (--mock, --api-url, --fps...)
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   ├── screen.py                # Gestor de pantalla (DRM/KMS + mock)
+│   │   ├── widgets.py               # Widgets: LED, botón, header, status
+│   │   ├── theme.py                 # Layout 480x320, colores, fuentes
+│   │   └── touch.py                 # Driver táctil (evdev/ADS7846)
+│   └── tests/
+│
+├── frontend/                        # SolidJS + TypeScript + Vite
 │   ├── src/
 │   │   ├── main.tsx                 # Entry point
-│   │   ├── App.tsx                  # Root component
+│   │   ├── App.tsx                  # Orquestador: auth, WS, navegación de vistas
 │   │   ├── components/
-│   │   │   ├── LedPanel.tsx         # Panel LED (local + remoto)
+│   │   │   ├── LoginScreen.tsx      # Login del panel (cookie HttpOnly)
+│   │   │   ├── Header.tsx           # Barra de estado + logout
+│   │   │   ├── LedPanel.tsx         # Panel LED
 │   │   │   ├── ButtonPanel.tsx      # Panel botones
-│   │   │   ├── Header.tsx           # Barra de estado
-│   │   │   └── ConnectionStatus.tsx # Indicador WS
+│   │   │   ├── ConnectionStatus.tsx # Indicador de conexión WS
+│   │   │   ├── ConfigPanel.tsx      # Botón de configuración
+│   │   │   ├── ConfigScreen.tsx     # Modal de configuración
+│   │   │   ├── NetworkConfig.tsx    # Configuración de red
+│   │   │   ├── FontSettings.tsx     # Ajustes de fuente/tamaño del display
+│   │   │   ├── ScreenTest.tsx       # Prueba de pantalla
+│   │   │   └── TouchCalibration.tsx # Calibración táctil
 │   │   ├── hooks/
-│   │   │   ├── useWebSocket.ts      # WS connection manager
-│   │   │   └── useApi.ts            # REST fallback
-│   │   ├── store/
-│   │   │   └── state.ts             # Global reactive state
+│   │   │   ├── useWebSocket.ts      # Gestor de conexión WS
+│   │   │   ├── useApi.ts            # Cliente REST (fallback + auth)
+│   │   │   ├── useConnectionMonitor.ts # Poll REST como fallback
+│   │   │   └── sequenceTracker.ts   # Detección de gaps por topic
+│   │   ├── schemas/
+│   │   │   └── ws.ts                # Esquemas Zod de mensajes WS
 │   │   ├── types/
-│   │   │   └── api.ts               # TS types (matching Pydantic)
-│   │   └── styles/
-│   │       └── index.css            # Tailwind + custom
-│   ├── public/
+│   │   │   └── api.ts               # Tipos TS mirror de Pydantic
+│   │   └── tests/                   # Vitest + Testing Library
 │   ├── index.html
 │   ├── tsconfig.json
 │   ├── vite.config.ts
 │   └── package.json
 │
-├── display/                         # App Pygame (display fisico)
-│   ├── __init__.py
-│   ├── app.py                       # Punto de entrada display
-│   ├── ui/
-│   │   ├── __init__.py
-│   │   ├── screen.py               # Gestor de pantalla (DRM)
-│   │   ├── widgets.py              # Widgets: boton, LED, slider
-│   │   ├── theme.py                # Colores, fuentes, estilos
-│   │   └── touch.py                # Driver tactil (evdev)
-│   └── tests/
-│       └── test_ui.py
-│
 ├── config/
-│   ├── devices.yaml                 # Registro de hardware
-│   └── systemd/
-│       ├── rpi-hmi-backend.service  # Servicio FastAPI
-│       └── rpi-hmi-display.service  # Servicio Pygame display
+│   ├── systemd/
+│   │   ├── rpi-hmi-backend.service  # Servicio FastAPI (Type=notify + watchdog)
+│   │   └── rpi-hmi-display.service  # Servicio Pygame display
+│   └── sudoers.d/
+│       └── rpi-hmi                  # Regla mínima: pi NOPASSWD /usr/bin/nmcli
 │
-├── scripts/
-│   ├── deploy.sh                    # Deploy a la Pi
-│   ├── setup_pi.sh                  # Configuracion inicial
-│   └── build_frontend.sh           # Compilar frontend
+├── scripts/                         # Despliegue y utilidades
+│   ├── deploy.py                    # Deploy unificado (--hmi, --install-service, --verify)
+│   ├── deploy_atomic.py             # Deploy atómico con rollback (releases/<version>)
+│   ├── start_hmi.sh                 # Arranque del HMI en la Pi
+│   └── setup_rpi.sh                 # Configuración inicial de la Pi
 │
 ├── docs/
 │   ├── ARCHITECTURE.md              # Este documento
-│   ├── CONTEXT.md                   # Contexto para agentes IA
-│   ├── API.md                       # Referencia de API
-│   ├── HARDWARE.md                  # Cableado y pines
-│   └── DEVELOPMENT.md              # Guia de desarrollo
+│   ├── SECURITY.md                  # Modelo de amenazas y política de seguridad
+│   ├── CONTEXT.md                   # Estado global para agentes IA
+│   ├── deploy/
+│   │   ├── runbook.md               # Manual operativo de despliegue
+│   │   ├── INICIO.md                # Mapa de workstreams
+│   │   └── ESTADO_DESPLEGUE.md      # Estado global de despliegue
+│   └── deploy/handoffs/             # Documentos de traspaso por fase
 │
 ├── .env.example
 ├── .gitignore
-├── Makefile                         # Tareas comunes
+├── VERSION                          # Versión única del proyecto (0.3.2)
 └── README.md
 ```
 
@@ -195,61 +216,158 @@ Rpi_Pantalla_V1/
 
 ## 4. Contratos de API
 
-### 4.1 REST Endpoints
+### 4.1 Health check (público)
 
-| Metodo | Ruta | Response | Descripcion |
-|---|---|---|---|
-| GET | /health | {"status":"ok"} | Health check |
-| GET | /api/status | SystemStatus | Estado completo |
-| GET | /api/led | LedState | Estado del LED |
-| POST | /api/led/toggle | LedState | Alternar LED |
-| POST | /api/led/on | LedState | Encender LED |
-| POST | /api/led/off | LedState | Apagar LED |
-| GET | /api/button | ButtonState | Estado del boton |
-| POST | /api/button/press | ButtonState | Presionar boton |
-| GET | /api/display/info | DisplayInfo | Info del display fisico |
-| GET | /api/device/list | list[DeviceInfo] | Dispositivos registrados |
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/health` | Diagnóstico completo (`healthy`/`degraded`/`unhealthy`) |
+| GET | `/health/live` | Liveness: ¿el proceso está vivo? (siempre 200) |
+| GET | `/health/ready` | Readiness: 200 si SQLite responde, 503 si no |
 
-### 4.2 WebSocket Protocol
+### 4.2 Autenticación (público / AUTH)
 
-Conexion: `ws://<host>:8000/ws`
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/auth/status` | `{security_mode, authenticated}` (público, sin secretos) |
+| POST | `/api/auth/login` | Valida `ADMIN_API_KEY` (body JSON) y emite cookie `rpi_hmi_session` HttpOnly |
+| POST | `/api/auth/logout` | Revoca la sesión y borra la cookie |
 
-**Mensajes Cliente -> Servidor:**
+### 4.3 HMI — solo lectura (públicos)
+
+| Método | Ruta | Response |
+|---|---|---|
+| GET | `/api/status` | `SystemStatus` |
+| GET | `/api/led` | `LedState` |
+| GET | `/api/button` | `ButtonState` |
+| GET | `/api/display/info` | `DisplayInfo` (404 si no detectado) |
+| GET | `/api/settings/display` | `DisplaySettings` |
+
+### 4.4 HMI — mutadores (PROTECTED en `protected`)
+
+| Método | Ruta | Response |
+|---|---|---|
+| POST | `/api/led/toggle` | `LedState` |
+| POST | `/api/led/on` | `LedState` |
+| POST | `/api/led/off` | `LedState` |
+| POST | `/api/button/press` | `ButtonState` |
+| POST | `/api/button/release` | `ButtonState` |
+| POST | `/api/display/command` | `{success, action}` |
+| POST | `/api/settings/display` | `DisplaySettings` |
+
+### 4.5 Red (lectura pública, mutación protegida)
+
+| Método | Ruta | Response |
+|---|---|---|
+| GET | `/api/network` | `NetworkStatus` |
+| POST | `/api/network/static` | `NetworkResult` |
+| POST | `/api/network/dhcp` | `NetworkResult` |
+
+### 4.6 Administración (feature-gated `ENABLE_ADMIN_API=true`, auth siempre)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/admin/ssh/connect` | Establecer conexión SSH |
+| POST | `/admin/ssh/disconnect` | Cerrar conexión SSH |
+| GET | `/admin/ssh/status` | Estado de la conexión |
+| POST | `/admin/ssh/execute` | Ejecutar comando remoto (RCE) |
+| GET | `/admin/deploy/scan` | Escanear red local |
+| POST | `/admin/deploy/setup` | Configurar entorno Python |
+| POST | `/admin/deploy/app` | Desplegar archivos de la app |
+| GET | `/admin/deploy/diagnostics` | Diagnóstico remoto |
+| GET | `/admin/deploy/health` | Salud del backend remoto |
+| POST | `/admin/deploy/start` | Iniciar backend remoto |
+| POST | `/admin/deploy/stop` | Detener backend remoto |
+
+> Los routers `/admin/*` solo se registran si `ENABLE_ADMIN_API=true` (deshabilitado
+> por defecto). Si está deshabilitado, las rutas `/admin/*` responden 404.
+
+### 4.7 Clasificación por autenticación
+
+| Clase | Endpoints | Autenticación |
+|---|---|---|
+| **PUBLIC** | `/health*`, `GET /api/auth/status`, lecturas HMI/red | Ninguna |
+| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | Login valida `ADMIN_API_KEY` |
+| **PROTECTED** | mutadores HMI, `POST /api/settings/display`, `POST /api/network/*`, `WS /ws` | `X-API-Key` **o** cookie de sesión, solo en `protected`; loopback exento |
+| **ADMIN** | `/admin/*` | `X-API-Key` **o** cookie de sesión, **siempre** |
+
+Ver `docs/SECURITY.md` para el detalle completo del modelo de amenazas.
+
+---
+
+## 5. Protocolo WebSocket
+
+Conexión: `ws://<host>:8000/ws` · Versión de protocolo: `1.0`
+
+El sobre del mensaje incluye siempre `version`, `type` y (en servidor) `sequence`
+(contador global monotónico) y `timestamp`. Los clientes detectan pérdidas por
+**topic** (no globalmente), comparando contra el último `sequence` del mismo topic.
+
+### 5.1 Mensajes cliente → servidor
+
 ```json
-{"type": "toggle_led"}
-{"type": "press_button"}
-{"type": "release_button"}
-{"type": "get_status"}
-{"type": "subscribe", "topics": ["led", "button", "display"]}
+{"version": "1.0", "type": "toggle_led"}
+{"version": "1.0", "type": "press_button"}
+{"version": "1.0", "type": "release_button"}
+{"version": "1.0", "type": "get_status"}
+{"version": "1.0", "type": "subscribe", "topics": ["led", "button", "display"]}
+{"version": "1.0", "type": "display_command", "action": "screen_test"}
 ```
 
-**Mensajes Servidor -> Cliente:**
+Acciones válidas de `display_command`: `screen_test`, `touch_calib`, `network`,
+`font`, `config`, `main`.
+
+### 5.2 Mensajes servidor → cliente
+
 ```json
-{"type": "status_update", "data": {"led": {"state": true}, "button": {"count": 5}}}
-{"type": "led_changed", "data": {"state": true, "timestamp": 1234567890}}
-{"type": "button_pressed", "data": {"timestamp": 1234567890}}
+{"version": "1.0", "type": "status_update", "data": { ... }, "sequence": 0, "timestamp": "..."}
+{"version": "1.0", "type": "led_changed", "data": {"state": true, "label": "ENCENDIDO", "gpio_pin": 0}, "sequence": 1, "timestamp": "..."}
+{"version": "1.0", "type": "button_pressed", "data": {"pressed": true, "press_count": 5}, "sequence": 2, "timestamp": "..."}
+{"version": "1.0", "type": "button_released", "data": { ... }, "sequence": 3, "timestamp": "..."}
+{"version": "1.0", "type": "display_changed", "data": { ... }, "sequence": 4, "timestamp": "..."}
+{"version": "1.0", "type": "display_settings_changed", "data": { ... }, "sequence": 5, "timestamp": "..."}
+{"version": "1.0", "type": "display_command", "data": {"action": "..."}, "sequence": 6, "timestamp": "..."}
+{"version": "1.0", "type": "error", "data": {"code": "...", "message": "..."}, "timestamp": "..."}
 ```
 
-### 4.3 Modelos Pydantic (backend) = TypeScript (frontend)
+> El broadcast se serializa por topic vía `WebSocketHub` (cola FIFO por topic,
+> drop-oldest si la cola se llena). El campo `sequence` es `null` en `error` y en
+> los `status_update` generados sin asignación de secuencia.
+
+### 5.3 Autenticación del handshake
+
+En `SECURITY_MODE=protected`, las conexiones no-loopback deben autenticarse antes
+de `accept()`. Se aceptan, por orden de prioridad:
+
+1. Header `X-API-Key` (scripts/M2M).
+2. Cookie de sesión válida (navegador; emitida por `POST /api/auth/login`).
+3. Subprotocolo `Sec-WebSocket-Protocol` o query param `?token=`.
+
+Si falla, el handshake se cierra con close code `4401` (no se llama a `accept()`).
+El subprotocolo anunciado por el frontend es `["rpi-hmi"]`.
+
+---
+
+## 6. Modelos de datos (Pydantic ↔ TypeScript/Zod)
 
 ```python
 # backend/app/models/hmi.py
-from pydantic import BaseModel, Field
-from datetime import datetime
-
 class LedState(BaseModel):
-    state: bool = Field(description="True = encendido")
-    label: str = Field(description="ENCENDIDO | APAGADO")
-    gpio_pin: int = Field(default=17, ge=0, le=27)
+    state: bool
+    label: str  # "ENCENDIDO" | "APAGADO"
+    gpio_pin: int = Field(default=0, ge=0, le=27)  # 0 = virtual (sin GPIO físico)
 
 class ButtonState(BaseModel):
     pressed: bool
-    press_count: int = Field(ge=0)
+    press_count: int = Field(default=0, ge=0)
 
 class DisplayInfo(BaseModel):
     connected: bool
-    resolution: str = Field(pattern=r"\d+x\d+")
-    driver: str
+    resolution: str  # "480x320"
+    driver: str      # "ili9486" | "piscreen"
+
+class DisplaySettings(BaseModel):
+    font_family: Literal["dejavu", "liberation"]
+    text_size: Literal["small", "medium", "large"]
 
 class SystemStatus(BaseModel):
     led: LedState
@@ -257,69 +375,114 @@ class SystemStatus(BaseModel):
     display: DisplayInfo | None
     uptime_seconds: float
     cpu_temp_celsius: float | None
-    websocket_clients: int = Field(ge=0)
+    websocket_clients: int
     timestamp: datetime
 ```
 
-```typescript
-// frontend/src/types/api.ts
-export interface LedState {
-  state: boolean;
-  label: string;
-  gpio_pin: number;
-}
+El LED es **virtual** (`pin: null` en `backend/config/devices.yaml`), por lo que
+`gpio_pin` es `0`. El pin se resuelve en runtime desde `devices.yaml` (fuente única
+de verdad); el valor `default=0` es el fallback cuando no hay GPIO configurado.
 
-export interface ButtonState {
-  pressed: boolean;
-  press_count: number;
-}
-
-export interface SystemStatus {
-  led: LedState;
-  button: ButtonState;
-  display: DisplayInfo | null;
-  uptime_seconds: number;
-  cpu_temp_celsius: number | null;
-  websocket_clients: number;
-  timestamp: string;
-}
-```
+Los equivalentes TypeScript viven en `frontend/src/types/api.ts` y los esquemas de
+validación runtime (Zod) de mensajes WS en `frontend/src/schemas/ws.ts`.
 
 ---
 
-## 5. Flujo de Datos
+## 7. Autenticación (flujo del panel web)
 
-### 5.1 Toggle LED desde Display Fisico (Touch)
+`SECURITY_MODE` (`local` | `protected`, default `local`) controla si los mutadores
+exigen autenticación. Cuando es `protected`, el panel web usa un flujo de login por
+**cookie de sesión HttpOnly** (sustituye al antiguo `VITE_API_KEY`, que ya no existe).
 
 ```
-Usuario toca boton en TFT
-  -> Pygame detecta touch (evdev)
-  -> display/ui/touch.py traduce coordenadas a widget
-  -> display/app.py POST http://localhost:8000/api/led/toggle
-  -> FastAPI actualiza StateManager
-  -> FastAPI emite WS broadcast: {"type": "led_changed", ...}
+Navegador                          Backend FastAPI
+   |  1. GET /api/auth/status         |  -> {security_mode, authenticated}
+   |<---------------------------------|
+   |  2. (si protected, sin sesión)   |
+   |     POST /api/auth/login         |
+   |     {"api_key": ADMIN_API_KEY}   |
+   |<---------------------------------|  -> Set-Cookie: rpi_hmi_session=...
+   |  3. fetch REST + WS handshake    |  cookie viaja automáticamente (HttpOnly)
+   |     (sin manejar clave en JS)    |
+   |  4. POST /api/auth/logout        |  -> revoca sesión + borra cookie
+```
+
+- La sesión es **en memoria** (dict `token → expiración`) y se firma con
+  HMAC-SHA256 (stdlib) usando una clave derivada de `ADMIN_API_KEY` + secreto
+  aleatorio por arranque. Reiniciar el proceso o rotar la clave invalida sesiones.
+- Cookie con `HttpOnly`, `SameSite=Strict`; `Secure` solo si HTTPS.
+- TTL configurable con `SESSION_TTL_SECONDS` (default `28800` = 8 h).
+- Los mutadores aceptan `X-API-Key` (scripts/M2M) **o** cookie de sesión
+  (navegador); el loopback (`127.0.0.1`/`::1`/`localhost`) queda exento para que el
+  display físico local (Pygame) siga funcionando sin credenciales.
+
+Ver `docs/SECURITY.md` para el modelo completo.
+
+---
+
+## 8. Flujo de datos
+
+### 8.1 Toggle LED desde el display físico (touch)
+
+```
+Usuario toca botón en TFT
+  -> Pygame detecta touch (evdev) en display/ui/touch.py
+  -> display/app.py POST http://localhost:8000/api/led/toggle (loopback exento)
+  -> FastAPI actualiza StateManager (thread-safe)
+  -> StateManager persiste en SQLite y emite WS broadcast led_changed
   -> Pygame recibe WS y redibuja
-  -> GPIO 17 se actualiza via gpiozero
 ```
 
-### 5.2 Toggle LED desde Navegador Remoto
+### 8.2 Toggle LED desde el navegador remoto
 
 ```
-Usuario hace clic en boton web
-  -> SolidJS <LedPanel> llama a toggleLed()
-  -> WebSocket envia: {"type": "toggle_led"}
+Usuario hace clic en botón web
+  -> SolidJS <LedPanel> envía WS {"type": "toggle_led", "version": "1.0"}
   -> FastAPI recibe WS, actualiza StateManager
-  -> FastAPI emite WS broadcast a TODOS los clientes
-  -> SolidJS actualiza UI reactivamente
+  -> FastAPI emite WS broadcast a TODOS los clientes suscritos
+  -> SolidJS actualiza la UI reactivamente (fallback REST cada 5s si cae WS)
   -> Pygame (si conectado) recibe WS y redibuja
-  -> GPIO 17 se actualiza via gpiozero
 ```
+
+> El LED es virtual: no hay GPIO físico implicado. Si en el futuro se mapea un
+> pin real, el callback `set_updater` de `StateManager` sincroniza el GPIO vía
+> `GPIOService`.
 
 ---
 
-## 6. Configuracion del Display Fisico
+## 9. Persistencia (SQLite)
 
-### 6.1 Device Tree Overlays (/boot/firmware/config.txt)
+- Ruta: `data/state.db` (configurable con `DB_PATH`).
+- `StateManager` persiste en segundo plano (tareas asíncronas): estado del LED,
+  contador del botón, ajustes de display y un log histórico de eventos.
+- En el arranque, `restore_from_db()` restaura el estado desde SQLite aplicando la
+  política `STARTUP_POLICY` (`off` | `restore` | `safe`, default `restore`).
+- El pin GPIO **nunca** se persiste: se lee siempre de `devices.yaml`.
+- En el shutdown, `flush_pending_tasks()` drena las escrituras pendientes antes de
+  cerrar la conexión (`close_persistence()`).
+
+---
+
+## 10. Despliegue y systemd
+
+Dos servicios systemd (ver `config/systemd/`):
+
+- **`rpi-hmi-backend.service`** — FastAPI con `Type=notify` + watchdog
+  (`WATCHDOG=1` cada ~15 s) vía `systemd_notify.py`. El display depende de
+  `/health/ready`.
+- **`rpi-hmi-display.service`** — Pygame DRM/KMS, arranca tras el backend.
+
+El despliegue se hace con `scripts/deploy.py` (simple) o `scripts/deploy_atomic.py`
+(recomendado: copia a `releases/<version>/`, cambia symlink `current`, valida y
+reinicia con rollback). La regla sudoers mínima para `nmcli` está en
+`config/sudoers.d/rpi-hmi`. Ver `docs/deploy/runbook.md` para el procedimiento
+completo y `docs/deploy/ESTADO_DESPLEGUE.md` para el estado global.
+
+---
+
+## 11. Configuración del display físico
+
+### 11.1 Device Tree Overlays (`/boot/firmware/config.txt`)
 
 ```
 dtparam=spi=on
@@ -327,7 +490,7 @@ dtoverlay=piscreen,drm,speed=24000000
 dtoverlay=ads7846,cs=1,penirq=25,penirq_pull=2,speed=1000000,rotate=270,swapxy=0
 ```
 
-### 6.2 Pygame con DRM/KMS
+### 11.2 Pygame con DRM/KMS
 
 ```python
 import os
@@ -339,97 +502,26 @@ pygame.display.init()
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 ```
 
-**Ventajas sobre /dev/fb1:** Dirty rectangles automatico (~20 FPS vs ~5 FPS), sin conflicto con consola.
-
 ---
 
-## 7. Estrategia de Contexto para Agentes IA
+## 12. Métricas de calidad
 
-### CONTEXT.md
-
-Archivo obligatorio que todo agente IA debe leer. Contiene:
-
-- Ultima sesion (fecha, agente, branch, commit)
-- Estado actual (display, backend, frontend, tests)
-- Decisiones tomadas con justificaciones
-- Tareas pendientes
-- Configuracion activa (IP, puertos, overlays)
-- Archivos modificados en la ultima sesion
-
-### Protocolo de Traspaso
-
-Cuando el chat se satura:
-1. El agente actualiza `docs/CONTEXT.md`
-2. El agente informa al usuario que abra un nuevo chat
-3. El usuario copia `CONTEXT.md` como prompt inicial
-4. El nuevo agente lee el contexto y continua donde se quedo
-
----
-
-## 8. Plan de Implementacion
-
-| Fase | Nombre | Entregables |
-|---|---|---|
-| 1 | Refactor Backend | StateManager, GPIOService, modelos Pydantic, tests |
-| 2 | Display Pygame DRM | piscreen overlay, widgets (LED, Button), integracion WS |
-| 3 | Frontend SolidJS | Componentes tipados, WebSocket client, build optimizado |
-| 4 | Integracion | Servicios systemd, setup_pi.sh, Makefile, docs completas |
-| 5 | CI/CD GitHub | Actions, pre-commit, badges, changelog |
-
----
-
-## 9. Metricas de Calidad
-
-| Metrica | Objetivo |
+| Métrica | Objetivo |
 |---|---|
-| Tests backend | >= 80% |
-| Tests frontend | >= 70% |
-| Tipado | mypy strict + TS strict |
+| Tests backend + display (pytest) | 346 passed / 9 skipped (baseline) |
+| Tests frontend (Vitest) | 26 passed |
+| Tipado | mypy (backend) + TypeScript strict (frontend) |
 | Bundle frontend (gzip) | < 50 KB |
 | RAM idle | < 100 MB |
-| Boot time | < 30s |
+| Boot time | < 30 s |
 | FPS display | >= 15 fps |
-| Documentacion | 5 archivos minimos |
 
 ---
 
-## 10. Notas Tecnicas
-
-### Por que SolidJS?
-
-| Framework | Bundle | Modelo | Velocidad en ARMv6 |
-|---|---|---|---|
-| React 19 | ~45 KB | Virtual DOM | Lento |
-| Vue 3.5 | ~38 KB | VDOM + Proxy | Medio |
-| Svelte 5 | ~15 KB | Compilado | Rapido |
-| **SolidJS 1.9** | **~7.6 KB** | **Signals** | **El mas rapido** |
-
-Menor bundle, mejor rendimiento, signals como estandar TC39 futuro.
-
-### Por que Pygame + DRM?
-
-| Metodo | FPS | Dirty rects | Mantenibilidad |
-|---|---|---|---|
-| /dev/fb1 mmap | 3-5 | Manual | Baja |
-| **Pygame + DRM/KMS** | **15-20** | **Automatico** | **Alta** |
-| Qt/QML | 10-15 | Si | Media |
-| LVGL (C) | 20-25 | Si | Baja |
-
-Pygame + DRM es el sweet spot para Python en Pi.
-
-### Por que no Docker?
-
-- ARMv6 sin soporte practico en Docker Hub
-- +50-100MB RAM de overhead (critico en 512MB total)
-- systemd es nativo y suficiente para 2 servicios
-
----
-
-## 11. Referencias
+## 13. Referencias
 
 - [piscreen overlay + DRM — Raspberry Pi Bookworm](https://github.com/raspberrypi/bookworm-feedback/issues/88)
 - [TinyDRM ili9486.c en kernel](https://github.com/raspberrypi/linux/blob/rpi-6.6.y/drivers/gpu/drm/tiny/ili9486.c)
-- [SolidJS state in 2026](https://listiak.dev/blog/the-state-of-solid-js-in-2026-signals-performance-and-growing-influence)
-- [Framework comparison — real world apps](https://github.com/naufalafif/realworld-js-framework-comparison)
+- [SolidJS](https://www.solidjs.com/)
 - [Pygame + KMS/DRM guide](https://dontpressthat.wordpress.com/2025/09/20/bookworm-drm/)
 - [TC39 Signals proposal](https://github.com/tc39/proposal-signals)

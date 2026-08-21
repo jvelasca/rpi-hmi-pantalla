@@ -4,7 +4,7 @@
 > confianza. Este documento describe el modelo de amenazas asumido y la
 > política de seguridad explícita del backend.
 >
-> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.1
+> Última revisión: 2026-08-20 · Versión del proyecto: 0.3.2
 
 ## 1. Modelo de amenazas
 
@@ -34,10 +34,11 @@
 
 | Clase | Endpoints | Autenticación |
 |---|---|---|
-| **PUBLIC** | `GET /health`, `GET /health/live`, `GET /health/ready` | Ninguna |
+| **PUBLIC** | `GET /health`, `GET /health/live`, `GET /health/ready`, `GET /api/auth/status` | Ninguna |
+| **AUTH** | `POST /api/auth/login`, `POST /api/auth/logout` | `POST /api/auth/login` valida `ADMIN_API_KEY` (body JSON) y emite cookie de sesión; `logout` revoca la sesión |
 | **LOCAL (HMI, solo lectura/visual)** | `GET /api/status`, `GET /api/led`, `GET /api/button`, `GET /api/display/info`, `GET /api/settings/display`, `GET /api/network` | Ninguna (LAN de confianza) |
-| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **solo si** `SECURITY_MODE=protected` (loopback exento) |
-| **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
+| **PROTECTED** | `POST /api/led/toggle`, `POST /api/led/on`, `POST /api/led/off`, `POST /api/button/press`, `POST /api/button/release`, `POST /api/display/command`, `POST /api/settings/display`, `WS /ws` (clientes no-loopback), `POST /api/network/static`, `POST /api/network/dhcp` | `X-API-Key` **o** cookie de sesión, **solo si** `SECURITY_MODE=protected` (loopback exento) |
+| **ADMIN** | `POST /admin/ssh/connect`, `POST /admin/ssh/disconnect`, `GET /admin/ssh/status`, `POST /admin/ssh/execute`, `GET /admin/deploy/scan`, `POST /admin/deploy/setup`, `POST /admin/deploy/app`, `GET /admin/deploy/diagnostics`, `GET /admin/deploy/health`, `POST /admin/deploy/start`, `POST /admin/deploy/stop` | `X-API-Key` **o** cookie de sesión, **siempre**; solo existen si `ENABLE_ADMIN_API=true` |
 
 Notas:
 
@@ -51,6 +52,10 @@ Notas:
   local (Pygame) sigue ajustando fuente/tamaño sin key.
 - `GET /api/network` es público a propósito (solo lectura); los `POST` que mutan
   la red son los que exigen auth en modo `protected`.
+- `POST /api/auth/login` aplica **rate-limiting** anti brute-force: ventana fija
+  en memoria por IP de cliente, contando solo intentos fallidos. Superado
+  `LOGIN_MAX_ATTEMPTS` dentro de `LOGIN_WINDOW_SECONDS` responde **429**; un login
+  correcto reinicia el contador de esa IP (ver §3).
 
 ### Exención de loopback (REST + WS)
 
@@ -64,13 +69,32 @@ confianza). Aplica a:
   `/api/settings/display`, etc.) siguen funcionando desde el display local.
 - **WS**: el handshake `WS /ws` exime a loopback.
 
-El resto de clientes deben autenticarse con `ADMIN_API_KEY`:
+El resto de clientes deben autenticarse con `ADMIN_API_KEY` **o** con una
+cookie de sesión válida:
 
-- **REST**: header `X-API-Key`.
-- **WS**: header `X-API-Key`, subprotocolo `Sec-WebSocket-Protocol`
-  (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`) o query param `?token=`.
-  Si no se autentica, el handshake se rechaza con close code `4401`
-  (no se llama a `accept()`).
+- **Navegador (panel web)**: inicia sesión en `POST /api/auth/login` con la
+  `ADMIN_API_KEY` en el body JSON. El backend responde con una cookie de sesión
+  `HttpOnly; SameSite=Strict` (nombre `rpi_hmi_session`). A partir de ahí, el
+  navegador envía la cookie automáticamente en REST (fetch) y WS (handshake),
+  sin que la clave llegue nunca al JS del bundle. `POST /api/auth/logout`
+  revoca la sesión.
+- **Scripts / M2M**: header `X-API-Key` en REST; en WS, header `X-API-Key`,
+  subprotocolo `Sec-WebSocket-Protocol` (p. ej. `new WebSocket(url, ["rpi-hmi", apiKey])`)
+  o query param `?token=`. Si no se autentica, el handshake se rechaza con
+  close code `4401` (no se llama a `accept()`).
+
+### Modelo de sesión (cookie HttpOnly)
+
+- La sesión es **en memoria** (dict `token -> expiración`); se pierde al
+  reiniciar el backend. El TTL se configura con `SESSION_TTL_SECONDS`
+  (default `28800` = 8 h).
+- El token está **firmado con HMAC-SHA256** (stdlib `hmac` + `secrets`), con
+  una clave derivada de `ADMIN_API_KEY` y un secreto aleatorio por arranque.
+  Así, reiniciar el proceso o rotar `ADMIN_API_KEY` invalida todas las sesiones.
+- La cookie se emite con `HttpOnly` (el JS no puede leerla) y `SameSite=Strict`.
+  `Secure` se activa **solo** si el backend recibe HTTPS. En la LAN de
+  confianza sin TLS la cookie viaja en claro (limitación documentada); no
+  expongas el puerto 8000 a Internet.
 
 ---
 
@@ -92,14 +116,20 @@ El resto de clientes deben autenticarse con `ADMIN_API_KEY`:
   ```
 - **`ENABLE_ADMIN_API`** — `bool` (default **`false`**): habilita los routers
   `/admin/*`. Debe permanecer `false` en producción.
+- **`SESSION_TTL_SECONDS`** — `int` (default **`28800`**): TTL en segundos de la
+  cookie de sesión del panel web (emitida por `POST /api/auth/login`).
+- **`LOGIN_MAX_ATTEMPTS`** — `int` (default **`5`**, `ge=1`): intentos fallidos de
+  login permitidos por IP dentro de la ventana antes de devolver `429`.
+- **`LOGIN_WINDOW_SECONDS`** — `int` (default **`300`**, `ge=10`): duración en
+  segundos de la ventana fija del rate-limit de login (por IP de cliente).
 
 Dependencias de auth (ver `backend/app/api/deps.py`):
 
 - `require_admin_api_key` — respeta `SECURITY_MODE` (en `local` no exige nada; en
-  `protected` exige `X-API-Key` salvo desde loopback). Se usa en los mutadores HMI
-  y de red.
-- `require_admin_api_key_always` — exige `X-API-Key` **siempre**; si
-  `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
+  `protected` exige `X-API-Key` **o** cookie de sesión, salvo desde loopback).
+  Se usa en los mutadores HMI y de red.
+- `require_admin_api_key_always` — exige `X-API-Key` **o** cookie de sesión
+  **siempre**; si `ADMIN_API_KEY` está vacía devuelve `503`. Se usa en `/admin/*`.
 
 Ejemplo de `.env`:
 
@@ -170,6 +200,7 @@ Política explícita de qué ocurre con el estado del dispositivo en cada moment
 - [ ] `ENABLE_ADMIN_API=false`
 - [ ] `ADMIN_API_KEY` segura (32+ caracteres), distinta del valor por defecto
 - [ ] `SECURITY_MODE` decidido explícitamente (`local` o `protected`)
+- [ ] Rate-limit de login configurado (`LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_SECONDS`)
 - [ ] Regla sudoers instalada y validada (`visudo -c`)
 - [ ] Puerto 8000 no expuesto a Internet
 
@@ -208,9 +239,11 @@ errores de `visudo -c` y `systemd-analyze verify` provocados por el carácter `\
 ### `SECURITY_MODE` en la primera instalación
 
 La Pi quedó desplegada con `SECURITY_MODE=local` (prototipo doméstico en LAN de
-confianza). La exención de loopback se extiende ahora a REST **y** WS, por lo que
+confianza). La exención de loopback se extiende a REST **y** WS, por lo que
 `SECURITY_MODE=protected` es compatible con el HMI táctil: el display local (loopback)
-muta LED/button/display sin key, mientras el resto de la LAN exige `X-API-Key`. Para
-activarlo en producción, establece `SECURITY_MODE=protected` y una `ADMIN_API_KEY`
-segura (32+ caracteres) en el `.env` del backend; y la misma key en `VITE_API_KEY` al
-compilar el frontend si el panel web debe poder mutar el HMI.
+muta LED/button/display sin credenciales, mientras el resto de la LAN debe autenticarse.
+Para activarlo en producción, establece `SECURITY_MODE=protected` y una `ADMIN_API_KEY`
+segura (32+ caracteres) en el `.env` del backend. El panel web pedirá esa clave al
+entrar (`POST /api/auth/login`) y operará con una cookie de sesión HttpOnly; los
+scripts/M2M usan `X-API-Key`. Ya no es necesario (ni recomendable) compilar el
+frontend con `VITE_API_KEY`.
