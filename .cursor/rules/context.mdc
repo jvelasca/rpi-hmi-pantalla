@@ -1,0 +1,35 @@
+---
+description: Contexto anti-alucinación del proyecto RPi HMI. Obliga a leer las fuentes de verdad, verificar hechos y no inventar datos antes de editar.
+alwaysApply: true
+---
+
+# Contexto del proyecto RPi HMI
+
+Lee siempre estas fuentes antes de actuar (no las dupliques):
+
+- `docs/CONTEXT.md` — checkpoint global. Leer al inicio de cada sesión, actualizar al final.
+- `docs/PREMISAS_ESENCIALES.md` — gobernanza (subagentes, verificación, handoffs).
+- `docs/deploy/handoffs/*.md` — cierres de fase con "TEXTO DE PASO".
+
+Reglas de grounding:
+
+- Antes de editar un archivo, usa Read sobre él; si hay ambigüedad, usa Grep/Glob
+  para localizar la definición real. Nunca asumas el contenido desde memoria.
+- Si dudas de un hecho (versión, estado, contrato, conteo), verifica con `git grep`,
+  tests o linters. Nunca adivines.
+- Un cambio = un subagente acotado y revisable. No mezcles fases.
+- Documenta cada cierre en `docs/` con "TEXTO DE PASO".
+- No cierres una fase sin los gates en verde: `pytest backend/tests/ display/tests/`,
+  `ruff check backend/ display/ scripts/ --config backend/pyproject.toml`,
+  `mypy app/` (desde `backend/`, `--config-file backend/pyproject.toml`),
+  `bandit -r backend/app display --exclude backend/tests,display/tests -q --severity-level medium`,
+  `pip-audit`, y `npm run test`, `npm run build`, `npm audit --audit-level=high` (desde `frontend/`).
+
+Verifica versiones con:
+
+```
+git grep -n "<version>" -- VERSION pyproject.toml backend/app/_version.py display/app.py frontend/package.json
+```
+
+Espejos de versión: `VERSION` (raíz) → `backend/app/_version.py` (`_FALLBACK`) →
+`display/app.py` (`_load_version()`). Versión actual: `0.4.1`.
